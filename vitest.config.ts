@@ -27,6 +27,10 @@ export default defineConfig({
         find: "@page-os/moderation",
         replacement: r("./packages/moderation/src/index.ts"),
       },
+      {
+        find: "@page-os/analytics",
+        replacement: r("./packages/analytics/src/index.ts"),
+      },
     ],
   },
   test: {

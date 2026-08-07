@@ -18,6 +18,15 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)
 
+  packages/analytics:
+    dependencies:
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/meta':
+        specifier: workspace:*
+        version: link:../meta
+
   packages/core: {}
 
   packages/db:

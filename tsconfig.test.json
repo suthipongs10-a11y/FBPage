@@ -16,7 +16,8 @@
       "@page-os/meta/test-helpers": ["./packages/meta/src/test-helpers.ts"],
       "@page-os/db": ["./packages/db/src/index.ts"],
       "@page-os/publish": ["./packages/publish/src/index.ts"],
-      "@page-os/moderation": ["./packages/moderation/src/index.ts"]
+      "@page-os/moderation": ["./packages/moderation/src/index.ts"],
+      "@page-os/analytics": ["./packages/analytics/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts"]

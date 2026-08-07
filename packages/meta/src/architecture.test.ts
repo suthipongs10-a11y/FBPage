@@ -239,6 +239,21 @@ describe("กฎข้อ 7 และ 8 — message tag", () => {
   });
 });
 
+describe("เมตริกที่ Meta ปลดระวาง มิ.ย. 2026 (สเปกข้อ 0)", () => {
+  it("ไม่มีโค้ดไหนยิงเมตริกที่ปลดระวางแล้ว", () => {
+    // page_impressions / page_reach ฯลฯ ปลดระวางแล้ว รายงานลูกค้าจะว่างเปล่าถ้าเผลอใช้
+    const deprecated =
+      /["'`](page_impressions\w*|page_reach|post_impressions\w*|post_reach|page_engaged_users|page_consumptions)["'`]/;
+    const offenders = PROD.filter(
+      (f) =>
+        // metrics.ts เก็บรายการไว้เพื่อ "ปฏิเสธ" โดยเฉพาะ
+        f.rel !== "packages/analytics/src/metrics.ts" &&
+        deprecated.test(stripComments(f.content)),
+    ).map((f) => f.rel);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("ความสม่ำเสมอของข้อความ error", () => {
   it("ทุก error ที่โยนจากโค้ดจริงมีข้อความไทย", () => {
     const offenders: string[] = [];
