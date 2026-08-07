@@ -24,6 +24,24 @@ import type {
 export interface PostRepository {
   findPost(postId: string): Promise<ScheduledPost | null>;
   findTarget(postId: string, pageId: string): Promise<PostTarget | null>;
+  /**
+   * จองเป้าหมายนี้ก่อนยิง — คืน false ถ้ามีคนจองไปแล้วหรือโพสต์ไปแล้ว
+   *
+   * จำเป็นเพราะการเช็ค fbPostId เฉยๆ มีช่องว่างระหว่าง "อ่าน" กับ "ยิง"
+   * ถ้าคิวส่งงานเดียวกันให้ worker สองตัว (retry ซ้อน / worker restart)
+   * ทั้งคู่จะเห็นว่ายังไม่มี fbPostId แล้วยิงพร้อมกัน = โพสต์ซ้ำในเพจลูกค้า
+   *
+   * ต้อง implement เป็น atomic update เช่น
+   *   UPDATE post_targets SET status='publishing'
+   *   WHERE post_id=? AND page_id=? AND status NOT IN ('published','publishing')
+   */
+  claimTarget(args: {
+    postId: string;
+    pageId: string;
+    attempt: number;
+  }): Promise<boolean>;
+  /** คืนการจองเมื่อจะลองใหม่ทีหลัง */
+  releaseTarget(args: { postId: string; pageId: string }): Promise<void>;
   /** บันทึกว่าเป้าหมายนี้โพสต์สำเร็จแล้ว */
   markTargetPublished(args: {
     postId: string;
@@ -141,6 +159,21 @@ export class PublishWorker {
       };
     }
 
+    // จองก่อนทำอะไรที่มีผลข้างเคียง — กัน worker สองตัวยิงโพสต์เดียวกันพร้อมกัน
+    const claimed = await this.repo.claimTarget({
+      postId: job.postId,
+      pageId: job.pageId,
+      attempt: job.attempt,
+    });
+    if (!claimed) {
+      log.warn("มี worker อื่นกำลังทำงานนี้อยู่แล้ว — ข้าม");
+      return {
+        kind: "skipped",
+        reason: "in_progress",
+        th: "งานนี้มีตัวอื่นกำลังทำอยู่แล้ว — ข้ามเพื่อกันโพสต์ซ้ำ",
+      };
+    }
+
     const body = target.overrideBody ?? post.content.body;
 
     // ก่อนลองใหม่ ต้องเช็คก่อนว่ารอบก่อนหน้าโพสต์ขึ้นไปแล้วหรือเปล่า
@@ -175,6 +208,7 @@ export class PublishWorker {
         // โพสต์ช้าไปหน่อยแก้ได้ แต่โพสต์ซ้ำในเพจลูกค้าลบทีหลังก็สายไปแล้ว
         return this.deferUnverifiable(job, check.th, log);
       }
+      // check.status === "not_found" — ยิงต่อได้
     }
 
     // เช็คซ้ำ 90 วัน — ทำเฉพาะรอบแรก รอบ retry ไม่ต้องเช็คใหม่
@@ -253,6 +287,11 @@ export class PublishWorker {
       attempts: job.attempt,
       terminal: false,
     });
+    // ต้องคืนการจอง ไม่งั้นรอบถัดไปจะจองไม่ได้แล้วค้างเป็น publishing ตลอดกาล
+    await this.repo.releaseTarget({
+      postId: job.postId,
+      pageId: job.pageId,
+    });
     log.warn("ยืนยันสถานะโพสต์ไม่ได้ เลื่อนไปรอบหน้า");
     return {
       kind: "retry",
@@ -307,6 +346,11 @@ export class PublishWorker {
         error: decision.th,
         attempts: job.attempt,
         terminal: false,
+      });
+      // คืนการจองก่อนรอบหน้า ไม่งั้น retry จะจองไม่ได้แล้วค้างเป็น publishing
+      await this.repo.releaseTarget({
+        postId: job.postId,
+        pageId: job.pageId,
       });
       log.warn("โพสต์ไม่สำเร็จ จะลองใหม่", {
         delayMs: decision.delayMs,

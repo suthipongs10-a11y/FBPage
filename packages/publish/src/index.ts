@@ -20,7 +20,28 @@ export {
   type PublishDecision,
 } from "./retry-policy.js";
 
-export { PostPublisher, PublishError } from "./publisher.js";
+export {
+  PostPublisher,
+  PublishError,
+  type ExistingPostCheck,
+} from "./publisher.js";
+
+export {
+  ApprovalService,
+  ApprovalError,
+  createApprovalToken,
+  verifyApprovalToken,
+  canTransition,
+  statusTh,
+  APPROVAL_TOKEN_TTL_MS,
+  type ApprovalDecision,
+  type ApprovalNotifier,
+  type ApprovalRepository,
+  type ApprovalResult,
+  type ApprovalServiceOptions,
+  type ApprovalStatus,
+  type ApprovalTokenPayload,
+} from "./approval.js";
 
 export {
   PublishWorker,

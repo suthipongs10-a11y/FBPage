@@ -11,6 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@page-os/core": ["./packages/core/src/index.ts"],
+      "@page-os/core/testing": ["./packages/core/src/testing.ts"],
       "@page-os/meta": ["./packages/meta/src/index.ts"],
       "@page-os/meta/test-helpers": ["./packages/meta/src/test-helpers.ts"],
       "@page-os/db": ["./packages/db/src/index.ts"],

@@ -12,6 +12,10 @@ export default defineConfig({
         find: "@page-os/meta/test-helpers",
         replacement: r("./packages/meta/src/test-helpers.ts"),
       },
+      {
+        find: "@page-os/core/testing",
+        replacement: r("./packages/core/src/testing.ts"),
+      },
       { find: "@page-os/core", replacement: r("./packages/core/src/index.ts") },
       { find: "@page-os/meta", replacement: r("./packages/meta/src/index.ts") },
       { find: "@page-os/db", replacement: r("./packages/db/src/index.ts") },

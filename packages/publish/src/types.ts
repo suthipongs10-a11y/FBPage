@@ -88,4 +88,6 @@ export type SkipReason =
   | "duplicate"
   | "cancelled"
   | "not_approved"
-  | "no_target";
+  | "no_target"
+  /** มี worker อื่นจองงานนี้ไปแล้ว */
+  | "in_progress";

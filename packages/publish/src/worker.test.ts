@@ -28,6 +28,17 @@ class MemRepo implements PostRepository {
   async findTarget(postId: string, pageId: string): Promise<PostTarget | null> {
     return this.targets.get(this.key(postId, pageId)) ?? null;
   }
+  async claimTarget(a: { postId: string; pageId: string }): Promise<boolean> {
+    const t = this.targets.get(this.key(a.postId, a.pageId));
+    if (!t) return false;
+    if (t.status === "published" || t.status === "publishing") return false;
+    t.status = "publishing";
+    return true;
+  }
+  async releaseTarget(a: { postId: string; pageId: string }): Promise<void> {
+    const t = this.targets.get(this.key(a.postId, a.pageId));
+    if (t && t.status === "publishing") t.status = "scheduled";
+  }
   async markTargetPublished(a: {
     postId: string;
     pageId: string;
@@ -519,5 +530,47 @@ describe("MetaApiError ที่ใช้ตัดสินใจ", () => {
     // ยืนยันว่าความรู้เรื่องเลข error อยู่ที่ packages/meta ที่เดียว
     expect(new MetaApiError({ message: "x", code: 32 }).action).toBe("throttle");
     expect(new MetaApiError({ message: "x", code: 190 }).action).toBe("reconnect");
+  });
+});
+
+describe("PublishWorker — กัน worker สองตัวยิงพร้อมกัน", () => {
+  it("worker ตัวที่สองต้องถูกปฏิเสธ ไม่ยิงซ้ำ", async () => {
+    const { worker, repo, fetch } = setup();
+    seed(repo);
+    fetch.setFallback({ json: { id: "1_1" } });
+
+    // จำลองว่า worker ตัวแรกจองไปแล้วและกำลังยิงอยู่
+    await repo.claimTarget({ postId: "post-1", pageId: "p1" });
+
+    const out = await worker.process({ postId: "post-1", pageId: "p1", attempt: 1 });
+
+    expect(out).toMatchObject({ kind: "skipped", reason: "in_progress" });
+    expect(fetch.callCount).toBe(0);
+  });
+
+  it("ยิงสองงานพร้อมกันจริงๆ ต้องขึ้นเพจแค่ครั้งเดียว", async () => {
+    const { worker, repo, fetch } = setup();
+    seed(repo);
+    fetch.setFallback({ json: { id: "1_1" } });
+
+    const [a, b] = await Promise.all([
+      worker.process({ postId: "post-1", pageId: "p1", attempt: 1 }),
+      worker.process({ postId: "post-1", pageId: "p1", attempt: 1 }),
+    ]);
+
+    const kinds = [a.kind, b.kind].sort();
+    expect(kinds).toEqual(["published", "skipped"]);
+    expect(fetch.calls.filter((c) => c.method === "POST")).toHaveLength(1);
+  });
+
+  it("ล้มเหลวแล้วต้องคืนการจอง ไม่งั้นรอบ retry จะจองไม่ได้", async () => {
+    const { worker, repo, fetch } = setup();
+    seed(repo);
+    fetch.setFallback({ status: 400, json: graphError(32) });
+
+    const first = await worker.process({ postId: "post-1", pageId: "p1", attempt: 1 });
+    expect(first.kind).toBe("retry");
+    // สถานะต้องกลับมาจองได้อีก
+    expect(await repo.claimTarget({ postId: "post-1", pageId: "p1" })).toBe(true);
   });
 });
