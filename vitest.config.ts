@@ -15,6 +15,10 @@ export default defineConfig({
       { find: "@page-os/core", replacement: r("./packages/core/src/index.ts") },
       { find: "@page-os/meta", replacement: r("./packages/meta/src/index.ts") },
       { find: "@page-os/db", replacement: r("./packages/db/src/index.ts") },
+      {
+        find: "@page-os/publish",
+        replacement: r("./packages/publish/src/index.ts"),
+      },
     ],
   },
   test: {

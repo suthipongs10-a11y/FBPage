@@ -11,6 +11,7 @@ export {
   type GraphParams,
   type MetaGatewayConfig,
   type MetaGatewayDeps,
+  type MetaHost,
   type RateLimitConfig,
   type RetryPolicy,
 } from "./gateway.js";

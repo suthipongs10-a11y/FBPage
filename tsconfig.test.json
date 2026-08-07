@@ -13,7 +13,8 @@
       "@page-os/core": ["./packages/core/src/index.ts"],
       "@page-os/meta": ["./packages/meta/src/index.ts"],
       "@page-os/meta/test-helpers": ["./packages/meta/src/test-helpers.ts"],
-      "@page-os/db": ["./packages/db/src/index.ts"]
+      "@page-os/db": ["./packages/db/src/index.ts"],
+      "@page-os/publish": ["./packages/publish/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts"]

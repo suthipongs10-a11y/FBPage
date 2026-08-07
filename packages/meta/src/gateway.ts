@@ -59,6 +59,12 @@ export type GraphParams = Record<
   string | number | boolean | null | undefined | object
 >;
 
+/**
+ * Meta มีมากกว่าหนึ่งโฮสต์: graph สำหรับ API ปกติ, rupload สำหรับอัปสื่อ (Reels)
+ * ยังต้องผ่าน gateway ทั้งคู่ เพื่อให้ token / log / rate limit อยู่ที่เดียว
+ */
+export type MetaHost = "graph" | "upload";
+
 export interface GatewayCallOptions {
   /** เพจที่จะใช้ token — null = ใช้ app access token (เช่น debug_token) */
   pageId: string | null;
@@ -75,6 +81,10 @@ export interface GatewayCallOptions {
   /** ปิด retry สำหรับงานที่ห้ามทำซ้ำ */
   noRetry?: boolean;
   idempotencyKey?: string;
+  /** โฮสต์ปลายทาง — ค่าเริ่มต้น "graph" */
+  host?: MetaHost;
+  /** header เพิ่มเติม (rupload ต้องใช้ file_url / offset) */
+  headers?: Record<string, string>;
 }
 
 export interface GatewayResult<T> {
@@ -119,6 +129,8 @@ export interface MetaGatewayConfig {
   appSecret: string;
   graphVersion?: string;
   baseUrl?: string;
+  /** โฮสต์สำหรับอัปสื่อ (Reels) */
+  uploadBaseUrl?: string;
   retry?: Partial<RetryPolicy>;
   rateLimit?: Partial<RateLimitConfig>;
   /** ส่ง appsecret_proof ไปด้วย (เปิดไว้ถ้าตั้ง "Require App Secret" ใน App Settings) */
@@ -163,6 +175,7 @@ export class MetaGateway {
       appSecret: config.appSecret,
       graphVersion: config.graphVersion ?? resolveGraphVersion(),
       baseUrl: config.baseUrl ?? "https://graph.facebook.com",
+      uploadBaseUrl: config.uploadBaseUrl ?? "https://rupload.facebook.com",
       useAppSecretProof: config.useAppSecretProof ?? true,
       defaultTimeoutMs: config.defaultTimeoutMs ?? 30_000,
       retry: { ...DEFAULT_RETRY, ...(config.retry ?? {}) },
@@ -255,6 +268,8 @@ export class MetaGateway {
           timeoutMs: opts.timeoutMs ?? this.cfg.defaultTimeoutMs,
           signal: opts.signal,
           idempotencyKey: opts.idempotencyKey,
+          host: opts.host ?? "graph",
+          extraHeaders: opts.headers,
         });
 
         this.safeLog({
@@ -407,10 +422,12 @@ export class MetaGateway {
     timeoutMs: number;
     signal?: AbortSignal;
     idempotencyKey?: string;
+    host: MetaHost;
+    extraHeaders?: Record<string, string>;
   }): Promise<Omit<GatewayResult<T>, "attempts">> {
-    const url = new URL(
-      `${this.cfg.baseUrl}/${this.cfg.graphVersion}/${args.path}`,
-    );
+    const base =
+      args.host === "upload" ? this.cfg.uploadBaseUrl : this.cfg.baseUrl;
+    const url = new URL(`${base}/${this.cfg.graphVersion}/${args.path}`);
 
     const bodyParams: Record<string, string> = {};
     for (const [k, v] of Object.entries(args.params)) {
@@ -435,13 +452,21 @@ export class MetaGateway {
 
     const headers: Record<string, string> = {
       // ใส่ token ใน header ไม่ใช่ query — URL โผล่ใน log/proxy ได้ header ไม่โผล่
-      authorization: `Bearer ${args.accessToken}`,
+      // rupload ใช้รูปแบบ "OAuth <token>" ไม่ใช่ "Bearer"
+      authorization:
+        args.host === "upload"
+          ? `OAuth ${args.accessToken}`
+          : `Bearer ${args.accessToken}`,
       accept: "application/json",
     };
     let body: string | undefined;
-    if (args.method === "POST") {
+    if (args.method === "POST" && args.host !== "upload") {
       headers["content-type"] = "application/x-www-form-urlencoded";
       body = new URLSearchParams(bodyParams).toString();
+    }
+    // rupload รับพารามิเตอร์ทาง header ไม่ใช่ body
+    for (const [k, v] of Object.entries(args.extraHeaders ?? {})) {
+      headers[k.toLowerCase()] = v;
     }
 
     const timeoutCtl = new AbortController();

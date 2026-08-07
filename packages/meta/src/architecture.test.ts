@@ -94,11 +94,22 @@ describe("สแกนซอร์สได้จริง", () => {
 });
 
 describe("กฎข้อ 1 — ทุก call ไป Meta ต้องผ่าน gateway", () => {
-  it("มีแค่ gateway.ts เท่านั้นที่รู้จัก host ของ Graph API", () => {
+  it("มีแค่ gateway.ts เท่านั้นที่รู้จักโฮสต์ API ของ Meta", () => {
+    // ครอบทั้ง graph (API ปกติ) และ rupload (อัปสื่อ) — เพิ่มโฮสต์ใหม่ต้องมาแก้ที่นี่
+    const apiHost = /\b(graph|rupload|graph-video)\.facebook\.com/;
     const offenders = PROD.filter(
       (f) =>
         f.rel !== "packages/meta/src/gateway.ts" &&
-        /graph\.facebook\.com/.test(stripComments(f.content)),
+        apiHost.test(stripComments(f.content)),
+    ).map((f) => f.rel);
+    expect(offenders).toEqual([]);
+  });
+
+  it("www.facebook.com ใช้ได้เฉพาะสร้างลิงก์ OAuth ให้ลูกค้ากด (ไม่ใช่ API call)", () => {
+    const offenders = PROD.filter(
+      (f) =>
+        f.rel !== "packages/meta/src/tokens.ts" &&
+        /www\.facebook\.com/.test(stripComments(f.content)),
     ).map((f) => f.rel);
     expect(offenders).toEqual([]);
   });
@@ -167,9 +178,20 @@ describe("กฎข้อ 3 — ห้าม log token แม้บางส่�
   it("gateway ใส่ token ใน header ไม่ใช่ query string", () => {
     const gw = PROD.find((f) => f.rel === "packages/meta/src/gateway.ts")!;
     const code = stripComments(gw.content);
-    expect(code).toMatch(/authorization.*Bearer/i);
-    // ต้องไม่มีการเซ็ต access_token ลง searchParams
+    // ใช้ [\s\S] แทน . เพราะค่า header เขียนคร่อมหลายบรรทัดได้
+    expect(code).toMatch(/authorization:[\s\S]{0,200}(Bearer|OAuth)/i);
+    // ต้องไม่มีการเซ็ต access_token ลง searchParams ไม่ว่าจะที่ไหน
     expect(code).not.toMatch(/searchParams\.set\(\s*["']access_token["']/);
+    expect(code).not.toMatch(/[?&]access_token=/);
+  });
+
+  it("ทุกโมดูลที่ยิง Meta ส่ง token ผ่าน gateway ไม่ประกอบ header เอง", () => {
+    const offenders = PROD.filter(
+      (f) =>
+        f.rel !== "packages/meta/src/gateway.ts" &&
+        /authorization\s*[:=]/i.test(stripComments(f.content)),
+    ).map((f) => f.rel);
+    expect(offenders).toEqual([]);
   });
 });
 
