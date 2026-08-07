@@ -1,0 +1,20 @@
+{
+  // typecheck ไฟล์เทสต์และ test-helpers ด้วย โดยไม่ให้มันหลุดเข้า dist ของแพ็กเกจจริง
+  // ชี้ @page-os/* ไปที่ src ตรงๆ เหมือนที่ vitest ทำ จะได้ไม่ต้อง build ก่อน
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@page-os/core": ["./packages/core/src/index.ts"],
+      "@page-os/meta": ["./packages/meta/src/index.ts"],
+      "@page-os/meta/test-helpers": ["./packages/meta/src/test-helpers.ts"],
+      "@page-os/db": ["./packages/db/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts"]
+}

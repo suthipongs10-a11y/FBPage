@@ -1,0 +1,60 @@
+# PAGE OS
+
+ระบบดูแลเพจ Facebook ครบวงจร สำหรับ "คนเดียวดูแลหลายเพจ"
+สเปกเต็มอยู่ที่ `PAGE-OS-SPEC.md` — สถานะงานอยู่ที่ `STATUS.md`
+
+## หลักการที่ห้ามละเมิด
+
+1. ทุก call ไป Meta ต้องผ่าน `packages/meta` (`MetaGateway.call()`) เท่านั้น
+   ห้ามเรียก `graph.facebook.com` ตรงจากที่อื่นเด็ดขาด
+2. Graph version อ่านจาก env `GRAPH_VERSION` ห้าม hardcode
+   — มีที่เดียวที่รู้จักเลขเวอร์ชันคือ `resolveGraphVersion()`
+3. Token เก็บเข้ารหัสเสมอ (AES-256-GCM) ห้าม log token แม้บางส่วน
+   — `createLogger()` scrub ให้อัตโนมัติ แต่อย่าพึ่งอย่างเดียว อย่าใส่ token ลง log ตั้งแต่แรก
+4. เวลาใน DB เป็น UTC เสมอ แสดงผลค่อยแปลงตาม timezone ของเพจ
+5. ทุกงานที่เรียก external API ต้องผ่าน queue ห้ามทำใน request handler
+6. ทุก webhook ต้อง idempotent ด้วย `mid` / `comment_id`
+7. บอทห้ามใช้ HUMAN_AGENT tag เด็ดขาด (Meta อนุญาตเฉพาะข้อความที่คนพิมพ์)
+8. ห้ามใช้ legacy message tags — `CONFIRMED_EVENT_UPDATE`, `POST_PURCHASE_UPDATE`,
+   `ACCOUNT_UPDATE` ปลดระวางแล้ว 27 เม.ย. 2026 → ใช้ Utility Template แทน
+
+## ข้อจำกัด Meta ที่ต้องจำ (ส.ค. 2026)
+
+| เรื่อง | สถานะ |
+|---|---|
+| Graph API | v25.0 — v18/v19 หมดอายุแล้ว |
+| Recurring Notifications | ปิดในไทย → ห้ามวางแผนฟีเจอร์ broadcast รายสัปดาห์ |
+| Page Reach / Impressions | ปลดระวาง มิ.ย. 2026 → ใช้ Page Viewer Metric / Media Views |
+| HUMAN_AGENT tag | ขยายเป็น 7 วัน แต่ต้องเป็นข้อความที่คนพิมพ์ |
+| Webhook mTLS | ต้อง trust Meta internal CA ตั้งแต่ 31 มี.ค. 2026 |
+| Rate limit | error 4 (app), 32 (page), 80001 (page/system) + header `X-App-Usage` |
+
+## โครงสร้าง
+
+```
+packages/core     crypto (AES-256-GCM), logger ที่ redact token, Clock ที่ inject ได้
+packages/meta     Meta Gateway + error mapping + rate limit + OAuth/token lifecycle
+packages/db       Prisma schema + TokenStore ที่เข้ารหัส + health check
+apps/web          Next.js 15 (dashboard + client portal)      [ยังไม่ได้ทำ]
+apps/webhook      Fastify service รับ webhook                  [ยังไม่ได้ทำ]
+apps/worker       BullMQ workers                               [ยังไม่ได้ทำ]
+```
+
+## คำสั่ง
+
+```bash
+pnpm install
+pnpm check        # typecheck + test ทั้งหมด (รันก่อน commit ทุกครั้ง)
+pnpm test         # เฉพาะเทสต์
+pnpm typecheck    # เฉพาะ typecheck (รวมไฟล์เทสต์)
+pnpm build        # build dist ของทุก package
+```
+
+## แนวทางเขียนโค้ดในโปรเจ็คนี้
+
+- **Inject dependency เสมอ** — `Clock`, `fetch`, `Logger`, `TokenStore` ส่งเข้ามาทาง constructor
+  ทำให้เทสต์ได้โดยไม่ต้องต่อเน็ตและไม่ต้องรอเวลาจริง (ดู `FakeClock`)
+- **ข้อความ error เป็นภาษาไทยและบอกว่าต้องทำอะไรต่อ** ไม่ใช่แค่บอกว่าพัง
+  ทุก error จาก gateway มีฟิลด์ `action` ให้โค้ดตัดสินใจ และ `th` ให้คนอ่าน
+- **คอมเมนต์อธิบาย "ทำไม" ไม่ใช่ "ทำอะไร"** โดยเฉพาะจุดที่ทำสวนสามัญสำนึก
+- เทสต์ต้องอธิบายพฤติกรรมที่ต้องการ ไม่ใช่สะท้อนโค้ดที่เขียนไป

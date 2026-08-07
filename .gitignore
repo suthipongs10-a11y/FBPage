@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+
+# ห้าม commit ของจริง — ใช้ .env.example เป็นแม่แบบ
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
+coverage/

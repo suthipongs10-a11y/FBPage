@@ -1,0 +1,426 @@
+// PAGE OS — Data model (สเปกข้อ 3)
+//
+// กฎที่สะท้อนอยู่ใน schema นี้:
+//   - กฎข้อ 3: token เก็บเป็น ciphertext เท่านั้น (คอลัมน์ชื่อ encrypted_token)
+//   - กฎข้อ 4: เวลาทุกคอลัมน์เป็น UTC (@db.Timestamptz)
+//   - กฎข้อ 6: webhook idempotent ด้วย mid / comment_id → unique index
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ---------------------------------------------------------------- workspace
+
+model Workspace {
+  id         String   @id @default(uuid())
+  name       String
+  clientName String   @map("client_name")
+  brandConfig Json    @default("{}") @map("brand_config")
+  plan       String   @default("STARTER")
+  /// SLA ที่สัญญากับลูกค้า (นาที) — STARTER 240 / GROWTH 60 / FULL 30
+  slaMinutes Int      @default(240) @map("sla_minutes")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pages     Page[]
+  auditLogs AuditLog[]
+
+  @@map("workspaces")
+}
+
+model Page {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  fbPageId    String   @unique @map("fb_page_id")
+  igUserId    String?  @map("ig_user_id")
+  name        String
+  category    String?
+  /// timezone ของเพจ ใช้ตอนแสดงผล — ใน DB เก็บ UTC เสมอ (กฎข้อ 4)
+  timezone    String   @default("Asia/Bangkok")
+  /// ปุ่มปิดบอทฉุกเฉินต่อเพจ (M2 Bot Kill Switch)
+  botEnabled  Boolean  @default(true) @map("bot_enabled")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tokens          PageToken[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  posts           Post[]
+  postTargets     PostTarget[]
+  comments        Comment[]
+  botFlows        BotFlow[]
+  knowledgeDocs   KnowledgeDoc[]
+  automationRules AutomationRule[]
+  leads           Lead[]
+  insights        InsightsDaily[]
+
+  @@index([workspaceId])
+  @@map("pages")
+}
+
+// ------------------------------------------------------------------- tokens
+
+enum TokenStatus {
+  active
+  expiring_soon
+  expired
+  revoked
+  missing_permissions
+  unknown
+
+  @@map("token_status")
+}
+
+enum TokenKind {
+  user
+  page
+  system_user
+  app
+
+  @@map("token_kind")
+}
+
+model PageToken {
+  id     String @id @default(uuid())
+  pageId String @map("page_id")
+  /// ciphertext จาก encryptToken() เท่านั้น — ห้ามเก็บ plaintext (กฎข้อ 3)
+  encryptedToken String      @map("encrypted_token")
+  tokenType      TokenKind   @default(page) @map("token_type")
+  scopes         String[]    @default([])
+  expiresAt      DateTime?   @map("expires_at") @db.Timestamptz(6)
+  lastCheckedAt  DateTime?   @map("last_checked_at") @db.Timestamptz(6)
+  status         TokenStatus @default(unknown)
+  /// ข้อความไทยอธิบายสถานะล่าสุด ใช้แสดงในหน้า Connection Status
+  statusReason   String?     @map("status_reason")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// 1 เพจมี token ที่ใช้งานได้ 1 ตัวต่อชนิด
+  @@unique([pageId, tokenType])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("page_tokens")
+}
+
+// ------------------------------------------------------------ inbox / CRM
+
+model Contact {
+  id        String   @id @default(uuid())
+  pageId    String   @map("page_id")
+  psid      String?
+  igId      String?  @map("ig_id")
+  name      String?
+  avatar    String?
+  tags      String[] @default([])
+  firstSeen DateTime @default(now()) @map("first_seen") @db.Timestamptz(6)
+  lastSeen  DateTime @default(now()) @map("last_seen") @db.Timestamptz(6)
+
+  page          Page           @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  leads         Lead[]
+
+  @@unique([pageId, psid])
+  @@unique([pageId, igId])
+  @@index([pageId, lastSeen])
+  @@map("contacts")
+}
+
+enum Channel {
+  messenger
+  instagram
+  comment
+  rating
+
+  @@map("channel")
+}
+
+model Conversation {
+  id        String  @id @default(uuid())
+  pageId    String  @map("page_id")
+  contactId String  @map("contact_id")
+  channel   Channel
+  status    String  @default("open")
+  /// หมดเวลา 24 ชม. เมื่อไหร่ — ใช้แสดง badge นับถอยหลังใน M1
+  windowExpiresAt DateTime? @map("window_expires_at") @db.Timestamptz(6)
+  /// บอทหยุดพูดจนถึงเมื่อไหร่ — เซ็ตทุกครั้งที่คนพิมพ์เอง (ข้อ 6.3)
+  botPausedUntil  DateTime? @map("bot_paused_until") @db.Timestamptz(6)
+  assignedTo      String?   @map("assigned_to")
+  slaDueAt        DateTime? @map("sla_due_at") @db.Timestamptz(6)
+  unread          Int       @default(0)
+  /// โน้ตภายใน ลูกค้าไม่เห็น (M1)
+  internalNote    String?   @map("internal_note")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page     Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([pageId, status])
+  @@index([windowExpiresAt])
+  @@index([slaDueAt])
+  @@map("conversations")
+}
+
+enum Direction {
+  inbound
+  outbound
+
+  @@map("direction")
+}
+
+/// ใครเป็นคนส่ง — HUMAN_AGENT tag ใช้ได้เฉพาะ human เท่านั้น (กฎข้อ 7)
+enum SentBy {
+  human
+  bot
+  system
+
+  @@map("sent_by")
+}
+
+model Message {
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  direction      Direction
+  sentBy         SentBy    @map("sent_by")
+  body           String?
+  attachments    Json      @default("[]")
+  /// mid ของ Meta — unique key สำหรับ idempotency (กฎข้อ 6)
+  mid            String?   @unique
+  tagUsed        String?   @map("tag_used")
+  deliveryStatus String    @default("pending") @map("delivery_status")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// -------------------------------------------------------------- publishing
+
+enum PostStatus {
+  draft
+  pending_approval
+  scheduled
+  publishing
+  published
+  failed
+  cancelled
+
+  @@map("post_status")
+}
+
+model Post {
+  id           String     @id @default(uuid())
+  pageId       String     @map("page_id")
+  type         String     @default("text")
+  body         String
+  media        Json       @default("[]")
+  scheduledAt  DateTime?  @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt  DateTime?  @map("published_at") @db.Timestamptz(6)
+  fbPostId     String?    @map("fb_post_id")
+  status       PostStatus @default(draft)
+  /// hash ของเนื้อหา ใช้กันโพสต์ซ้ำใน 90 วัน (M4 Duplicate Guard)
+  contentHash    String   @map("content_hash")
+  approvalStatus String   @default("none") @map("approval_status")
+  createdBy      String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page     Page         @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  targets  PostTarget[]
+  comments Comment[]
+
+  @@index([pageId, contentHash, publishedAt])
+  @@index([status, scheduledAt])
+  @@map("posts")
+}
+
+model PostTarget {
+  id           String     @id @default(uuid())
+  postId       String     @map("post_id")
+  pageId       String     @map("page_id")
+  overrideBody String?    @map("override_body")
+  fbPostId     String?    @map("fb_post_id")
+  status       PostStatus @default(scheduled)
+  error        String?
+  publishedAt  DateTime?  @map("published_at") @db.Timestamptz(6)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, pageId])
+  @@index([status])
+  @@map("post_targets")
+}
+
+model Comment {
+  id           String    @id @default(uuid())
+  postId       String?   @map("post_id")
+  pageId       String    @map("page_id")
+  /// unique เพื่อ idempotency ของ webhook feed (กฎข้อ 6)
+  fbCommentId  String    @unique @map("fb_comment_id")
+  authorId     String?   @map("author_id")
+  authorName   String?   @map("author_name")
+  body         String?
+  sentiment    String?
+  actionTaken  String?   @map("action_taken")
+  /// Private Reply ทำได้ครั้งเดียวต่อคอมเมนต์ ภายใน 7 วัน (M3)
+  privateRepliedAt DateTime? @map("private_replied_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  post Post? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  page Page  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+  @@map("comments")
+}
+
+// ------------------------------------------------------------------- bot
+
+model BotFlow {
+  id        String   @id @default(uuid())
+  pageId    String   @map("page_id")
+  name      String
+  graphJson Json     @map("graph_json")
+  isActive  Boolean  @default(false) @map("is_active")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, name, version])
+  @@index([pageId, isActive])
+  @@map("bot_flows")
+}
+
+model KnowledgeDoc {
+  id        String   @id @default(uuid())
+  pageId    String   @map("page_id")
+  title     String
+  source    String?
+  chunkText String   @map("chunk_text")
+  /// pgvector — ต้องสร้าง index ด้วย migration แยก (Prisma ยังไม่รองรับ vector index)
+  embedding Unsupported("vector(768)")?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@map("knowledge_docs")
+}
+
+model AutomationRule {
+  id          String   @id @default(uuid())
+  pageId      String   @map("page_id")
+  triggerType String   @map("trigger_type")
+  pattern     String
+  action      Json
+  priority    Int      @default(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, isActive, priority])
+  @@map("automation_rules")
+}
+
+model Lead {
+  id         String    @id @default(uuid())
+  pageId     String    @map("page_id")
+  contactId  String?   @map("contact_id")
+  fieldsJson Json      @default("{}") @map("fields_json")
+  status     String    @default("new")
+  exportedAt DateTime? @map("exported_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page    Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([pageId, status])
+  @@map("leads")
+}
+
+// -------------------------------------------------------------- analytics
+
+model InsightsDaily {
+  pageId    String   @map("page_id")
+  date      DateTime @db.Date
+  metricKey String   @map("metric_key")
+  value     Float
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@id([pageId, date, metricKey])
+  @@index([pageId, metricKey, date])
+  @@map("insights_daily")
+}
+
+// ------------------------------------------------------------------- ops
+
+model Job {
+  id        String    @id @default(uuid())
+  type      String
+  payload   Json
+  runAt     DateTime  @map("run_at") @db.Timestamptz(6)
+  attempts  Int       @default(0)
+  lastError String?   @map("last_error")
+  status    String    @default("pending")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, runAt])
+  @@map("jobs")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  workspaceId String?  @map("workspace_id")
+  actor       String
+  action      String
+  target      String?
+  meta        Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}
+
+/// log ทุก call ที่ยิงไป Meta (สเปกข้อ 5 หน้าที่ 7)
+/// ใช้ตอบคำถามลูกค้าว่า "ทำไมโพสต์ไม่ขึ้น"
+model MetaCallLog {
+  id           String   @id @default(uuid())
+  pageId       String?  @map("page_id")
+  method       String
+  path         String
+  httpStatus   Int?     @map("http_status")
+  ok           Boolean
+  durationMs   Int      @map("duration_ms")
+  attempts     Int      @default(1)
+  errorCode    Int?     @map("error_code")
+  errorSubcode Int?     @map("error_subcode")
+  errorMessage String?  @map("error_message")
+  errorTh      String?  @map("error_th")
+  fbtraceId    String?  @map("fbtrace_id")
+  appUsagePct  Float?   @map("app_usage_pct")
+  pageUsagePct Float?   @map("page_usage_pct")
+  priority     String   @default("normal")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([pageId, createdAt])
+  @@index([ok, createdAt])
+  @@map("meta_call_logs")
+}
