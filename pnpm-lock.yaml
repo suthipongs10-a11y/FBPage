@@ -35,6 +35,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/moderation:
+    dependencies:
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/meta':
+        specifier: workspace:*
+        version: link:../meta
+
   packages/publish:
     dependencies:
       '@page-os/core':

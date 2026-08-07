@@ -23,6 +23,10 @@ export default defineConfig({
         find: "@page-os/publish",
         replacement: r("./packages/publish/src/index.ts"),
       },
+      {
+        find: "@page-os/moderation",
+        replacement: r("./packages/moderation/src/index.ts"),
+      },
     ],
   },
   test: {

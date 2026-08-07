@@ -12,6 +12,9 @@
     },
     {
       "path": "./packages/publish"
+    },
+    {
+      "path": "./packages/moderation"
     }
   ]
 }
