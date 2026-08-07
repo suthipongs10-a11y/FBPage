@@ -65,6 +65,20 @@ export {
 } from "./tokens.js";
 
 export {
+  createOAuthState,
+  verifyOAuthState,
+  OAuthStateError,
+  OAUTH_STATE_TTL_MS,
+  type OAuthStatePayload,
+} from "./oauth-state.js";
+
+export {
+  SubscriptionService,
+  REQUIRED_WEBHOOK_FIELDS,
+  type WebhookSubscriptionStatus,
+} from "./subscriptions.js";
+
+export {
   noopCallLog,
   PRIORITY_WEIGHT,
   type CallLogEntry,
