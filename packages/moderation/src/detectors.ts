@@ -12,6 +12,7 @@ import {
   normalizeText,
 } from "./normalize.js";
 
+
 export interface DetectionHit {
   /** เจออะไร */
   kind: DetectionKind;
@@ -151,31 +152,70 @@ export function detectLineId(text: string): DetectionHit | null {
  *
  * ไม่ใส่คำก้ำกึ่งอย่าง "ควาย" หรือ "โง่" เพราะลูกค้าจริงใช้พูดเล่นกันเยอะ
  * ถ้าลูกค้าอยากเข้มกว่านี้ให้เพิ่มเองผ่าน customKeywords ของแต่ละเพจ
+ *
+ * **ห้ามใส่คำที่เป็นส่วนหนึ่งของคำสุภาพ** ภาษาไทยไม่เว้นวรรคระหว่างคำ
+ * การแมตช์จึงเป็น substring ล้วน คำอย่าง "สัตว์" จะไปโดน "สัตว์เลี้ยง"
+ * และ "กู" จะไปโดน "กูเกิล" ทำให้เพจร้านสัตว์เลี้ยงโดนซ่อนคอมเมนต์ลูกค้าทั้งวัน
+ * คำที่มีความเสี่ยงแบบนี้ต้องใส่ในรูปที่ยาวพอจะไม่กำกวม (เช่น "ไอ้สัตว์")
  */
 export const PROFANITY_TH = [
   "เหี้ย",
   "สัส",
-  "สัตว์",
+  "ไอ้สัตว์",
+  "อีสัตว์",
   "ควย",
   "เย็ด",
   "แม่ง",
-  "ไอ้สัตว์",
   "อีดอก",
   "ระยำ",
   "ชิบหาย",
   "ฉิบหาย",
-  "มึง",
-  "กู",
+  "ไอ้เวร",
+  "อีเวร",
 ] as const;
 
 export const PROFANITY_EN = ["fuck", "shit", "bitch", "asshole"] as const;
+
+/**
+ * คำสุภาพที่มีคำหยาบเป็นส่วนประกอบ — เจอคำพวกนี้ให้ยกเว้นตำแหน่งนั้น
+ *
+ * ใช้เมื่อลูกค้าเพิ่มคำเข้มๆ เองผ่าน `extra` ซึ่งเราคุมไม่ได้ว่าจะกำกวมแค่ไหน
+ */
+export const PROFANITY_EXCEPTIONS = [
+  "สัตว์เลี้ยง",
+  "สัตวแพทย์",
+  "สัตว์แพทย์",
+  "อาหารสัตว์",
+  "โรงพยาบาลสัตว์",
+  "สวนสัตว์",
+  "สัตว์น้ำ",
+  "สัตว์ป่า",
+  "กูเกิล",
+  "google",
+  "มึงเอ็ง", // สำนวน
+] as const;
+
+/**
+ * ตัดคำที่ได้รับการยกเว้นออกจากข้อความก่อน แล้วค่อยหาคำหยาบในส่วนที่เหลือ
+ * ทำให้ "รับฝากสัตว์เลี้ยงไหมคะ" ไม่ถูกจับ แต่ "ไอ้สัตว์" ยังถูกจับอยู่
+ */
+function stripExceptions(text: string): string {
+  let out = normalizeText(text);
+  for (const ex of PROFANITY_EXCEPTIONS) {
+    const nex = normalizeText(ex);
+    if (nex === "") continue;
+    out = out.split(nex).join(" ");
+  }
+  return out;
+}
 
 export function detectProfanity(
   text: string,
   extra: readonly string[] = [],
 ): DetectionHit | null {
+  const cleaned = stripExceptions(text);
   const found = containsAny(
-    text,
+    cleaned,
     [...PROFANITY_TH, ...PROFANITY_EN, ...extra],
     { aggressive: true },
   );

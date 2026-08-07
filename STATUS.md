@@ -1,6 +1,6 @@
 # สถานะงาน PAGE OS
 
-อัปเดตล่าสุด: หลังจบ M-B
+อัปเดตล่าสุด: หลังจบ M-C
 
 ## ความคืบหน้าตาม Roadmap (สเปกข้อ 7)
 
@@ -9,8 +9,8 @@
 | **M-A** | Meta Gateway + Auth + Token management + Connection status | ✅ เสร็จ |
 | — | ยื่น App Review + Business Verification | ⬜ งานนอกโค้ด (ดูข้อ 10 ในสเปก) |
 | **M-B** | Content Calendar + Publishing + Retry + Duplicate guard | ✅ เสร็จ |
-| **M-C** | Comment Automation | 🔜 ถัดไป |
-| **M-D** | Analytics sync + Monthly PDF report | ⬜ |
+| **M-C** | Comment Automation | ✅ เสร็จ |
+| **M-D** | Analytics sync + Monthly PDF report | 🔜 ถัดไป |
 | **M-E** | Unified Inbox + Webhook realtime + SLA | ⬜ |
 | **M-F** | Chatbot 3 ชั้น + Flow Builder + RAG | ⬜ |
 | **M-G** | AI Content Studio + Template Library | ⬜ |
@@ -49,7 +49,7 @@
 ### เทสต์
 
 ```
-387 tests ผ่านทั้งหมด (21 ไฟล์)
+508 tests ผ่านทั้งหมด (27 ไฟล์)
 ```
 
 รันด้วย `pnpm check` (typecheck + test)

@@ -148,15 +148,37 @@ function matchTrigger(
   }
 }
 
-/** action ที่ขัดกัน — ตัวแรกที่เกิดชนะ */
+/**
+ * ลำดับอำนาจของ action — เลขมากกว่าชนะเมื่อขัดกัน
+ *
+ * ต้องเป็นแบบ "ไม่สมมาตร" ไม่ใช่ "ตัวแรกที่เกิดชนะ"
+ * เพราะลูกค้าตั้ง priority ของกฎเองได้ ถ้าเผลอตั้งกฎ "กดไลก์" ไว้ก่อนกฎ "ซ่อน"
+ * คอมเมนต์หยาบจะไม่ถูกซ่อน — และไม่มีใครรู้ตัวจนกว่าลูกค้าจะโทรมาด่า
+ *
+ * การปกป้องเพจต้องชนะการเพิ่ม engagement เสมอ
+ */
+const ACTION_RANK: Record<string, number> = {
+  delete: 100,
+  hide: 90,
+  flag: 50,
+  alert: 50,
+  unhide: 40,
+  reply: 30,
+  private_reply: 30,
+  like: 10,
+};
+
+/** คู่ที่ทำพร้อมกันไม่ได้ */
 const CONFLICTS: Array<[string, string]> = [
   ["hide", "reply"],
   ["hide", "like"],
   ["hide", "private_reply"],
+  ["hide", "unhide"],
   ["delete", "reply"],
   ["delete", "like"],
   ["delete", "private_reply"],
   ["delete", "hide"],
+  ["delete", "unhide"],
 ];
 
 function conflictsWith(existing: string, candidate: string): boolean {
@@ -164,6 +186,10 @@ function conflictsWith(existing: string, candidate: string): boolean {
     ([a, b]) =>
       (a === existing && b === candidate) || (a === candidate && b === existing),
   );
+}
+
+function rank(kind: string): number {
+  return ACTION_RANK[kind] ?? 0;
 }
 
 export function evaluateRules(
@@ -203,8 +229,17 @@ export function evaluateRules(
         continue;
       }
 
-      if (actions.some((x) => conflictsWith(x.kind, a.kind))) continue;
       if (actions.some((x) => x.kind === a.kind)) continue;
+
+      const blockers = actions.filter((x) => conflictsWith(x.kind, a.kind));
+      if (blockers.length > 0) {
+        // ตัวใหม่อ่อนกว่าตัวที่วางแผนไว้แล้ว → ทิ้งตัวใหม่
+        if (blockers.some((b) => rank(b.kind) >= rank(a.kind))) continue;
+        // ตัวใหม่แรงกว่า (เช่น hide มาทีหลัง like) → ถอนตัวที่อ่อนกว่าออก
+        for (const b of blockers) {
+          actions.splice(actions.indexOf(b), 1);
+        }
+      }
 
       const planned: PlannedAction = {
         kind: a.kind,

@@ -294,3 +294,53 @@ describe("defaultRules — ชุดที่เปิดให้ลูกค�
     expect(msg).toContain("{ชื่อร้าน}");
   });
 });
+
+describe("การซ่อนต้องชนะเสมอ ไม่ขึ้นกับลำดับที่ลูกค้าตั้ง", () => {
+  it("ตั้ง priority ของไลก์ไว้ก่อนซ่อน คอมเมนต์หยาบก็ยังต้องถูกซ่อน", () => {
+    // ลูกค้าตั้งค่าเองได้ ถ้าเรียงผิดแล้วคำหยาบไม่ถูกซ่อน = ระบบพังเงียบๆ
+    const rules = [
+      rule({
+        id: "like-first",
+        priority: 5,
+        trigger: { type: "positive_sentiment" },
+        actions: [{ kind: "like" }],
+      }),
+      rule({
+        id: "hide-later",
+        priority: 99,
+        trigger: { type: "profanity" },
+        actions: [{ kind: "hide" }],
+      }),
+    ];
+    // ข้อความมีทั้งคำชมและคำหยาบ
+    const r = evaluateRules(rules, {
+      comment: comment("ของดีมากค่ะ ประทับใจ แต่ไอ้สัตว์คนนั้นนะ"),
+    });
+    const kinds = r.actions.map((a) => a.kind);
+    expect(kinds).toContain("hide");
+    expect(kinds).not.toContain("like");
+  });
+
+  it("ตั้ง reply ไว้ก่อน delete ก็ยังต้องลบ ไม่ตอบใต้คอมเมนต์ที่จะถูกลบ", () => {
+    const rules = [
+      rule({
+        id: "reply-first",
+        priority: 1,
+        trigger: { type: "buying_intent" },
+        actions: [{ kind: "reply", message: "ทักแชทได้เลยค่ะ" }],
+      }),
+      rule({
+        id: "hide-later",
+        priority: 100,
+        trigger: { type: "phone" },
+        actions: [{ kind: "hide" }],
+      }),
+    ];
+    const r = evaluateRules(rules, {
+      comment: comment("สนใจไหม โทร 0812345678"),
+    });
+    const kinds = r.actions.map((a) => a.kind);
+    expect(kinds).toContain("hide");
+    expect(kinds).not.toContain("reply");
+  });
+});
