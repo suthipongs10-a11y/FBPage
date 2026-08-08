@@ -31,6 +31,10 @@ export default defineConfig({
         find: "@page-os/analytics",
         replacement: r("./packages/analytics/src/index.ts"),
       },
+      {
+        find: "@page-os/inbox",
+        replacement: r("./packages/inbox/src/index.ts"),
+      },
     ],
   },
   test: {

@@ -38,6 +38,15 @@ importers:
         specifier: workspace:*
         version: link:../meta
 
+  packages/inbox:
+    dependencies:
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/meta':
+        specifier: workspace:*
+        version: link:../meta
+
   packages/meta:
     dependencies:
       '@page-os/core':

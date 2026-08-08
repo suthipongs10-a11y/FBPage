@@ -220,20 +220,39 @@ describe("กฎข้อ 4 — เวลาใน DB เป็น UTC เสม
 });
 
 describe("กฎข้อ 7 และ 8 — message tag", () => {
-  it("ไม่มีที่ไหนส่ง HUMAN_AGENT tag (มีได้แค่ในตรรกะที่ตรวจว่าคนพิมพ์)", () => {
-    const offenders = PROD.filter((f) =>
-      /HUMAN_AGENT/.test(stripComments(f.content)),
+  /**
+   * ไฟล์ที่หน้าที่คือ "บังคับกฎ" จึงต้องเอ่ยชื่อแท็กพวกนี้ได้
+   * เพิ่มไฟล์เข้ารายการนี้ต้องมีเหตุผลว่าไฟล์นั้นปฏิเสธแท็ก ไม่ใช่ใช้แท็ก
+   */
+  const TAG_POLICY_FILES = new Set([
+    "packages/meta/src/errors.ts",
+    "packages/inbox/src/messaging-policy.ts",
+    "packages/inbox/src/index.ts",
+  ]);
+
+  it("HUMAN_AGENT ปรากฏได้เฉพาะในไฟล์ที่บังคับกฎ", () => {
+    const offenders = PROD.filter(
+      (f) =>
+        !TAG_POLICY_FILES.has(f.rel) &&
+        /HUMAN_AGENT/.test(stripComments(f.content)),
     ).map((f) => f.rel);
     expect(offenders).toEqual([]);
   });
 
-  it("legacy tag ที่ปลดระวางแล้วปรากฏได้แค่ในตัวตรวจจับ error", () => {
+  it("ตัวบังคับกฎต้องปฏิเสธ HUMAN_AGENT เมื่อผู้ส่งไม่ใช่คน", () => {
+    // ไม่พอที่จะให้ไฟล์นี้เอ่ยชื่อแท็กได้ ต้องพิสูจน์ว่ามันตรวจผู้ส่งจริง
+    const policy = PROD.find(
+      (f) => f.rel === "packages/inbox/src/messaging-policy.ts",
+    )!;
+    const code = stripComments(policy.content);
+    expect(code).toMatch(/HUMAN_AGENT[\s\S]{0,200}sentBy\s*!==\s*["']human["']/);
+  });
+
+  it("legacy tag ที่ปลดระวางแล้วปรากฏได้แค่ในไฟล์ที่ปฏิเสธมัน", () => {
     const legacy =
       /(CONFIRMED_EVENT_UPDATE|POST_PURCHASE_UPDATE|ACCOUNT_UPDATE)/;
     const offenders = PROD.filter(
-      (f) =>
-        f.rel !== "packages/meta/src/errors.ts" &&
-        legacy.test(stripComments(f.content)),
+      (f) => !TAG_POLICY_FILES.has(f.rel) && legacy.test(stripComments(f.content)),
     ).map((f) => f.rel);
     expect(offenders).toEqual([]);
   });
