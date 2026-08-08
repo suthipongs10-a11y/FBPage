@@ -35,6 +35,10 @@ export default defineConfig({
         find: "@page-os/inbox",
         replacement: r("./packages/inbox/src/index.ts"),
       },
+      {
+        find: "@page-os/bot",
+        replacement: r("./packages/bot/src/index.ts"),
+      },
     ],
   },
   test: {

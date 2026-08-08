@@ -21,6 +21,9 @@
     },
     {
       "path": "./packages/inbox"
+    },
+    {
+      "path": "./packages/bot"
     }
   ]
 }

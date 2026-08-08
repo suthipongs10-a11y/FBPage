@@ -18,7 +18,8 @@
       "@page-os/publish": ["./packages/publish/src/index.ts"],
       "@page-os/moderation": ["./packages/moderation/src/index.ts"],
       "@page-os/analytics": ["./packages/analytics/src/index.ts"],
-      "@page-os/inbox": ["./packages/inbox/src/index.ts"]
+      "@page-os/inbox": ["./packages/inbox/src/index.ts"],
+      "@page-os/bot": ["./packages/bot/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts"]

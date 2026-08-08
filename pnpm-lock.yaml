@@ -27,6 +27,18 @@ importers:
         specifier: workspace:*
         version: link:../meta
 
+  packages/bot:
+    dependencies:
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@page-os/moderation':
+        specifier: workspace:*
+        version: link:../moderation
+
   packages/core: {}
 
   packages/db:
