@@ -5,9 +5,45 @@
  * ให้ logger scrub ให้อัตโนมัติทั้ง (ก) ตาม key ที่รู้จัก และ (ข) ตาม pattern ของค่า
  */
 
-/** key ที่ค่าข้างในถือว่าเป็นความลับเสมอ ไม่ว่าจะหน้าตายังไง */
+/**
+ * key ที่ค่าข้างในถือว่าเป็นความลับเสมอ ไม่ว่าจะหน้าตายังไง
+ *
+ * ทุกคำในนี้ยาวพอที่จะไม่ไปโผล่กลางคำธรรมดาโดยบังเอิญ จึงเทียบแบบ substring ได้
+ * คำสั้นกว่านี้อยู่ที่ `SHORT_SECRET_KEYS` ข้างล่าง
+ */
 const SECRET_KEY_RE =
-  /(token|secret|password|passwd|credential|authorization|auth|signature|sig|api[-_]?key|client[-_]?secret|appsecret|cookie|session|private[-_]?key)/i;
+  /(token|secret|password|passwd|credential|authorization|signature|api[-_]?key|client[-_]?secret|appsecret|cookie|session|private[-_]?key)/i;
+
+/**
+ * คำสั้นที่ต้องเทียบแบบ "เต็มท่อน" ไม่ใช่ substring
+ *
+ * เคยเทียบแบบ substring แล้วเจอปัญหาจริงตอนรัน worker: log ของการปิดระบบ
+ * ขึ้นว่า `"signal": "[REDACTED]"` เพราะ **sig**nal มี "sig" อยู่ข้างใน
+ * ไล่ต่อแล้วเจออีกหลายคำที่โดนกลืนไปเงียบๆ:
+ *
+ *   in**sig**hts  → ตัวเลขทั้งโดเมน analytics หายจาก log
+ *   **auth**orName → ชื่อคนคอมเมนต์หาย ทำให้ไล่เคสคอมเมนต์ไม่ได้
+ *   de**sig**nId, as**sig**nee
+ *
+ * การ redact เกินไม่ได้ทำให้ระบบไม่ปลอดภัย แต่ทำให้ log ใช้สอบสวนไม่ได้ —
+ * ซึ่งพอถึงเวลาจริงก็แปลว่าเราไม่มี log
+ *
+ * ⚠️ ทั้ง `signature` และ `authorization` ยังอยู่ในรายการข้างบนแบบ substring
+ * การเปลี่ยนตรงนี้จึงไม่ได้เปิดช่องให้ค่าที่เป็นความลับหลุดเพิ่ม
+ */
+const SHORT_SECRET_KEYS: ReadonlySet<string> = new Set(["sig", "auth"]);
+
+/**
+ * ตัดชื่อ key เป็นท่อนๆ ตาม `-` `_` `.` และจุดที่เปลี่ยนเป็นตัวพิมพ์ใหญ่
+ * `"x-hub-sig"` → `["x","hub","sig"]`, `"sigValue"` → `["sig","value"]`
+ */
+function keySegments(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+|\s+/)
+    .filter((s) => s !== "")
+    .map((s) => s.toLowerCase());
+}
 
 /** key ที่ "ลงท้ายด้วย _id" มักไม่ใช่ความลับ กันไม่ให้ redact เกินจนอ่าน log ไม่รู้เรื่อง */
 const SAFE_KEY_RE = /^(page_id|user_id|app_id|token_type|token_id)$/i;
@@ -45,7 +81,8 @@ export function redactString(input: string): string {
 /** ค่านี้เป็นความลับเพราะ "ชื่อ key" บอกว่าเป็นความลับหรือเปล่า */
 export function isSecretKey(key: string): boolean {
   if (SAFE_KEY_RE.test(key)) return false;
-  return SECRET_KEY_RE.test(key);
+  if (SECRET_KEY_RE.test(key)) return true;
+  return keySegments(key).some((s) => SHORT_SECRET_KEYS.has(s));
 }
 
 const MAX_DEPTH = 8;

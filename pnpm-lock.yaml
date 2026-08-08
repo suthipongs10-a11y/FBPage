@@ -91,6 +91,42 @@ importers:
         specifier: ^5.11.2
         version: 5.11.2
 
+  apps/worker:
+    dependencies:
+      '@page-os/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@page-os/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@page-os/inbox':
+        specifier: workspace:*
+        version: link:../../packages/inbox
+      '@page-os/meta':
+        specifier: workspace:*
+        version: link:../../packages/meta
+      '@page-os/moderation':
+        specifier: workspace:*
+        version: link:../../packages/moderation
+      '@page-os/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
+      '@page-os/publish':
+        specifier: workspace:*
+        version: link:../../packages/publish
+      '@page-os/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
+      '@page-os/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+      bullmq:
+        specifier: ^6.0.9
+        version: 6.0.9(ioredis@5.11.1)
+
   packages/analytics:
     dependencies:
       '@page-os/core':

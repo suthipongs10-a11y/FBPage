@@ -10,3 +10,11 @@ export { PrismaPageTokenRepository } from "./token-repository.js";
 export { PrismaAlertStore, PrismaAuditStore } from "./ops-repository.js";
 export { PrismaMagicLinkStore } from "./portal-repository.js";
 export { PrismaCallLog, type PrismaCallLogOptions } from "./call-log.js";
+
+export {
+  PrismaPostRepository,
+  PrismaDuePostSource,
+  PrismaPublishedPostLookup,
+  type PrismaDuePostSourceOptions,
+  type PrismaPublishedPostLookupOptions,
+} from "./publish-repository.js";

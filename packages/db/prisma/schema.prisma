@@ -47,6 +47,9 @@ model Page {
   timezone    String   @default("Asia/Bangkok")
   /// ปุ่มปิดบอทฉุกเฉินต่อเพจ (M2 Bot Kill Switch)
   botEnabled  Boolean  @default(true) @map("bot_enabled")
+  /// ได้รับ webhook ล่าสุดเมื่อไหร่ — สเปกข้อ M8 ต้องเตือนเมื่อเงียบเกิน 30 นาที
+  /// null = ยังไม่เคยได้รับเลย ซึ่งแปลว่า subscribe ไม่สำเร็จ ไม่ใช่ว่าไม่มีคนทัก
+  lastWebhookAt DateTime? @map("last_webhook_at") @db.Timestamptz(6)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -256,6 +259,10 @@ model PostTarget {
   fbPostId     String?    @map("fb_post_id")
   status       PostStatus @default(scheduled)
   error        String?
+  /// ลองยิงไปแล้วกี่รอบ — ตัวตัดสิน retry อ่านค่านี้ และ PublishWorker ใช้มัน
+  /// ตัดสินว่าต้องไปถาม Meta ก่อนไหมว่ารอบที่แล้วโพสต์ขึ้นไปแล้วหรือยัง
+  /// (ทำเฉพาะรอบที่ 2 ขึ้นไป) ถ้าค่านี้ไม่ขยับ = ยิงซ้ำบนเพจลูกค้า
+  attempts     Int        @default(0)
   publishedAt  DateTime?  @map("published_at") @db.Timestamptz(6)
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)

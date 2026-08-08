@@ -195,3 +195,56 @@ describe("logger", () => {
     expect(records[0]!.msg).not.toContain("EAAGm0PX");
   });
 });
+
+/**
+ * เจอจากการรัน worker จริง: log ตอนปิดระบบขึ้นว่า `"signal": "[REDACTED]"`
+ * เพราะกฎเดิมเทียบคำว่า "sig" แบบ substring แล้วไปโดน si-g ใน "signal"
+ *
+ * การ redact เกินไม่ได้ทำให้ไม่ปลอดภัย แต่ทำให้ log ใช้สอบสวนไม่ได้
+ */
+describe("ไม่ redact เกินจนอ่าน log ไม่รู้เรื่อง", () => {
+  const shouldStay = [
+    "signal",
+    "insights",       // in-SIG-hts — ตัวเลขทั้งโดเมน analytics
+    "authorName",     // AUTH-orName — ชื่อคนคอมเมนต์
+    "authorId",
+    "designId",
+    "assignee",
+    "consignment",
+  ];
+
+  for (const key of shouldStay) {
+    it(`"${key}" ไม่ใช่ความลับ`, () => {
+      expect(isSecretKey(key)).toBe(false);
+    });
+  }
+
+  it("ค่าของ key พวกนี้ยังอยู่ครบใน log", () => {
+    const out = redact({ signal: "SIGTERM", insights: 42, authorName: "สมชาย" });
+    expect(out).toEqual({ signal: "SIGTERM", insights: 42, authorName: "สมชาย" });
+  });
+});
+
+describe("ของที่ต้อง redact ยังโดนเหมือนเดิม", () => {
+  const shouldGo = [
+    "sig",
+    "x-hub-sig",
+    "sigValue",
+    "auth",
+    "auth_header",
+    "x-hub-signature-256",
+    "authorization",
+    "access_token",
+    "client_secret",
+    "appsecret_proof",
+    "sessionId",
+    "cookie",
+    "private_key",
+  ];
+
+  for (const key of shouldGo) {
+    it(`"${key}" เป็นความลับ`, () => {
+      expect(isSecretKey(key)).toBe(true);
+    });
+  }
+});
