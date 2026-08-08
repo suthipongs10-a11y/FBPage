@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+/* ฟอนต์ bundle มากับส่วนขยาย ไม่ดึงจาก CDN — ห้ามยิง request ออกนอกเครื่อง (CLAUDE.md ข้อ 9)
+   เอาเฉพาะ subset ไทย+ละติน ไม่เอา cyrillic/vietnamese เพราะไม่ได้ใช้ */
+@import '@fontsource/ibm-plex-sans-thai/thai-400.css';
+@import '@fontsource/ibm-plex-sans-thai/thai-600.css';
+@import '@fontsource/ibm-plex-sans-thai/latin-400.css';
+@import '@fontsource/ibm-plex-sans-thai/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
+
+/* Design tokens — CLAUDE.md ข้อ 8 (แหล่งเดียวของทั้งระบบ) */
+@theme {
+  --color-ink: #0e1116; /* พื้นแผงข้าง */
+  --color-surface: #181d25;
+  --color-line: #2a313a;
+  --color-text: #e6e9ee;
+  --color-muted: #8a94a3;
+
+  --color-gauge-cold: #4c7fa8;
+  --color-gauge-base: #6b7484;
+  --color-gauge-warm: #d9a441;
+  --color-gauge-hot: #e4572e;
+  --color-gauge-peak: #f2f0ec; /* ขาวสว่าง = ทะลุสเกล */
+
+  --font-sans:
+    'IBM Plex Sans Thai', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+}
+
+/* ชื่อ token ตามที่ระบุใน CLAUDE.md ข้อ 8 — ใช้ได้ตรง ๆ ใน CSS ที่ไม่ผ่าน Tailwind */
+:root {
+  --ink: var(--color-ink);
+  --surface: var(--color-surface);
+  --line: var(--color-line);
+  --text: var(--color-text);
+  --muted: var(--color-muted);
+
+  --gauge-cold: var(--color-gauge-cold);
+  --gauge-base: var(--color-gauge-base);
+  --gauge-warm: var(--color-gauge-warm);
+  --gauge-hot: var(--color-gauge-hot);
+  --gauge-peak: var(--color-gauge-peak);
+
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--ink);
+    color: var(--text);
+    font-family: var(--font-sans);
+  }
+
+  /* ตัวเลขต้องเรียงคอลัมน์ให้ตรงกัน ไม่งั้นเทียบด้วยตาไม่ได้ (CLAUDE.md ข้อ 8) */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gauge-warm);
+    outline-offset: 2px;
+  }
+
+  /* animation มีได้เฉพาะตอน gauge เติมแถบครั้งแรก — ที่เหลือห้ามมี */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
