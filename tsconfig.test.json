@@ -20,8 +20,11 @@
       "@page-os/analytics": ["./packages/analytics/src/index.ts"],
       "@page-os/inbox": ["./packages/inbox/src/index.ts"],
       "@page-os/bot": ["./packages/bot/src/index.ts"],
-      "@page-os/studio": ["./packages/studio/src/index.ts"]
+      "@page-os/studio": ["./packages/studio/src/index.ts"],
+      "@/*": ["./apps/web/src/*"]
     }
   },
-  "include": ["packages/*/src/**/*.ts"]
+  // apps/web/src/lib เป็น TypeScript ล้วน (ไม่มี JSX) จึงตรวจรวมที่นี่ได้
+  // ส่วนไฟล์ .tsx ให้ `next build` เป็นคนตรวจ เพราะต้องใช้ตัวเลือก jsx คนละชุด
+  "include": ["packages/*/src/**/*.ts", "apps/web/src/lib/**/*.ts"]
 }

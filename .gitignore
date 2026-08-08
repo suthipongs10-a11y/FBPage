@@ -11,3 +11,8 @@ dist/
 .DS_Store
 *.log
 coverage/
+
+# Next.js
+apps/web/.next/
+apps/web/next-env.d.ts
+apps/web/tsconfig.tsbuildinfo

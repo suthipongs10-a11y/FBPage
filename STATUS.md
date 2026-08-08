@@ -1,6 +1,6 @@
 # สถานะงาน PAGE OS
 
-อัปเดตล่าสุด: หลังจบ M-G
+อัปเดตล่าสุด: หลังจบ M-G + หอบังคับการ (apps/web)
 
 ## ความคืบหน้าตาม Roadmap (สเปกข้อ 7)
 
@@ -17,6 +17,7 @@
 | **M-H** | Client Portal + Onboarding wizard | 🔜 ถัดไป |
 | **M-I** | Ops Center + Audit + Bulk actions | ⬜ |
 | **M-J** | Billing | ⬜ |
+| — | `apps/web` หอบังคับการ (Today View / ปฏิทินรวม / Inbox / สถานะเพจ) | ✅ รอบแรกเสร็จ |
 
 รายงาน audit ของแต่ละ milestone อยู่ที่ `docs/audit/M-*.md`
 
@@ -78,7 +79,7 @@
 ### เทสต์
 
 ```
-1,057 tests ผ่านทั้งหมด (51 ไฟล์)
+1,086 tests ผ่านทั้งหมด (52 ไฟล์)
 ```
 
 รันด้วย `pnpm check` (typecheck + test)

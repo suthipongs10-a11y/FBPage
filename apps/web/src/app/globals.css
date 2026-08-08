@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+/*
+ * PAGE OS — ระบบสี
+ *
+ * ออกแบบเป็น "หอบังคับการบิน" ไม่ใช่แดชบอร์ดโชว์ลูกค้า (สเปกข้อ 2)
+ * คนใช้มีคนเดียวและต้องอ่านทั้งวัน สีจึงต้องเงียบเป็นค่าเริ่มต้น
+ * แล้วปล่อยให้ "สิ่งที่ต้องทำ" เป็นของเดียวที่สว่างขึ้นมา
+ *
+ * โทนหลักเป็นมืด เพราะงานนี้เปิดค้างไว้ทั้งวันตั้งแต่เช้าถึงดึก
+ */
+
+@theme {
+  --font-sans:
+    "IBM Plex Sans Thai Looped", "IBM Plex Sans Thai", "Noto Sans Thai",
+    "Sarabun", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ระยะที่ใช้ซ้ำในตาราง/การ์ด */
+  --radius-card: 0.875rem;
+  --radius-pill: 999px;
+}
+
+:root {
+  color-scheme: dark;
+
+  --bg: oklch(0.17 0.012 258);
+  --bg-elevated: oklch(0.21 0.014 258);
+  --bg-sunken: oklch(0.14 0.012 258);
+  --surface: oklch(0.235 0.015 258);
+  --surface-hover: oklch(0.27 0.017 258);
+  --border: oklch(0.32 0.016 258);
+  --border-strong: oklch(0.42 0.02 258);
+
+  --text: oklch(0.95 0.006 258);
+  --text-muted: oklch(0.73 0.014 258);
+  --text-faint: oklch(0.58 0.014 258);
+
+  /* สีสัญญาณ — ใช้กับสถานะเท่านั้น ห้ามใช้ตกแต่ง */
+  --danger: oklch(0.68 0.19 22);
+  --danger-bg: oklch(0.3 0.09 22);
+  --warn: oklch(0.79 0.16 76);
+  --warn-bg: oklch(0.32 0.07 76);
+  --ok: oklch(0.75 0.16 155);
+  --ok-bg: oklch(0.29 0.07 155);
+  --info: oklch(0.72 0.13 235);
+  --info-bg: oklch(0.29 0.06 235);
+
+  --accent: oklch(0.7 0.15 285);
+  --accent-bg: oklch(0.3 0.08 285);
+}
+
+/*
+ * โหมดสว่างสำหรับคนที่ทำงานกลางแดด (แล็ปท็อปนอกออฟฟิศ)
+ * ไม่ได้แค่กลับสี — ปรับ chroma ใหม่ทั้งชุดเพราะสีสัญญาณบนพื้นขาว
+ * ต้องเข้มกว่าบนพื้นมืดถึงจะอ่านออกเท่ากัน
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --bg: oklch(0.98 0.004 258);
+    --bg-elevated: oklch(1 0 0);
+    --bg-sunken: oklch(0.955 0.005 258);
+    --surface: oklch(1 0 0);
+    --surface-hover: oklch(0.965 0.006 258);
+    --border: oklch(0.9 0.008 258);
+    --border-strong: oklch(0.8 0.012 258);
+
+    --text: oklch(0.24 0.014 258);
+    --text-muted: oklch(0.48 0.016 258);
+    --text-faint: oklch(0.62 0.014 258);
+
+    --danger: oklch(0.53 0.21 25);
+    --danger-bg: oklch(0.95 0.035 25);
+    --warn: oklch(0.56 0.14 68);
+    --warn-bg: oklch(0.96 0.05 80);
+    --ok: oklch(0.51 0.14 155);
+    --ok-bg: oklch(0.95 0.04 155);
+    --info: oklch(0.52 0.15 245);
+    --info-bg: oklch(0.95 0.035 240);
+
+    --accent: oklch(0.5 0.19 285);
+    --accent-bg: oklch(0.95 0.04 285);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: oklch(0.98 0.004 258);
+  --bg-elevated: oklch(1 0 0);
+  --bg-sunken: oklch(0.955 0.005 258);
+  --surface: oklch(1 0 0);
+  --surface-hover: oklch(0.965 0.006 258);
+  --border: oklch(0.9 0.008 258);
+  --border-strong: oklch(0.8 0.012 258);
+
+  --text: oklch(0.24 0.014 258);
+  --text-muted: oklch(0.48 0.016 258);
+  --text-faint: oklch(0.62 0.014 258);
+
+  --danger: oklch(0.53 0.21 25);
+  --danger-bg: oklch(0.95 0.035 25);
+  --warn: oklch(0.56 0.14 68);
+  --warn-bg: oklch(0.96 0.05 80);
+  --ok: oklch(0.51 0.14 155);
+  --ok-bg: oklch(0.95 0.04 155);
+  --info: oklch(0.52 0.15 245);
+  --info-bg: oklch(0.95 0.035 240);
+
+  --accent: oklch(0.5 0.19 285);
+  --accent-bg: oklch(0.95 0.04 285);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  /*
+   * ภาษาไทยมีวรรณยุกต์ซ้อนบนสระบน ("เกี๊ยะ" สูงสามชั้น)
+   * line-height ปกติของ Tailwind (1.5) ทำให้บรรทัดชนกัน
+   */
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ตัวเลขต้องเรียงตรงกันในตาราง ไม่งั้นอ่านเทียบยาก */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* หัวข้อภาษาไทยไม่ต้องการ line-height เยอะเท่าเนื้อความ */
+h1,
+h2,
+h3 {
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--accent-bg);
+  color: var(--text);
+}
+
+/* scrollbar ที่ไม่แย่งความสนใจ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * สีประจำลูกค้า (สเปกข้อ M4 "สีแยกตามลูกค้า")
+ *
+ * เก็บเป็น hue เดียวแล้วให้ธีมเป็นคนคุมความสว่าง — ไม่ต้องประกาศสีซ้ำ 20 ชุด
+ * และได้ค่าที่อ่านออกเท่ากันทั้งโหมดมืดและสว่างโดยอัตโนมัติ
+ */
+:root {
+  --client-l: 0.76;
+  --client-c: 0.14;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --client-l: 0.53;
+    --client-c: 0.17;
+  }
+}
+:root[data-theme="light"] {
+  --client-l: 0.53;
+  --client-c: 0.17;
+}
+
+.client-fg {
+  color: oklch(var(--client-l) var(--client-c) var(--client-hue));
+}
+.client-bg {
+  background: oklch(var(--client-l) var(--client-c) var(--client-hue) / 0.16);
+}
+.client-border {
+  border-color: oklch(var(--client-l) var(--client-c) var(--client-hue) / 0.45);
+}
+.client-dot {
+  background: oklch(var(--client-l) var(--client-c) var(--client-hue));
+}
