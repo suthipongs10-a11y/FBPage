@@ -1,0 +1,16 @@
+{
+  "name": "@page-os/portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": { "build": "tsc -b" },
+  "dependencies": {
+    "@page-os/analytics": "workspace:*",
+    "@page-os/core": "workspace:*",
+    "@page-os/publish": "workspace:*",
+    "@page-os/studio": "workspace:*"
+  }
+}

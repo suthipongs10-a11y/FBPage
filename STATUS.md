@@ -1,6 +1,6 @@
 # สถานะงาน PAGE OS
 
-อัปเดตล่าสุด: หลังจบ M-G + หอบังคับการ (apps/web)
+อัปเดตล่าสุด: หลังจบ M-H
 
 ## ความคืบหน้าตาม Roadmap (สเปกข้อ 7)
 
@@ -14,12 +14,40 @@
 | **M-E** | Unified Inbox + Webhook realtime + SLA | ✅ เสร็จ |
 | **M-F** | Chatbot 3 ชั้น + RAG + Flow engine + Tone | ✅ เสร็จ (ตัววาด flow เป็นงาน UI) |
 | **M-G** | AI Content Studio + Template Library | ✅ เสร็จ (หน้าปฏิทินเป็นงาน UI) |
-| **M-H** | Client Portal + Onboarding wizard | 🔜 ถัดไป |
-| **M-I** | Ops Center + Audit + Bulk actions | ⬜ |
+| **M-H** | Client Portal + Onboarding wizard | ✅ เสร็จ (หน้าเว็บ portal เป็นงาน UI) |
+| **M-I** | Ops Center + Audit + Bulk actions | 🔜 ถัดไป |
 | **M-J** | Billing | ⬜ |
 | — | `apps/web` หอบังคับการ (Today View / ปฏิทินรวม / Inbox / สถานะเพจ) | ✅ รอบแรกเสร็จ |
 
 รายงาน audit ของแต่ละ milestone อยู่ที่ `docs/audit/M-*.md`
+
+---
+
+## M-H — เสร็จแล้ว
+
+`packages/portal` — Client Portal ของลูกค้า + wizard รับลูกค้าใหม่
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `scope.ts` | ขอบเขตที่ลูกค้าเห็นได้ + ตาข่ายกันข้อมูลรั่วแบบ fail-closed |
+| `magic-link.ts` | เข้าระบบด้วยลิงก์ ไม่ต้องมีรหัสผ่าน |
+| `branding.ts` | โลโก้ / สี / subdomain ของลูกค้า |
+| `views.ts` | ปฏิทิน รายงาน และรายชื่อ lead ในมุมมองลูกค้า |
+| `actions.ts` | กดอนุมัติ/ขอแก้ พร้อมด่านกัน IDOR |
+| `onboarding.ts` | ลำดับขั้นรับลูกค้าใหม่ รวม 30 นาที |
+
+เรื่องที่ต้องรู้ก่อนแตะโค้ดส่วนนี้:
+
+- **ทุกฟังก์ชันที่สร้าง view รับ `PortalScope` เป็นอาร์กิวเมนต์แรก** — จงใจให้
+  สร้าง view โดยไม่มีขอบเขตไม่ได้ และปิดท้ายด้วย `assertNoLeak()` ทุกเส้นทาง
+- **`ApprovalService.decide()` ของ M-B ไม่รู้จักขอบเขตลูกค้า** ห้ามให้ portal
+  เรียกตรง ต้องผ่าน `decideFromPortal()` ที่ตรวจความเป็นเจ้าของก่อน
+- **ข้อความปฏิเสธเหมือนกันทุกกรณี** ทั้ง "ไม่มีของสิ่งนี้" และ "ไม่ใช่ของคุณ"
+  ตอบต่างกันเมื่อไหร่ การไล่เดา id จะบอกได้ว่าอะไรมีอยู่จริง
+- **ไม่เก็บรายการเพจไว้ใน session token** อ่านใหม่ทุกครั้ง เพื่อให้การถอดเพจ
+  ออกจากสัญญามีผลทันที
+
+รายละเอียดบั๊กที่เจอและวิธีแก้: `docs/audit/M-H.md`
 
 ---
 
@@ -79,7 +107,7 @@
 ### เทสต์
 
 ```
-1,086 tests ผ่านทั้งหมด (52 ไฟล์)
+1,235 tests ผ่านทั้งหมด (58 ไฟล์)
 ```
 
 รันด้วย `pnpm check` (typecheck + test)

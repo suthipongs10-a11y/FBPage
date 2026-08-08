@@ -1,0 +1,92 @@
+export {
+  assertCan,
+  assertNoLeak,
+  assertPageInScope,
+  findLeaks,
+  inScope,
+  onlyInScope,
+  PortalLeakError,
+  PortalScopeError,
+  DEFAULT_PERMISSIONS,
+  FORBIDDEN_EXACT_KEYS,
+  FORBIDDEN_KEY_PATTERNS,
+  type LeakFinding,
+  type PortalPermissions,
+  type PortalScope,
+} from "./scope.js";
+
+export {
+  PortalAuth,
+  PortalAuthError,
+  InMemoryMagicLinkStore,
+  InMemoryThrottle,
+  looksLikeEmail,
+  normalizeEmail,
+  MAGIC_LINK_TTL_MS,
+  MAX_REQUESTS_PER_WINDOW,
+  SESSION_TTL_MS,
+  THROTTLE_WINDOW_MS,
+  type MagicLinkPayload,
+  type MagicLinkStore,
+  type PortalAccount,
+  type PortalAuthOptions,
+  type PortalDirectory,
+  type RequestLinkResult,
+  type SessionPayload,
+  type Throttle,
+} from "./magic-link.js";
+
+export {
+  BrandingError,
+  checkBrandColor,
+  contrastRatio,
+  normalizeHexColor,
+  prepareBranding,
+  readableTextOn,
+  relativeLuminance,
+  suggestSubdomain,
+  validateLogoUrl,
+  validateSubdomain,
+  MIN_CONTRAST_AA,
+  RESERVED_SUBDOMAINS,
+  SUBDOMAIN_MAX,
+  SUBDOMAIN_MIN,
+  type BrandCheckResult,
+  type BrandConfig,
+  type BrandWarning,
+} from "./branding.js";
+
+export {
+  buildPortalCalendar,
+  buildPortalLeads,
+  buildPortalReport,
+  isThaiNationalId,
+  leadsToCsv,
+  scrubProhibitedPii,
+  type CalendarSourceRow,
+  type LeadSourceRow,
+  type PortalCalendar,
+  type PortalLead,
+  type PortalPost,
+  type PortalReport,
+} from "./views.js";
+
+export {
+  decideFromPortal,
+  noopAudit,
+  PortalActionError,
+  type DecideResult,
+  type PortalApprovalDeps,
+  type PortalAuditSink,
+  type PostOwnership,
+} from "./actions.js";
+
+export {
+  checkReadyToInvite,
+  onboardingProgress,
+  TOTAL_MINUTES,
+  type OnboardingProgress,
+  type OnboardingState,
+  type OnboardingStep,
+  type StepId,
+} from "./onboarding.js";

@@ -21,6 +21,7 @@
       "@page-os/inbox": ["./packages/inbox/src/index.ts"],
       "@page-os/bot": ["./packages/bot/src/index.ts"],
       "@page-os/studio": ["./packages/studio/src/index.ts"],
+      "@page-os/portal": ["./packages/portal/src/index.ts"],
       "@/*": ["./apps/web/src/*"]
     }
   },

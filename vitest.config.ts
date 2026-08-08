@@ -43,6 +43,10 @@ export default defineConfig({
         find: "@page-os/studio",
         replacement: r("./packages/studio/src/index.ts"),
       },
+      {
+        find: "@page-os/portal",
+        replacement: r("./packages/portal/src/index.ts"),
+      },
     ],
   },
   test: {

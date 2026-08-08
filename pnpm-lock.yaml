@@ -129,6 +129,21 @@ importers:
         specifier: workspace:*
         version: link:../meta
 
+  packages/portal:
+    dependencies:
+      '@page-os/analytics':
+        specifier: workspace:*
+        version: link:../analytics
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/publish':
+        specifier: workspace:*
+        version: link:../publish
+      '@page-os/studio':
+        specifier: workspace:*
+        version: link:../studio
+
   packages/publish:
     dependencies:
       '@page-os/core':
