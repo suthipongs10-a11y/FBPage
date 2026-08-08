@@ -15,9 +15,9 @@
 | **M-F** | Chatbot 3 ชั้น + RAG + Flow engine + Tone | ✅ เสร็จ (ตัววาด flow เป็นงาน UI) |
 | **M-G** | AI Content Studio + Template Library | ✅ เสร็จ (หน้าปฏิทินเป็นงาน UI) |
 | **M-H** | Client Portal + Onboarding wizard | ✅ เสร็จ (มีหน้าเว็บ portal แล้ว) |
-| **M-I** | Ops Center + Audit + Bulk actions | ✅ เสร็จ (หน้าจอเป็นงาน UI) |
+| **M-I** | Ops Center + Audit + Bulk actions | ✅ เสร็จ (มีหน้าจอแล้ว) |
 | **M-J** | Billing | ⬜ เฟสสุดท้าย เปิดตอนขายเป็น SaaS |
-| — | `apps/web` หอบังคับการ + หน้า portal ของลูกค้า (white-label) | ✅ รอบแรกเสร็จ |
+| — | `apps/web` หอบังคับการ + ศูนย์ปฏิบัติการ + portal ลูกค้า | ✅ รอบแรกเสร็จ |
 
 รายงาน audit ของแต่ละ milestone อยู่ที่ `docs/audit/M-*.md`
 
