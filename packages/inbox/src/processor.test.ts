@@ -118,6 +118,38 @@ function dm(over: Record<string, unknown> = {}): unknown {
   };
 }
 
+/**
+ * echo ของข้อความที่เพจส่งออกไป — **ผู้ส่งคือเพจ ผู้รับคือลูกค้า**
+ * (ตรงข้ามกับข้อความขาเข้า) ถ้าเขียนสลับกันเทสต์จะผ่านทั้งที่โค้ดผิด
+ */
+function echo(
+  over: Record<string, unknown> = {},
+  atMs = NOW,
+): unknown {
+  return {
+    object: "page",
+    entry: [
+      {
+        id: "p1",
+        time: atMs,
+        messaging: [
+          {
+            sender: { id: "p1" },
+            recipient: { id: "u1" },
+            timestamp: atMs,
+            message: {
+              mid: "m_echo",
+              text: "เดี๋ยวเช็คให้นะครับ",
+              is_echo: true,
+              ...over,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 async function run(
   processor: WebhookProcessor,
   payload: unknown,
@@ -148,7 +180,7 @@ describe("WebhookProcessor — idempotency (กฎข้อ 6)", () => {
 describe("WebhookProcessor — echo (สเปกข้อ 6.2 และ 6.7)", () => {
   it("echo ที่ระบบเราส่งเอง ถูกข้าม", async () => {
     const { processor, store } = setup();
-    const r = await run(processor, dm({ is_echo: true, app_id: 999 }));
+    const r = await run(processor, echo({ app_id: 999 }));
     expect(r[0]!.skipped).toBe("own_echo");
     expect(store.messages).toHaveLength(0);
   });
@@ -156,10 +188,7 @@ describe("WebhookProcessor — echo (สเปกข้อ 6.2 และ 6.7)", 
   it("คนพิมพ์ตอบในแอป FB → พักบอท 30 นาที ไม่ใช่ข้ามเฉยๆ", async () => {
     const { processor, store } = setup();
 
-    const r = await run(
-      processor,
-      dm({ is_echo: true, text: "เดี๋ยวเช็คให้นะครับ" }),
-    );
+    const r = await run(processor, echo());
 
     expect(r[0]!.skipped).toBeUndefined();
     expect(r[0]!.botShouldRespond).toBe(false);
@@ -177,16 +206,13 @@ describe("WebhookProcessor — echo (สเปกข้อ 6.2 และ 6.7)", 
     await run(processor, dm());
     expect(store.conversations.get("p1:u1")!.awaitingSinceMs).toBe(NOW);
 
-    await run(
-      processor,
-      dm({ mid: "m_echo", is_echo: true, text: "ตอบแล้วครับ" }),
-    );
+    await run(processor, echo({ text: "ตอบแล้วครับ" }));
     expect(store.conversations.get("p1:u1")!.awaitingSinceMs).toBeNull();
   });
 
   it("บอทที่ถูกพักแล้ว ไม่ตอบข้อความถัดไปของลูกค้า", async () => {
     const { processor, store } = setup();
-    await run(processor, dm({ is_echo: true, text: "คนตอบ" }));
+    await run(processor, echo({ text: "คนตอบ" }));
 
     const r = await run(processor, {
       object: "page",
@@ -212,7 +238,7 @@ describe("WebhookProcessor — echo (สเปกข้อ 6.2 และ 6.7)", 
 
   it("พ้น 30 นาทีแล้วบอทกลับมาตอบได้", async () => {
     const { processor, store, clock } = setup();
-    await run(processor, dm({ is_echo: true, text: "คนตอบ" }));
+    await run(processor, echo({ text: "คนตอบ" }));
 
     await clock.advance(HANDOVER_PAUSE_MS + 1000);
     const { events } = parseWebhookPayload(
@@ -512,5 +538,82 @@ describe("WebhookProcessor — ทนต่อความผิดพลาด"
     const { processor } = setup();
     const r = await run(processor, dm());
     for (const x of r) expect(x.th).toMatch(/[ก-๙]/);
+  });
+});
+
+describe("Audit: echo ต้องผูกกับบทสนทนาของลูกค้า ไม่ใช่ของเพจ", () => {
+  it("คนพิมพ์ในแอป FB → พักบอทในบทสนทนาของลูกค้าคนนั้น", async () => {
+    const { processor, store } = setup();
+    // ลูกค้าทักมาก่อน
+    await run(processor, dm());
+    expect(store.conversations.has("p1:u1")).toBe(true);
+
+    // เจ้าของเพจพิมพ์ตอบในแอป FB — ตอน echo ผู้ส่งคือ "เพจ" ผู้รับคือ "ลูกค้า"
+    await run(processor, {
+      object: "page",
+      entry: [
+        {
+          id: "p1",
+          time: NOW,
+          messaging: [
+            {
+              sender: { id: "p1" },
+              recipient: { id: "u1" },
+              timestamp: NOW,
+              message: { mid: "m_echo", text: "เดี๋ยวเช็คให้นะครับ", is_echo: true },
+            },
+          ],
+        },
+      ],
+    });
+
+    // ต้องพักบอทในบทสนทนาของลูกค้า ไม่ใช่สร้างบทสนทนาปลอมกับตัวเอง
+    expect(store.conversations.get("p1:u1")!.botPausedUntilMs).toBe(
+      NOW + HANDOVER_PAUSE_MS,
+    );
+    expect(store.conversations.has("p1:p1")).toBe(false);
+  });
+
+  it("บอทต้องไม่ตอบข้อความถัดไปของลูกค้าคนที่คนกำลังคุยอยู่", async () => {
+    const { processor, store } = setup();
+    await run(processor, dm());
+    await run(processor, {
+      object: "page",
+      entry: [
+        {
+          id: "p1",
+          time: NOW,
+          messaging: [
+            {
+              sender: { id: "p1" },
+              recipient: { id: "u1" },
+              timestamp: NOW,
+              message: { mid: "m_echo", text: "คนตอบ", is_echo: true },
+            },
+          ],
+        },
+      ],
+    });
+
+    const r = await run(processor, {
+      object: "page",
+      entry: [
+        {
+          id: "p1",
+          time: NOW,
+          messaging: [
+            {
+              sender: { id: "u1" },
+              recipient: { id: "p1" },
+              timestamp: NOW,
+              message: { mid: "m_next", text: "แล้วมีสีอื่นไหมคะ" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(r[0]!.botShouldRespond).toBe(false);
+    void store;
   });
 });

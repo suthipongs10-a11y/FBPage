@@ -180,9 +180,10 @@ export class WebhookProcessor {
     if (ev.isEcho) {
       // คนพิมพ์ในแอป FB เอง — ต้องพักบอท ไม่ใช่ข้ามเฉยๆ (สเปกข้อ 6.7)
       if (isHumanTypedEcho(ev)) {
+        // ตอน echo ลูกค้าอยู่ฝั่งผู้รับ — parser คำนวณ contactId ให้ถูกฝั่งแล้ว
         const conv = await this.store.upsertConversation({
           pageId: ev.pageId,
-          contactId: ev.senderId,
+          contactId: ev.contactId,
           channel: ev.channel,
         });
         const pause = pauseForHuman({
@@ -224,7 +225,7 @@ export class WebhookProcessor {
     // ---- ข้อความจากลูกค้า ----
     const conv = await this.store.upsertConversation({
       pageId: ev.pageId,
-      contactId: ev.senderId,
+      contactId: ev.contactId,
       channel: ev.channel,
     });
 

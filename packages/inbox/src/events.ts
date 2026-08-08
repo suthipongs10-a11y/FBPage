@@ -23,8 +23,18 @@ export interface IncomingMessageEvent extends BaseEvent {
   channel: "messenger" | "instagram";
   /** id ข้อความของ Meta — unique key สำหรับ idempotency (กฎข้อ 6) */
   mid: string;
-  /** ผู้ส่ง (ลูกค้า) */
+  /**
+   * ผู้ส่ง — ปกติคือลูกค้า **แต่ตอน echo คือเพจ**
+   * อย่าใช้ตัวนี้หาบทสนทนาโดยไม่เช็ค isEcho ก่อน ให้ใช้ `contactId` แทน
+   */
   senderId: string;
+  /** ผู้รับ — ตอน echo คือลูกค้า */
+  recipientId: string;
+  /**
+   * id ของลูกค้าในบทสนทนานี้ ไม่ว่าใครจะเป็นคนส่ง
+   * ใช้ตัวนี้หาบทสนทนาเสมอ
+   */
+  contactId: string;
   text?: string;
   attachments: Array<{ type: string; url?: string }>;
   /**
@@ -162,7 +172,9 @@ export function parseWebhookPayload(
       if (typeof rawM !== "object" || rawM === null) continue;
       const m = rawM as Record<string, unknown>;
       const sender = (m["sender"] ?? {}) as Record<string, unknown>;
+      const recipient = (m["recipient"] ?? {}) as Record<string, unknown>;
       const senderId = str(sender["id"]) ?? "";
+      const recipientId = str(recipient["id"]) ?? "";
       const ts = normalizeTimestamp(m["timestamp"], entryTime);
 
       if (m["message"] !== undefined) {
@@ -187,6 +199,7 @@ export function parseWebhookPayload(
         }
         const quickReply = (msg["quick_reply"] ?? {}) as Record<string, unknown>;
 
+        const isEcho = msg["is_echo"] === true;
         const ev: IncomingMessageEvent = {
           type: "message",
           pageId,
@@ -194,8 +207,13 @@ export function parseWebhookPayload(
           timestampMs: ts,
           mid,
           senderId,
+          recipientId,
+          // ตอน echo ผู้ส่งคือเพจ ลูกค้าอยู่ฝั่งผู้รับ — ถ้าใช้ senderId ตรงๆ
+          // จะไปพักบอทในบทสนทนาปลอมที่เพจคุยกับตัวเอง ส่วนบทสนทนาจริงไม่ถูกพัก
+          // แล้วบอทจะแทรกกลางที่คนกำลังคุยอยู่ (คือบั๊กที่สเปกข้อ 6.7 เตือนไว้)
+          contactId: isEcho ? recipientId : senderId,
           attachments,
-          isEcho: msg["is_echo"] === true,
+          isEcho,
         };
         const text = str(msg["text"]);
         if (text !== undefined) ev.text = text;

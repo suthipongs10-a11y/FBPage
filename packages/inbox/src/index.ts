@@ -67,3 +67,31 @@ export {
   type ProcessedEvent,
   type WebhookProcessorOptions,
 } from "./processor.js";
+
+export {
+  queryInbox,
+  decorate,
+  countByFilter,
+  filterLabelTh,
+  type DecoratedInboxItem,
+  type FilterQuery,
+  type InboxCounts,
+  type InboxFilter,
+  type InboxItem,
+} from "./filters.js";
+
+export {
+  renderCanned,
+  findByShortcut,
+  searchCanned,
+  buildEscalation,
+  escalationReasonTh,
+  noopEscalationSink,
+  HOLDING_REPLY_TH,
+  type BuildEscalationArgs,
+  type CannedReply,
+  type CannedVars,
+  type EscalationAlert,
+  type EscalationReason,
+  type EscalationSink,
+} from "./canned.js";
