@@ -55,6 +55,10 @@ export default defineConfig({
         find: "@page-os/store",
         replacement: r("./packages/store/src/index.ts"),
       },
+      {
+        find: "@page-os/queue",
+        replacement: r("./packages/queue/src/index.ts"),
+      },
     ],
   },
   test: {

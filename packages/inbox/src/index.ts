@@ -95,3 +95,9 @@ export {
   type EscalationReason,
   type EscalationSink,
 } from "./canned.js";
+
+export {
+  InMemoryWebhookEventSink,
+  type QueuedWebhookEvent,
+  type WebhookEventSink,
+} from "./sink.js";
