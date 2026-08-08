@@ -39,6 +39,10 @@ export default defineConfig({
         find: "@page-os/bot",
         replacement: r("./packages/bot/src/index.ts"),
       },
+      {
+        find: "@page-os/studio",
+        replacement: r("./packages/studio/src/index.ts"),
+      },
     ],
   },
   test: {

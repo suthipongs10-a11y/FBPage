@@ -86,6 +86,21 @@ importers:
         specifier: workspace:*
         version: link:../meta
 
+  packages/studio:
+    dependencies:
+      '@page-os/bot':
+        specifier: workspace:*
+        version: link:../bot
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/moderation':
+        specifier: workspace:*
+        version: link:../moderation
+      '@page-os/publish':
+        specifier: workspace:*
+        version: link:../publish
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
