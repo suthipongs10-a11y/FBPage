@@ -12,10 +12,17 @@
     }
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push"
   },
   "dependencies": {
     "@page-os/core": "workspace:*",
-    "@page-os/meta": "workspace:*"
+    "@page-os/meta": "workspace:*",
+    "@prisma/client": "^6.2.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.2.1"
   }
 }

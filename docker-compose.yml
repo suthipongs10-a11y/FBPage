@@ -1,0 +1,47 @@
+# สแตกสำหรับรันบนเครื่องตัวเอง
+#
+#   docker compose up -d
+#   pnpm --filter @page-os/db db:push
+#   pnpm dev
+#
+# ใช้ image ที่มี pgvector มาให้แล้ว เพราะ Knowledge Base ของบอท (M2)
+# เก็บ embedding เป็นคอลัมน์ vector — Postgres เปล่าจะ push schema ไม่ผ่าน
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pageos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pageos
+      POSTGRES_PASSWORD: pageos
+      POSTGRES_DB: pageos
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pageos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pageos-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # appendonly เปิดไว้เพราะคิวงานที่หายตอนรีสตาร์ท = โพสต์ที่ตั้งเวลาไว้ไม่ขึ้น
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

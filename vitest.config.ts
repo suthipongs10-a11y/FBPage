@@ -51,6 +51,10 @@ export default defineConfig({
         find: "@page-os/ops",
         replacement: r("./packages/ops/src/index.ts"),
       },
+      {
+        find: "@page-os/store",
+        replacement: r("./packages/store/src/index.ts"),
+      },
     ],
   },
   test: {

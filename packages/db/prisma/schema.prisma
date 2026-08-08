@@ -6,7 +6,9 @@
 //   - กฎข้อ 6: webhook idempotent ด้วย mid / comment_id → unique index
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // ต้องเปิด preview นี้ถึงจะประกาศ extension ในไฟล์ schema ได้
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
@@ -387,16 +389,51 @@ model Job {
 model AuditLog {
   id          String   @id @default(uuid())
   workspaceId String?  @map("workspace_id")
+  /// fb_page_id ของเพจที่ถูกกระทำ — สเปกข้อ M8 ต้องตอบได้ว่า "ทำกับเพจไหน"
+  /// เก็บเป็นสตริงอิสระ ไม่ผูก FK เพราะ log ต้องอยู่ต่อแม้เพจถูกลบ
+  pageId      String?  @map("page_id")
+  /// รูปแบบ "kind:id" เช่น "human:me@example.com" / "system:worker:publish"
   actor       String
   action      String
   target      String?
+  /// ข้อความไทยที่คนอ่านตอนสอบสวนย้อนหลัง
+  summaryTh   String?  @map("summary_th")
   meta        Json     @default("{}")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+  @@index([pageId, createdAt])
+  @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+/// สถานะการแจ้งเตือนที่ยังค้างอยู่ (M-I Alert Center)
+/// เก็บใน DB เพราะ worker รีสตาร์ทแล้วต้องไม่เตือนซ้ำทุกเรื่องใหม่หมด
+model AlertState {
+  problemId     String   @id @map("problem_id")
+  pageId        String?  @map("page_id")
+  pageName      String   @map("page_name")
+  firstSeenAt   DateTime @map("first_seen_at") @db.Timestamptz(6)
+  lastSentAt    DateTime? @map("last_sent_at") @db.Timestamptz(6)
+  sendCount     Int      @default(0) @map("send_count")
+  lastSeverity  String   @map("last_severity")
+  /// ความรุนแรงสูงสุดที่เคยแจ้งไปแล้ว — ใช้ตัดสินการยกระดับ
+  peakSeverity  String   @map("peak_severity")
+  lastTh        String   @map("last_th")
+
+  @@index([lastSentAt])
+  @@map("alert_states")
+}
+
+/// ลิงก์เข้าระบบที่ถูกใช้ไปแล้ว (M-H) — กันใช้ซ้ำ
+model UsedMagicLink {
+  jti       String   @id
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("used_magic_links")
 }
 
 /// log ทุก call ที่ยิงไป Meta (สเปกข้อ 5 หน้าที่ 7)

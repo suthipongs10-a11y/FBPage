@@ -33,6 +33,9 @@
     },
     {
       "path": "./packages/ops"
+    },
+    {
+      "path": "./packages/store"
     }
   ]
 }
