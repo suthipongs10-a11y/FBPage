@@ -188,14 +188,16 @@ async function collectProblemsFromDb(
 
   return collectProblems({
     nowMs,
-    pages: pages.map((p, i) => {
+    pages: pages.map((p) => {
       const token = p.tokens[0];
       const expiresAtMs = token?.expiresAt?.getTime();
       return {
         pageId: p.fbPageId,
         pageName: p.name,
         clientName: p.workspace.clientName,
-        colorIndex: i,
+        // คำนวณจากรหัสเพจ ไม่ใช่ลำดับในผลลัพธ์ — ไม่งั้นสีของแต่ละเพจจะสลับกัน
+        // ทุกครั้งที่เพิ่มหรือลบเพจ ซึ่งทำให้คนที่จำสีไว้อ่านผิด
+        colorIndex: colorIndexOf(p.fbPageId),
         connectionState: toConnectionState(token?.status),
         ...(expiresAtMs !== undefined
           ? { hoursUntilExpiry: Math.floor((expiresAtMs - nowMs) / 3_600_000) }
@@ -211,6 +213,16 @@ async function collectProblemsFromDb(
     })),
     incidents: [],
   });
+}
+
+/** จำนวนสีที่หน้าจอมีให้ — ต้องตรงกับชุดสีใน apps/web */
+const COLOR_COUNT = 8;
+
+/** สีประจำเพจที่คงที่ตลอด ไม่ขึ้นกับว่าเพจนี้อยู่ลำดับที่เท่าไหร่ในผลลัพธ์ */
+function colorIndexOf(fbPageId: string): number {
+  let h = 0;
+  for (const ch of fbPageId) h = (h * 31 + ch.charCodeAt(0)) % 100_000;
+  return h % COLOR_COUNT;
 }
 
 /**

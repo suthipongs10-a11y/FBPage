@@ -19,6 +19,18 @@ import { PrismaMagicLinkStore } from "./portal-repository.js";
 import { PrismaCallLog } from "./call-log.js";
 
 const HAS_DB = Boolean(process.env["DATABASE_URL"]);
+
+/**
+ * ชื่อ workspace ประจำไฟล์นี้
+ *
+ * vitest รันแต่ละไฟล์พร้อมกัน และไฟล์เทสต์ที่ต่อ DB มีมากกว่าหนึ่งไฟล์
+ * ถ้าล้างตารางแบบเหมารวม (`workspace.deleteMany()` เปล่าๆ) ไฟล์หนึ่งจะลบ
+ * ข้อมูลของอีกไฟล์กลางคัน แล้วเทสต์จะล้มแบบสุ่ม — ซึ่งหาสาเหตุยากมาก
+ * เพราะรันซ้ำทีละไฟล์แล้วผ่านทุกครั้ง
+ *
+ * แต่ละไฟล์จึงล้างเฉพาะ workspace ของตัวเอง (ที่เหลือถูกลบต่อแบบ cascade)
+ */
+const WORKSPACE_NAME = "vitest-store";
 const START = Date.UTC(2026, 7, 8, 3, 0, 0);
 const HOUR = 3_600_000;
 
@@ -27,7 +39,7 @@ const prisma = HAS_DB ? new PrismaClient() : (null as unknown as PrismaClient);
 /** สร้าง workspace + เพจสองใบ คืนรหัส Facebook ของทั้งคู่ */
 async function seedPages(): Promise<{ fbA: string; fbB: string }> {
   const ws = await prisma.workspace.create({
-    data: { name: "เอเจนซี่ทดสอบ", clientName: "ครัวคุณยาย" },
+    data: { name: WORKSPACE_NAME, clientName: "ครัวคุณยาย" },
   });
   const fbA = `fb-${Math.abs(START)}-a`;
   const fbB = `fb-${Math.abs(START)}-b`;
@@ -42,14 +54,13 @@ async function seedPages(): Promise<{ fbA: string; fbB: string }> {
 
 describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลจริง", () => {
   beforeEach(async () => {
-    // ล้างตามลำดับ FK — เพจถูกลบแบบ cascade จาก workspace
+    // ตารางที่ไม่ผูกกับ workspace — ไฟล์นี้เป็นไฟล์เดียวที่ใช้ จึงล้างเหมาได้
     await prisma.metaCallLog.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.alertState.deleteMany();
     await prisma.usedMagicLink.deleteMany();
-    await prisma.pageToken.deleteMany();
-    await prisma.page.deleteMany();
-    await prisma.workspace.deleteMany();
+    // ที่เหลือลบเฉพาะของไฟล์นี้ — เพจ/token ถูกลบต่อแบบ cascade
+    await prisma.workspace.deleteMany({ where: { name: WORKSPACE_NAME } });
   });
 
   afterAll(async () => {

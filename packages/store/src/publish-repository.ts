@@ -33,6 +33,7 @@ interface StoredMedia {
 function toContent(row: {
   type: string;
   body: string;
+  link: string | null;
   media: unknown;
 }): PostContent {
   const media = Array.isArray(row.media) ? (row.media as StoredMedia[]) : [];
@@ -47,6 +48,8 @@ function toContent(row: {
   return {
     type: row.type as PostContent["type"],
     body: row.body,
+    // ต้องส่งต่อ ไม่งั้นโพสต์ประเภท "ลิงก์" จะล้มทุกใบตรงที่ตัวยิงเช็คว่ามี URL ไหม
+    ...(row.link !== null ? { link: row.link } : {}),
     ...(items.length > 0 ? { media: items } : {}),
   };
 }
@@ -239,15 +242,39 @@ export interface PrismaDuePostSourceOptions {
    * แต่ "ไม่ขึ้นเลยและไม่มีใครรู้" รับไม่ได้
    */
   graceMs?: number;
+  /**
+   * ยัดเข้าคิวไปแล้วเกินเท่านี้แล้วยังไม่คืบหน้า = ถือว่างานหายระหว่างทาง
+   * ให้หยิบกลับมาทำใหม่ ดูเหตุผลเต็มๆ ที่ `STUCK_AFTER_MS`
+   */
+  stuckAfterMs?: number;
 }
+
+/**
+ * เพดานเวลาที่ยอมให้โพสต์ค้างอยู่ในสถานะ "กำลังยิง" ก่อนจะถือว่างานหาย
+ *
+ * ─── ปัญหาที่ตัวเลขนี้มีไว้แก้ ───
+ *
+ * `PublishWorker` คืน `{kind:"retry"}` แล้วให้ตัวจัดการงานเป็นคนใส่งานกลับเข้าคิว
+ * ถ้าจังหวะนั้น Redis สะดุด การใส่คิวจะพัง แล้วสิ่งที่เหลืออยู่คือ:
+ *   - เป้าหมาย = scheduled (คืนการจองแล้ว)
+ *   - โพสต์แม่ = publishing (ตั้งไว้ตอนยัดเข้าคิวรอบแรก)
+ * ซึ่ง `findDue` เดิมมองหาแต่โพสต์ที่ status = scheduled → ไม่มีใครหยิบอีกเลย
+ * โพสต์หายไปเงียบๆ ไม่มี error ที่ไหน ไม่มีใครรู้จนลูกค้าถามว่าทำไมไม่มีโพสต์
+ *
+ * ต้องยาวกว่าตารางเวลา retry ทั้งชุด (1 + 5 + 30 = 36 นาที) พอสมควร ไม่งั้น
+ * จะไปหยิบโพสต์ที่กำลังรอ retry อยู่ตามปกติมายิงซ้อน
+ */
+export const STUCK_AFTER_MS = 60 * 60_000;
 
 export class PrismaDuePostSource implements DuePostSource {
   private readonly prisma: PrismaClient;
   private readonly graceMs: number | undefined;
+  private readonly stuckAfterMs: number;
 
   constructor(opts: PrismaDuePostSourceOptions) {
     this.prisma = opts.prisma;
     this.graceMs = opts.graceMs;
+    this.stuckAfterMs = opts.stuckAfterMs ?? STUCK_AFTER_MS;
   }
 
   async findDue(
@@ -256,16 +283,31 @@ export class PrismaDuePostSource implements DuePostSource {
   ): Promise<Array<{ post: ScheduledPost; targetPageIds: string[] }>> {
     const rows = await this.prisma.post.findMany({
       where: {
-        status: "scheduled",
-        scheduledAt: {
-          lte: new Date(nowMs),
-          ...(this.graceMs !== undefined
-            ? { gte: new Date(nowMs - this.graceMs) }
-            : {}),
-        },
+        OR: [
+          {
+            status: "scheduled",
+            scheduledAt: {
+              lte: new Date(nowMs),
+              ...(this.graceMs !== undefined
+                ? { gte: new Date(nowMs - this.graceMs) }
+                : {}),
+            },
+          },
+          {
+            // งานที่หายระหว่างทาง — ดูเหตุผลที่ STUCK_AFTER_MS
+            status: "publishing",
+            updatedAt: { lt: new Date(nowMs - this.stuckAfterMs) },
+          },
+        ],
         // โพสต์ที่ลูกค้ายังไม่อนุมัติห้ามหลุดเข้าคิว — ถึงตัว worker จะเช็คซ้ำอีกที
         // แต่การปล่อยเข้าคิวไปก่อนแล้วค่อยข้าม ทำให้ log เต็มไปด้วยงานที่ไม่ได้ทำ
         approvalStatus: { notIn: ["pending", "changes_requested"] },
+        // ต้องมีเป้าหมายที่ยังไม่ได้โพสต์เหลืออยู่จริงอย่างน้อยหนึ่ง
+        // ไม่งั้นโพสต์ที่ขึ้นครบทุกเพจแล้วแต่สถานะแม่ยังไม่ได้อัปเดตจะถูกหยิบมา
+        // ทุกนาทีแล้วเข้าคิวเปล่าๆ
+        targets: {
+          some: { fbPostId: null, status: { notIn: ["published", "cancelled"] } },
+        },
       },
       orderBy: { scheduledAt: "asc" },
       take: limit,
@@ -297,13 +339,19 @@ export class PrismaDuePostSource implements DuePostSource {
   /**
    * ทำเครื่องหมายว่ายัดเข้าคิวไปแล้ว
    *
-   * เงื่อนไข `status: "scheduled"` สำคัญ: ถ้าไม่ใส่ แล้ว cron สองรอบเหลื่อมกัน
-   * รอบที่สองจะเขียนทับสถานะของโพสต์ที่รอบแรกกำลังยิงอยู่ กลับไปเป็น publishing
-   * ซ้ำอีกครั้ง ซึ่งไม่ได้ทำอะไรผิดโดยตรง แต่ทำให้ตัวสรุปสถานะเพี้ยน
+   * รับทั้ง `scheduled` (รอบปกติ) และ `publishing` (รอบที่หยิบงานค้างกลับมาทำ)
+   *
+   * ที่ต้องเขียนทับแม้สถานะเป็น `publishing` อยู่แล้ว เพราะเป้าหมายจริงของคำสั่งนี้
+   * คือการดัน `updatedAt` ไปข้างหน้า — ค่านั้นเป็นตัวเดียวที่บอกได้ว่า "งานนี้
+   * ถูกแตะครั้งล่าสุดเมื่อไหร่" ถ้าไม่ดัน โพสต์ที่เพิ่งหยิบกลับมาจะเข้าเงื่อนไข
+   * "ค้าง" อีกในนาทีถัดไป แล้วโดนยัดเข้าคิวซ้ำทุกนาทีไม่มีที่สิ้นสุด
+   *
+   * จำกัดไว้แค่สองสถานะนี้ ไม่ใช่เขียนทับทุกกรณี — โพสต์ที่ published/cancelled
+   * ไปแล้วห้ามถูกดึงกลับมาเป็น publishing เด็ดขาด
    */
   async markQueued(postId: string): Promise<void> {
     await this.prisma.post.updateMany({
-      where: { id: postId, status: "scheduled" },
+      where: { id: postId, status: { in: ["scheduled", "publishing"] } },
       data: { status: "publishing" },
     });
   }

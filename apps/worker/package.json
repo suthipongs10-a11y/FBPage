@@ -6,7 +6,8 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -b",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "dev": "node --watch dist/main.js"
   },
   "dependencies": {
     "@page-os/analytics": "workspace:*",

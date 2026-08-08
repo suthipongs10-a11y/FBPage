@@ -230,6 +230,10 @@ model Post {
   pageId       String     @map("page_id")
   type         String     @default("text")
   body         String
+  /// URL ของโพสต์ประเภท "ลิงก์"
+  /// ถ้าไม่มีคอลัมน์นี้ โพสต์ประเภทลิงก์จะล้มเหลวทุกใบด้วยข้อความ
+  /// 'โพสต์ประเภท "ลิงก์" ต้องระบุ URL' โดยไม่มีทางแก้ให้สำเร็จได้เลย
+  link         String?
   media        Json       @default("[]")
   scheduledAt  DateTime?  @map("scheduled_at") @db.Timestamptz(6)
   publishedAt  DateTime?  @map("published_at") @db.Timestamptz(6)

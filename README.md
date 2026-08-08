@@ -26,7 +26,15 @@ pnpm --filter @page-os/db db:push
 
 # 5. เปิดหน้าเว็บ
 pnpm --filter @page-os/web dev     # http://localhost:3000
+
+# 6. เปิดตัวรับ webhook และ worker (คนละหน้าต่าง)
+pnpm build
+pnpm --filter @page-os/webhook start   # http://localhost:3001/webhook
+pnpm --filter @page-os/worker start
 ```
+
+> `apps/worker` คือตัวที่ทำให้ "ตั้งเวลาโพสต์" เป็นเรื่องจริง
+> ถ้าไม่รัน โพสต์ที่ตั้งเวลาไว้จะนอนอยู่ใน DB เฉยๆ โดยไม่มี error ที่ไหนเลย
 
 ### คำสั่งที่ใช้บ่อย
 
@@ -37,17 +45,26 @@ pnpm typecheck    # เฉพาะ typecheck (รวมไฟล์เทสต
 pnpm build        # build dist ของทุก package
 ```
 
-### รันเทสต์ที่ต่อฐานข้อมูลจริง
+### รันเทสต์ที่ต่อของจริง
 
-เทสต์ของ `packages/store` จะ **ข้ามทั้งไฟล์** ถ้าไม่ได้ตั้ง `DATABASE_URL`
-เครื่องที่ไม่มีฐานข้อมูลจึงยังรัน `pnpm check` ผ่าน ส่วนเครื่องที่มีจะได้ตรวจของจริง
+เทสต์ที่ต้องใช้ Postgres/Redis จะ **ข้ามทั้งไฟล์** ถ้าไม่ได้ตั้ง env ที่มันต้องการ
+เครื่องที่ไม่มีจึงยังรัน `pnpm check` ผ่าน ส่วนเครื่องที่มีจะได้ตรวจของจริง
 
 ```bash
 createdb pageos_test
 DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test \
   pnpm --filter @page-os/db db:push
-DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test pnpm test
+
+DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test \
+REDIS_URL=redis://localhost:6379 \
+  pnpm test
 ```
+
+| ชนิดเทสต์ | จำนวน | ต้องมี |
+|---|---|---|
+| ทั่วไป | 1,457 | — |
+| ต่อ Postgres จริง | 57 | `DATABASE_URL` |
+| ต่อ Redis จริง | 18 | `REDIS_URL` |
 
 ---
 
@@ -67,7 +84,10 @@ DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test pnpm test
 | `packages/studio` | AI Content Studio + Template Library |
 | `packages/portal` | Client Portal (magic link, ขอบเขตข้อมูล, white-label) |
 | `packages/ops` | Ops Center (ตรวจปัญหา, alert, audit log, bulk actions) |
+| `packages/queue` | **ที่เดียวในระบบที่รู้จัก BullMQ** — คิว, ตารางงาน, การปิดระบบ |
 | `apps/web` | Next.js 15 — หอบังคับการ + ศูนย์ปฏิบัติการ + portal ลูกค้า |
+| `apps/webhook` | Fastify — รับ event จาก Meta แล้วส่งต่อเข้าคิว |
+| `apps/worker` | รัน cron + ยิงโพสต์ที่ถึงเวลา + ตรวจปัญหาแล้วแจ้งเตือน |
 
 ### ทำไมมี `packages/store` แยกออกมา
 
@@ -102,16 +122,28 @@ DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test pnpm test
 
 ## สถานะตอนนี้
 
-โดเมนทั้งหมด (M-A ถึง M-I) เขียนและตรวจงานครบแล้ว — **1,357 เทสต์**
-หน้าเว็บใช้งานได้จริงสี่หน้า และมีที่เก็บข้อมูลจริงที่ทดสอบกับ Postgres แล้ว
+โดเมนทั้งหมด (M-A ถึง M-I) เขียนและตรวจงานครบแล้ว — **1,532 เทสต์**
+หน้าเว็บใช้งานได้จริงสี่หน้า ที่เก็บข้อมูลทดสอบกับ Postgres จริง
+และคิวงานทดสอบกับ Redis จริง
 
-**ยังไม่มี** และเป็นสิ่งที่กั้นระหว่าง "รันบนเครื่องได้" กับ "ใช้ดูแลเพจจริงได้":
+**ทำงานได้จริงแล้ว** (ทดลองรันจริง ไม่ใช่แค่เทสต์ผ่าน):
 
-- `apps/webhook` — ตัวรับ event จาก Meta (ถ้าไม่มี inbox/บอท/คอมเมนต์ไม่ทำงาน)
-- `apps/worker` — ตัวรัน cron และคิวงาน (ถ้าไม่มี โพสต์ที่ตั้งเวลาไว้ไม่ขึ้น)
-- หน้าเชื่อมเพจ (OAuth callback) ใน `apps/web`
+- ตั้งเวลาโพสต์ → cron หาโพสต์ที่ถึงเวลา → เข้าคิว → ยิงขึ้นเพจ → บันทึกผล
+- ตรวจปัญหาทุก 5 นาที (token ใกล้หมด / webhook เงียบ / โพสต์ล้มเหลว)
+- รับ webhook จาก Meta: ตรวจลายเซ็น → แปลงเป็น event → เข้าคิว → ตอบ 200
 
-ดูรายละเอียดใน [`STATUS.md`](./STATUS.md)
+**ยังไม่มี** และเป็นสิ่งที่เหลืออยู่ก่อนใช้ดูแลเพจจริงได้:
+
+- ตัวหยิบงานจากคิว `webhook-events` (`InboxStore` บน Prisma) —
+  ⚠️ ตอนนี้ event เข้าคิวได้แล้วแต่ยังไม่มีใครหยิบไปทำ ถ้าเปิดรับ webhook จริง
+  งานจะกองใน Redis ไปเรื่อยๆ
+- หน้าเชื่อมเพจ (OAuth callback) ใน `apps/web` — ยังไม่มีวิธีใส่ token เข้าระบบ
+- ปลายทางแจ้งเตือนจริง (LINE) — ตอนนี้ตรวจเจอปัญหาแล้วแต่ยังไม่ได้ส่งไปไหน
+- รอบ cron ที่ยังไม่ได้ต่อ: `token-health`, `analytics-sync`,
+  `morning-digest`, `monthly-report`, `purge-expired`
+  (ลงทะเบียนไว้แล้วและจะขึ้นในรายการที่ล้มเหลวพร้อมบอกว่าขาดอะไร ไม่ใช่หายเงียบ)
+
+ดูรายละเอียดใน [`STATUS.md`](./STATUS.md) และ [`docs/audit/M-J.md`](./docs/audit/M-J.md)
 
 ---
 

@@ -20,6 +20,9 @@ import {
 } from "./publish-repository.js";
 
 const HAS_DB = Boolean(process.env["DATABASE_URL"]);
+
+/** ชื่อ workspace ประจำไฟล์นี้ — ดูเหตุผลใน `store.integration.test.ts` */
+const WORKSPACE_NAME = "vitest-publish";
 const NOW = Date.UTC(2026, 7, 8, 3, 0, 0);
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -35,7 +38,7 @@ interface Seeded {
 
 async function seedPages(): Promise<Seeded> {
   const ws = await prisma.workspace.create({
-    data: { name: "เอเจนซี่ทดสอบ", clientName: "ครัวคุณยาย" },
+    data: { name: WORKSPACE_NAME, clientName: "ครัวคุณยาย" },
   });
   const fbA = "fb-pub-a";
   const fbB = "fb-pub-b";
@@ -77,12 +80,20 @@ async function seedPost(args: {
   return post.id;
 }
 
+/**
+ * ย้อน `updated_at` ของโพสต์ไปในอดีต
+ *
+ * ต้องใช้ SQL ตรง เพราะคอลัมน์นี้เป็น `@updatedAt` ซึ่ง Prisma เขียนทับเป็น
+ * เวลาปัจจุบันเสมอไม่ว่าจะสั่งอะไรไป
+ */
+async function ageUpdatedAt(postId: string, atMs: number): Promise<void> {
+  await prisma.$executeRaw`UPDATE posts SET updated_at = ${new Date(atMs)} WHERE id = ${postId}`;
+}
+
 describe.skipIf(!HAS_DB)("ที่เก็บของงานโพสต์", () => {
   beforeEach(async () => {
-    await prisma.postTarget.deleteMany();
-    await prisma.post.deleteMany();
-    await prisma.page.deleteMany();
-    await prisma.workspace.deleteMany();
+    // ลบเฉพาะของไฟล์นี้ — เพจ/โพสต์/เป้าหมาย ถูกลบต่อแบบ cascade
+    await prisma.workspace.deleteMany({ where: { name: WORKSPACE_NAME } });
   });
 
   afterAll(async () => {
@@ -108,6 +119,67 @@ describe.skipIf(!HAS_DB)("ที่เก็บของงานโพสต์
 
       const target = await repo.findTarget(postId, seeded.fbA);
       expect(target?.pageId).toBe(seeded.fbA);
+    });
+
+    /**
+     * เจอตอนตรวจงาน: `posts` ไม่มีคอลัมน์เก็บ URL เลย โพสต์ประเภท "ลิงก์"
+     * จึงล้มทุกใบด้วยข้อความ 'โพสต์ประเภท "ลิงก์" ต้องระบุ URL' โดยไม่มีทาง
+     * แก้ให้สำเร็จได้ — เพราะไม่มีที่ให้ใส่ URL ตั้งแต่แรก
+     */
+    it("โพสต์ประเภทลิงก์อ่าน URL กลับมาได้", async () => {
+      const seeded = await seedPages();
+      const post = await prisma.post.create({
+        data: {
+          pageId: seeded.pageA,
+          type: "link",
+          body: "อ่านรีวิวเต็มๆ ได้ที่นี่",
+          link: "https://example.com/review",
+          contentHash: "hash-link",
+          status: "scheduled",
+          approvalStatus: "approved",
+          scheduledAt: new Date(NOW - MINUTE),
+        },
+      });
+      await prisma.postTarget.create({
+        data: { postId: post.id, pageId: seeded.pageA },
+      });
+
+      const content = (await new PrismaPostRepository(prisma).findPost(post.id))
+        ?.content;
+      expect(content?.type).toBe("link");
+      expect(content?.link).toBe("https://example.com/review");
+    });
+
+    it("โพสต์ที่มีสื่ออ่าน url/caption กลับมาได้", async () => {
+      const seeded = await seedPages();
+      const post = await prisma.post.create({
+        data: {
+          pageId: seeded.pageA,
+          type: "album",
+          body: "เมนูใหม่",
+          media: [
+            { url: "https://cdn.example.com/1.jpg", caption: "กาแฟเย็น" },
+            { url: "https://cdn.example.com/2.jpg" },
+            // ของเสียที่หลุดเข้ามาต้องถูกกรองทิ้ง ไม่ใช่ทำให้ทั้งโพสต์พัง
+            { caption: "ไม่มี url" },
+            "ไม่ใช่อ็อบเจ็กต์",
+          ],
+          contentHash: "hash-album",
+          status: "scheduled",
+          approvalStatus: "approved",
+          scheduledAt: new Date(NOW - MINUTE),
+        },
+      });
+      await prisma.postTarget.create({
+        data: { postId: post.id, pageId: seeded.pageA },
+      });
+
+      const content = (await new PrismaPostRepository(prisma).findPost(post.id))
+        ?.content;
+      expect(content?.media).toEqual([
+        { url: "https://cdn.example.com/1.jpg", caption: "กาแฟเย็น" },
+        { url: "https://cdn.example.com/2.jpg" },
+      ]);
     });
 
     it("ไม่มีโพสต์นี้ → คืน null ไม่ใช่โยน error", async () => {
@@ -395,6 +467,58 @@ describe.skipIf(!HAS_DB)("ที่เก็บของงานโพสต์
 
       const rows = await new PrismaDuePostSource({ prisma }).findDue(NOW, 10);
       expect(rows[0]?.targetPageIds).toEqual([seeded.fbB]);
+    });
+
+    /**
+     * เจอตอนตรวจงาน: ถ้าตัวจัดการงานใส่งาน retry กลับเข้าคิวไม่สำเร็จ
+     * (Redis สะดุดพอดี) สิ่งที่เหลืออยู่คือเป้าหมาย = scheduled แต่โพสต์แม่ =
+     * publishing แล้ว `findDue` เดิมมองหาแต่ status = scheduled → ไม่มีใคร
+     * หยิบอีกเลย โพสต์หายเงียบๆ ไม่มี error ที่ไหน
+     */
+    it("โพสต์ที่ค้างในสถานะกำลังยิงเกินเวลา → หยิบกลับมาทำใหม่", async () => {
+      const seeded = await seedPages();
+      const postId = await seedPost({ seeded, status: "publishing" });
+      await ageUpdatedAt(postId, NOW - 2 * 3_600_000);
+
+      const rows = await new PrismaDuePostSource({ prisma }).findDue(NOW, 10);
+      expect(rows.map((r) => r.post.id)).toEqual([postId]);
+    });
+
+    it("โพสต์ที่กำลังยิงอยู่และเพิ่งแตะไป → ยังไม่ถือว่าค้าง", async () => {
+      const seeded = await seedPages();
+      await seedPost({ seeded, status: "publishing" });
+      expect(await new PrismaDuePostSource({ prisma }).findDue(NOW, 10)).toEqual([]);
+    });
+
+    /**
+     * ถ้าไม่ดัน updatedAt ตอนหยิบงานค้างกลับมา มันจะเข้าเงื่อนไข "ค้าง" อีก
+     * ในนาทีถัดไป แล้วโดนยัดเข้าคิวซ้ำทุกนาทีไม่มีที่สิ้นสุด
+     */
+    it("หยิบงานค้างกลับมาแล้ว markQueued ต้องกันไม่ให้หยิบซ้ำรอบหน้า", async () => {
+      const seeded = await seedPages();
+      const postId = await seedPost({ seeded, status: "publishing" });
+      await ageUpdatedAt(postId, NOW - 2 * 3_600_000);
+
+      const source = new PrismaDuePostSource({ prisma });
+      expect(await source.findDue(NOW, 10)).toHaveLength(1);
+      await source.markQueued(postId);
+      expect(await source.findDue(NOW, 10)).toEqual([]);
+    });
+
+    /**
+     * โพสต์ที่ขึ้นครบทุกเพจแล้วแต่สถานะแม่ยังไม่ได้อัปเดต ต้องไม่ถูกหยิบมา
+     * ยัดคิวเปล่าๆ ทุกนาที
+     */
+    it("โพสต์ที่ไม่มีเป้าหมายเหลือแล้ว ไม่ถูกหยิบ", async () => {
+      const seeded = await seedPages();
+      const postId = await seedPost({ seeded });
+      await new PrismaPostRepository(prisma).markTargetPublished({
+        postId,
+        pageId: seeded.fbA,
+        fbPostId: "fb_1",
+        publishedAtMs: NOW,
+      });
+      expect(await new PrismaDuePostSource({ prisma }).findDue(NOW, 10)).toEqual([]);
     });
 
     it("markQueued แล้วรอบถัดไปไม่หยิบซ้ำ", async () => {
