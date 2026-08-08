@@ -16,6 +16,7 @@
     "@page-os/inbox": "workspace:*",
     "@page-os/meta": "workspace:*",
     "@page-os/moderation": "workspace:*",
+    "@page-os/portal": "workspace:*",
     "@page-os/publish": "workspace:*",
     "@page-os/studio": "workspace:*",
     "next": "15.5.23",

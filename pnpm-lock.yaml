@@ -41,6 +41,9 @@ importers:
       '@page-os/moderation':
         specifier: workspace:*
         version: link:../../packages/moderation
+      '@page-os/portal':
+        specifier: workspace:*
+        version: link:../../packages/portal
       '@page-os/publish':
         specifier: workspace:*
         version: link:../../packages/publish

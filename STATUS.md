@@ -14,10 +14,10 @@
 | **M-E** | Unified Inbox + Webhook realtime + SLA | ✅ เสร็จ |
 | **M-F** | Chatbot 3 ชั้น + RAG + Flow engine + Tone | ✅ เสร็จ (ตัววาด flow เป็นงาน UI) |
 | **M-G** | AI Content Studio + Template Library | ✅ เสร็จ (หน้าปฏิทินเป็นงาน UI) |
-| **M-H** | Client Portal + Onboarding wizard | ✅ เสร็จ (หน้าเว็บ portal เป็นงาน UI) |
+| **M-H** | Client Portal + Onboarding wizard | ✅ เสร็จ (มีหน้าเว็บ portal แล้ว) |
 | **M-I** | Ops Center + Audit + Bulk actions | 🔜 ถัดไป |
 | **M-J** | Billing | ⬜ |
-| — | `apps/web` หอบังคับการ (Today View / ปฏิทินรวม / Inbox / สถานะเพจ) | ✅ รอบแรกเสร็จ |
+| — | `apps/web` หอบังคับการ + หน้า portal ของลูกค้า (white-label) | ✅ รอบแรกเสร็จ |
 
 รายงาน audit ของแต่ละ milestone อยู่ที่ `docs/audit/M-*.md`
 
