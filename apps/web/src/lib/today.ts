@@ -14,33 +14,21 @@ import {
   type QueuedConversation,
   type SlaSummary,
 } from "@page-os/inbox";
-import { STATE_LABEL_TH } from "@page-os/db";
-import { needsAlert } from "@page-os/meta";
-import type { ClientPage, ConversationRow, ScheduledPostRow, Workspace } from "./workspace.js";
+import {
+  WEBHOOK_SILENT_MS,
+  collectProblems as opsCollectProblems,
+  type Problem,
+  type Severity,
+} from "@page-os/ops";
+import type {
+  ClientPage,
+  ConversationRow,
+  ScheduledPostRow,
+  Workspace,
+} from "./workspace.js";
 
-/** webhook เงียบเกินนี้ถือว่าผิดปกติ (สเปกข้อ M8 Alert Center) */
-export const WEBHOOK_SILENT_MS = 30 * 60_000;
-
-export type Severity = "critical" | "warning" | "info";
-
-export interface Problem {
-  id: string;
-  severity: Severity;
-  pageId: string;
-  pageName: string;
-  clientName: string;
-  colorIndex: number;
-  /** อะไรพัง — ภาษาไทย บอกด้วยว่าต้องทำอะไรต่อ */
-  th: string;
-  /** หมวดไว้จัดกลุ่มและทำสถิติ */
-  kind: "token" | "webhook" | "publish" | "rate_limit" | "moderation";
-}
-
-const SEVERITY_RANK: Record<Severity, number> = {
-  critical: 0,
-  warning: 1,
-  info: 2,
-};
+export { WEBHOOK_SILENT_MS };
+export type { Problem, Severity };
 
 export interface InboxTask extends QueuedConversation {
   contactName: string;
@@ -95,119 +83,42 @@ function pageInfo(page: ClientPage | undefined, pageId: string) {
 }
 
 /**
- * รวบรวมทุกอย่างที่พังอยู่ตอนนี้
+ * แปลง Workspace ของหน้าเว็บให้เป็นรูปที่ `@page-os/ops` รับ
  *
- * จงใจไม่แยกเป็นหลายลิสต์ — คนใช้ไม่ได้อยากรู้ว่าปัญหาเป็นหมวดไหน
- * อยากรู้ว่า "ต้องแก้อะไรก่อน" ทุกอย่างจึงมากองรวมกันแล้วเรียงตามความแรง
+ * ตัวตรวจปัญหาย้ายไปอยู่ที่ `packages/ops` แล้ว เพราะมีผู้ใช้สองราย:
+ * หน้าจอนี้ กับ Alert Center ที่ยิงเข้า LINE ตอนไม่มีใครเปิดจอ
+ * ถ้าปล่อยให้สองทางคำนวณเอง วันหนึ่งจะได้คำตอบไม่ตรงกัน
  */
 export function collectProblems(ws: Workspace): Problem[] {
-  const problems: Problem[] = [];
-
-  for (const page of ws.pages) {
-    // 1. token — ถ้าเชื่อมไม่ได้ ฟีเจอร์อื่นของเพจนี้ไม่ทำงานเลย
-    if (needsAlert(page.connection.state)) {
-      const critical =
-        page.connection.state === "expired" ||
-        page.connection.state === "revoked";
-      problems.push({
-        id: `token:${page.pageId}`,
-        severity: critical ? "critical" : "warning",
-        ...pageInfo(page, page.pageId),
-        kind: "token",
-        th: critical
-          ? `${STATE_LABEL_TH[page.connection.state]} — เพจนี้หยุดทำงานทั้งหมด ต้องให้ลูกค้ากดเชื่อมใหม่`
-          : `${STATE_LABEL_TH[page.connection.state]}${
-              page.connection.hoursUntilExpiry !== undefined
-                ? ` (เหลือ ${Math.max(0, Math.floor(page.connection.hoursUntilExpiry / 24))} วัน)`
-                : ""
-            } — ต่ออายุก่อนหมด ไม่งั้นโพสต์ที่ตั้งไว้จะไม่ขึ้น`,
-      });
-    }
-
-    // 2. webhook เงียบ — อาการนี้เงียบมาก คนไม่รู้จนลูกค้าโวย
-    //
-    // ข้ามถ้า token ใช้ไม่ได้แล้ว: เพจที่ token หมดอายุย่อมไม่มี webhook เข้า
-    // นั่นคือ "ผลของปัญหาเดิม" ไม่ใช่ปัญหาใหม่ ขึ้นสองบรรทัดให้เรื่องเดียวกัน
-    // ทำให้รายการดูแย่กว่าความจริง แล้วคนจะเริ่มไม่เชื่อตัวเลขในหน้านี้
-    const tokenDead =
-      page.connection.state === "expired" ||
-      page.connection.state === "revoked" ||
-      page.connection.state === "no_token";
-
-    const silentFor =
-      page.lastWebhookAtMs === null ? null : ws.nowMs - page.lastWebhookAtMs;
-    if (tokenDead) {
-      continue;
-    }
-    if (page.lastWebhookAtMs === null) {
-      problems.push({
-        id: `webhook:${page.pageId}`,
-        severity: "warning",
-        ...pageInfo(page, page.pageId),
-        kind: "webhook",
-        th: "ยังไม่เคยได้รับ webhook จากเพจนี้เลย — ตรวจว่า subscribe ครบหรือยัง",
-      });
-    } else if (silentFor !== null && silentFor > WEBHOOK_SILENT_MS) {
-      problems.push({
-        id: `webhook:${page.pageId}`,
-        severity: silentFor > 4 * 3_600_000 ? "critical" : "warning",
-        ...pageInfo(page, page.pageId),
-        kind: "webhook",
-        th: `ไม่ได้รับ webhook มา ${Math.floor(silentFor / 60_000)} นาที — ข้อความลูกค้าอาจตกหล่นอยู่ตอนนี้`,
-      });
-    }
-  }
-
-  // 3. โพสต์ที่ล้มเหลว — ลูกค้าจ่ายเงินเพื่อให้โพสต์ขึ้น
-  //
-  // รวมเป็นบรรทัดเดียวต่อเพจ ไม่ใช่บรรทัดต่อโพสต์: เวลา token เพจหนึ่งหมด
-  // โพสต์ของเพจนั้นล้มพร้อมกันหมด ถ้าแตกเป็นบรรทัดละโพสต์ รายการจะยาว
-  // จนกลบเรื่องอื่นที่คนละสาเหตุ ทั้งที่ทั้งหมดแก้ด้วยการกดครั้งเดียว
-  const failedByPage = new Map<string, ScheduledPostRow[]>();
-  for (const post of ws.scheduled) {
-    if (post.failedAttempts <= 0) continue;
-    const list = failedByPage.get(post.pageId) ?? [];
-    list.push(post);
-    failedByPage.set(post.pageId, list);
-  }
-
-  for (const [pageId, posts] of failedByPage) {
-    const page = ws.pages.find((p) => p.pageId === pageId);
-    const dead = posts.filter((p) => p.failedAttempts >= 3);
-    // เหตุผลที่พบบ่อยที่สุดของเพจนี้ — บอกอันเดียวพอ ไม่ต้องไล่ทุกอัน
-    const reason =
-      (dead[0] ?? posts[0])?.lastErrorTh ?? "ไม่ทราบสาเหตุ";
-    const noun = posts.length === 1 ? "โพสต์" : `${posts.length} โพสต์`;
-
-    problems.push({
-      id: `publish:${pageId}`,
-      severity: dead.length > 0 ? "critical" : "warning",
-      ...pageInfo(page, pageId),
-      kind: "publish",
-      th:
-        dead.length > 0
-          ? `${noun}ล้มเหลวครบ 3 ครั้ง หยุด retry แล้ว — ${reason}`
-          : `${noun}ล้มเหลว กำลัง retry อยู่ — ${reason}`,
-    });
-  }
-
-  // 4. เหตุการณ์อื่นที่ระบบบันทึกไว้ (rate limit, คอมเมนต์ถูกลบ ฯลฯ)
-  for (const inc of ws.incidents) {
-    const page = ws.pages.find((p) => p.pageId === inc.pageId);
-    problems.push({
-      id: inc.id,
-      severity: inc.kind === "rate_limit" ? "warning" : "info",
-      ...pageInfo(page, inc.pageId),
-      kind: inc.kind === "rate_limit" ? "rate_limit" : "moderation",
-      th: inc.th,
-    });
-  }
-
-  return problems.sort(
-    (a, b) =>
-      SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-      a.clientName.localeCompare(b.clientName, "th"),
-  );
+  return opsCollectProblems({
+    nowMs: ws.nowMs,
+    pages: ws.pages.map((p) => ({
+      pageId: p.pageId,
+      pageName: p.pageName,
+      clientName: p.clientName,
+      colorIndex: p.colorIndex,
+      connectionState: p.connection.state,
+      ...(p.connection.hoursUntilExpiry !== undefined
+        ? { hoursUntilExpiry: p.connection.hoursUntilExpiry }
+        : {}),
+      lastWebhookAtMs: p.lastWebhookAtMs,
+    })),
+    failedPosts: ws.scheduled
+      .filter((s) => s.failedAttempts > 0)
+      .map((s) => ({
+        postId: s.postId,
+        pageId: s.pageId,
+        failedAttempts: s.failedAttempts,
+        ...(s.lastErrorTh !== undefined ? { lastErrorTh: s.lastErrorTh } : {}),
+      })),
+    incidents: ws.incidents.map((i) => ({
+      id: i.id,
+      pageId: i.pageId,
+      kind: i.kind === "rate_limit" ? ("rate_limit" as const) : ("other" as const),
+      atMs: i.atMs,
+      th: i.th,
+    })),
+  });
 }
 
 /**

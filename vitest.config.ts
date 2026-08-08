@@ -47,6 +47,10 @@ export default defineConfig({
         find: "@page-os/portal",
         replacement: r("./packages/portal/src/index.ts"),
       },
+      {
+        find: "@page-os/ops",
+        replacement: r("./packages/ops/src/index.ts"),
+      },
     ],
   },
   test: {

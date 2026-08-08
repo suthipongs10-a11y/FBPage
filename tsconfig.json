@@ -30,6 +30,9 @@
     },
     {
       "path": "./packages/portal"
+    },
+    {
+      "path": "./packages/ops"
     }
   ]
 }
