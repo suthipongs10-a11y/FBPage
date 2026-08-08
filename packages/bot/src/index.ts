@@ -43,3 +43,30 @@ export {
   type RetrievedChunk,
   type ToneProfile,
 } from "./types.js";
+
+export {
+  startFlow,
+  stepFlow,
+  validateFlow,
+  dryRunFlow,
+  FlowError,
+  MAX_STEPS_PER_TURN,
+  type BotFlow,
+  type DryRunTurn,
+  type FlowNode,
+  type FlowState,
+  type FlowStepResult,
+  type FlowValidationIssue,
+} from "./flow.js";
+
+export {
+  MessengerProfileService,
+  buildProfilePayload,
+  suggestIceBreakers,
+  ProfileConfigError,
+  MAX_ICE_BREAKERS,
+  MAX_ICE_BREAKER_CHARS,
+  type MenuAction,
+  type PersistentMenuItem,
+  type ProfilePayload,
+} from "./messenger-profile.js";

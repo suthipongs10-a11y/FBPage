@@ -24,7 +24,12 @@ import {
   retrieve,
   type Embedder,
 } from "./knowledge.js";
-import { applyTone, botDisclosure, checkBannedWords } from "./tone.js";
+import {
+  applyTone,
+  botDisclosure,
+  buildSystemPrompt,
+  checkBannedWords,
+} from "./tone.js";
 import type {
   AnswerLayer,
   BotContext,
@@ -144,7 +149,7 @@ export class BotEngine {
     }
 
     // ---- ชั้น 1: keyword / regex ----
-    const ruleReply = this.matchRules(ctx.message);
+    const ruleReply = this.matchRules(ctx.message, ctx.contactName);
     if (ruleReply) {
       const safe = this.guard(ruleReply);
       return {
@@ -182,7 +187,7 @@ export class BotEngine {
   }
 
   /** ชั้นที่ 1 — เร็ว ฟรี แม่นยำ 100% */
-  matchRules(message: string): BotReply | null {
+  matchRules(message: string, contactName?: string): BotReply | null {
     const n = normalizeText(message);
     const active = [...this.rules]
       .filter((r) => r.isActive && r.pageId === this.config.pageId)
@@ -213,7 +218,7 @@ export class BotEngine {
       const reply: BotReply = {
         layer: "rule",
         text: applyTone(rule.reply, this.config, {
-          ชื่อลูกค้า: undefined,
+          ...(contactName !== undefined ? { ชื่อลูกค้า: contactName } : {}),
         }),
         // กฎที่คนเขียนเองถือว่าแม่น 100% ตามสเปก
         confidence: 1,
@@ -260,7 +265,6 @@ export class BotEngine {
       };
     }
 
-    const { buildSystemPrompt } = await import("./tone.js");
     let result: { text: string; confidence?: number };
     try {
       result = await this.llm.complete({

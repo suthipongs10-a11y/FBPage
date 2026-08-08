@@ -12,7 +12,7 @@
 | **M-C** | Comment Automation | ✅ เสร็จ |
 | **M-D** | Analytics sync + Monthly PDF report | ✅ เสร็จ — เริ่มเก็บเงินลูกค้าได้ |
 | **M-E** | Unified Inbox + Webhook realtime + SLA | ✅ เสร็จ |
-| **M-F** | Chatbot 3 ชั้น + RAG + Tone Profile | ✅ เสร็จ (Flow Builder เป็นงาน UI) |
+| **M-F** | Chatbot 3 ชั้น + RAG + Flow engine + Tone | ✅ เสร็จ (ตัววาด flow เป็นงาน UI) |
 | **M-G** | AI Content Studio + Template Library | 🔜 ถัดไป |
 | **M-H** | Client Portal + Onboarding wizard | ⬜ |
 | **M-I** | Ops Center + Audit + Bulk actions | ⬜ |
@@ -49,7 +49,7 @@
 ### เทสต์
 
 ```
-820 tests ผ่านทั้งหมด (42 ไฟล์)
+863 tests ผ่านทั้งหมด (44 ไฟล์)
 ```
 
 รันด้วย `pnpm check` (typecheck + test)
