@@ -154,6 +154,16 @@ model Conversation {
   contactId String  @map("contact_id")
   channel   Channel
   status    String  @default("open")
+  /// ลูกค้าทักล่าสุดเมื่อไหร่ — ต้นทางของหน้าต่าง 24 ชม.
+  ///
+  /// เก็บแยกจาก `windowExpiresAt` เพราะสองค่านี้ตอบคนละคำถาม: ตัวนี้คือข้อเท็จจริง
+  /// ("ทักตอนไหน") ส่วนตัวนั้นคือค่าที่คำนวณมาแล้วเพื่อให้ query หา
+  /// "ใกล้หมดเวลา" ได้เร็ว ถ้าเก็บแต่ตัวที่คำนวณแล้ว วันที่ Meta เปลี่ยนความยาว
+  /// หน้าต่าง เราจะย้อนคำนวณของเก่าไม่ได้เลย
+  lastCustomerMessageAt DateTime? @map("last_customer_message_at") @db.Timestamptz(6)
+  /// ข้อความที่ยังไม่ได้ตอบเริ่มตั้งแต่เมื่อไหร่ — null = ตอบครบแล้ว
+  /// ต้นทางของ `slaDueAt` ด้วยเหตุผลเดียวกับข้างบน
+  awaitingSince   DateTime? @map("awaiting_since") @db.Timestamptz(6)
   /// หมดเวลา 24 ชม. เมื่อไหร่ — ใช้แสดง badge นับถอยหลังใน M1
   windowExpiresAt DateTime? @map("window_expires_at") @db.Timestamptz(6)
   /// บอทหยุดพูดจนถึงเมื่อไหร่ — เซ็ตทุกครั้งที่คนพิมพ์เอง (ข้อ 6.3)
@@ -436,6 +446,21 @@ model AlertState {
 
   @@index([lastSentAt])
   @@map("alert_states")
+}
+
+/// event จาก webhook ที่ประมวลผลไปแล้ว (กฎข้อ 6)
+///
+/// ต้องมีตารางแยก ไม่ใช้ `messages.mid` แทน เพราะ event ที่ต้องกันซ้ำมีมากกว่า
+/// ข้อความ — รีแอ็กชัน คอมเมนต์ และรีวิว ไม่ได้สร้างแถวใน `messages` เลย
+/// แต่ Meta ส่งซ้ำได้เหมือนกัน
+model WebhookSeen {
+  /// คีย์จาก `idempotencyKey()` เช่น "msg:m_1" / "comment:c_1:add"
+  key    String   @id
+  seenAt DateTime @default(now()) @map("seen_at") @db.Timestamptz(6)
+
+  /// ใช้ล้างของเก่าทิ้ง — ตารางนี้โตตามจำนวน event ไม่ใช่จำนวนบทสนทนา
+  @@index([seenAt])
+  @@map("webhook_seen")
 }
 
 /// ลิงก์เข้าระบบที่ถูกใช้ไปแล้ว (M-H) — กันใช้ซ้ำ

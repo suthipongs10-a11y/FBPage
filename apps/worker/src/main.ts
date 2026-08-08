@@ -27,6 +27,7 @@ import {
   notWiredHandler,
   publishTickHandler,
 } from "./handlers/cron.js";
+import { inboxHandler } from "./handlers/inbox.js";
 import { publishHandler } from "./handlers/publish.js";
 import { JobRouter } from "./router.js";
 import { startQueueWorker } from "./runtime.js";
@@ -63,6 +64,9 @@ const NOT_WIRED: Array<{ cron: string; missingTh: string }> = [
   },
 ];
 
+/** คิวที่ยังไม่มีตัวทำงาน — งานจะกองอยู่จนกว่าจะเขียนตัวจัดการเสร็จ */
+const UNSERVED_QUEUES = [QUEUE.moderation, QUEUE.analytics, QUEUE.tokenHealth];
+
 async function main(): Promise<void> {
   const config = loadWorkerConfig(process.env);
 
@@ -93,6 +97,10 @@ async function main(): Promise<void> {
     }),
   ]);
 
+  const inboxRouter = new JobRouter([
+    inboxHandler({ processor: deps.webhookProcessor }),
+  ]);
+
   // ตารางงานอยู่ใน Redis ไม่ใช่ในโปรเซส — รัน worker กี่ตัวก็เกิดงานรอบละใบเดียว
   const plan = await applyCronSchedule({
     queue: deps.queues[QUEUE.cron],
@@ -121,10 +129,18 @@ async function main(): Promise<void> {
       logger,
       clock: deps.clock,
     }),
+    startQueueWorker({
+      queue: QUEUE.webhookEvents,
+      router: inboxRouter,
+      connection: deps.redisBlocking,
+      env: config.env,
+      logger,
+      clock: deps.clock,
+    }),
   ];
 
   logger.warn("คิวที่ยังไม่มีตัวทำงาน — งานจะกองอยู่จนกว่าจะเขียนตัวจัดการเสร็จ", {
-    queues: [QUEUE.webhookEvents, QUEUE.moderation, QUEUE.analytics, QUEUE.tokenHealth],
+    queues: UNSERVED_QUEUES,
   });
 
   const shutdown = new GracefulShutdown({
@@ -177,7 +193,7 @@ async function main(): Promise<void> {
 
   logger.info("worker พร้อมทำงาน", {
     env: config.env,
-    queues: [QUEUE.cron, QUEUE.publish],
+    queues: [QUEUE.cron, QUEUE.publish, QUEUE.webhookEvents],
   });
 }
 

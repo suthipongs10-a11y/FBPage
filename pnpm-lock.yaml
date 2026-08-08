@@ -258,6 +258,9 @@ importers:
       '@page-os/db':
         specifier: workspace:*
         version: link:../db
+      '@page-os/inbox':
+        specifier: workspace:*
+        version: link:../inbox
       '@page-os/meta':
         specifier: workspace:*
         version: link:../meta

@@ -7,6 +7,7 @@
  */
 import { createLogger, Keyring, systemClock, type Clock, type Logger } from "@page-os/core";
 import { EncryptedTokenStore } from "@page-os/db";
+import { WebhookProcessor } from "@page-os/inbox";
 import { MetaGateway } from "@page-os/meta";
 import {
   AlertCenter,
@@ -35,6 +36,7 @@ import {
   PrismaAuditStore,
   PrismaCallLog,
   PrismaDuePostSource,
+  PrismaInboxStore,
   PrismaPageTokenRepository,
   PrismaPostRepository,
   PrismaPublishedPostLookup,
@@ -58,6 +60,8 @@ export interface WorkerDeps {
   publishScheduler: PublishScheduler;
   alertCenter: AlertCenter;
   auditStore: PrismaAuditStore;
+  inboxStore: PrismaInboxStore;
+  webhookProcessor: WebhookProcessor;
   collectProblemsNow: (nowMs: number) => Promise<ReturnType<typeof collectProblems>>;
 }
 
@@ -134,6 +138,13 @@ export function buildDeps(opts: BuildDepsOptions): WorkerDeps {
     logger,
   });
 
+  const inboxStore = new PrismaInboxStore({ prisma });
+  const webhookProcessor = new WebhookProcessor({
+    store: inboxStore,
+    clock,
+    logger,
+  });
+
   const alertCenter = new AlertCenter({
     store: new PrismaAlertStore(prisma),
     sink: opts.alertSink,
@@ -155,6 +166,8 @@ export function buildDeps(opts: BuildDepsOptions): WorkerDeps {
     publishScheduler,
     alertCenter,
     auditStore: new PrismaAuditStore(prisma),
+    inboxStore,
+    webhookProcessor,
     collectProblemsNow: (nowMs) => collectProblemsFromDb(prisma, nowMs),
   };
 }

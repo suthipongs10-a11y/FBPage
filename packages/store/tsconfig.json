@@ -6,6 +6,7 @@
   "references": [
     { "path": "../core" },
     { "path": "../db" },
+    { "path": "../inbox" },
     { "path": "../meta" },
     { "path": "../ops" },
     { "path": "../portal" },

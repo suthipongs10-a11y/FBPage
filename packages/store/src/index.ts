@@ -18,3 +18,8 @@ export {
   type PrismaDuePostSourceOptions,
   type PrismaPublishedPostLookupOptions,
 } from "./publish-repository.js";
+
+export {
+  PrismaInboxStore,
+  type PrismaInboxStoreOptions,
+} from "./inbox-repository.js";

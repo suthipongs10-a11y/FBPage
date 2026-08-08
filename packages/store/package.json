@@ -5,11 +5,19 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "scripts": { "build": "tsc -b" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
   "dependencies": {
     "@page-os/core": "workspace:*",
     "@page-os/db": "workspace:*",
+    "@page-os/inbox": "workspace:*",
     "@page-os/meta": "workspace:*",
     "@page-os/ops": "workspace:*",
     "@page-os/portal": "workspace:*",

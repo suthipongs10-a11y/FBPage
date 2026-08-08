@@ -464,10 +464,14 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลจริง", 
     });
 
     it("flush รอให้งานที่ค้างเสร็จ — ไม่งั้น log ท้ายรอบหาย", async () => {
+      // นับเฉพาะแถวของเทสต์นี้ ไม่ใช่ทั้งตาราง — เทสต์ก่อนหน้าจงใจ record()
+      // แล้วไม่ flush เพื่อพิสูจน์ว่ามันไม่บล็อก แถวนั้นจึงลงมาถึงหลัง
+      // beforeEach ล้างตารางไปแล้วได้ ทำให้นับรวมกันแล้วเกิน
+      const path = "/{page-id}/flush-test";
       const log = new PrismaCallLog({ prisma });
-      for (let i = 0; i < 5; i++) log.record({ ...entry, attempts: i + 1 });
+      for (let i = 0; i < 5; i++) log.record({ ...entry, path, attempts: i + 1 });
       await log.flush();
-      expect(await prisma.metaCallLog.count()).toBe(5);
+      expect(await prisma.metaCallLog.count({ where: { path } })).toBe(5);
     });
   });
 });
