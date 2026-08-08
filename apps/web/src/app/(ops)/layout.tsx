@@ -46,6 +46,7 @@ export default async function OpsLayout({
       urgent: today.inbox.summary.breached > 0,
     },
     { href: "/calendar", label: "ปฏิทินคอนเทนต์" },
+    { href: "/ops", label: "ศูนย์ปฏิบัติการ" },
     {
       href: "/pages",
       label: "เพจทั้งหมด",
