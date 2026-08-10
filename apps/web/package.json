@@ -21,6 +21,7 @@
     "@page-os/publish": "workspace:*",
     "@page-os/store": "workspace:*",
     "@page-os/studio": "workspace:*",
+    "@prisma/client": "^6.2.1",
     "next": "15.5.23",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

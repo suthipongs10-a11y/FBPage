@@ -56,6 +56,9 @@ importers:
       '@page-os/studio':
         specifier: workspace:*
         version: link:../../packages/studio
+      '@prisma/client':
+        specifier: ^6.2.1
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
       next:
         specifier: 15.5.23
         version: 15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

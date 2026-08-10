@@ -95,6 +95,7 @@ URL ที่แสดงคือของจริงเสมอ — ถ้�
 | `Environment variable not found: DATABASE_URL` (P1012) | ยังไม่มี `.env` → `pnpm configure` |
 | `TS7006: Parameter 'r' implicitly has an 'any' type` ในไฟล์ที่ไม่ได้แก้ | Prisma Client ยังไม่ถูกสร้าง → `pnpm db:generate` |
 | `ELIFECYCLE Command failed.` ตอนกด Ctrl+C | ไม่ใช่ error — เป็นเสียงบ่นของ pnpm เวลาโดนสัญญาณหยุด ปิดครบทุกตัวแล้ว (ดูบรรทัด "ปิดระบบครบทุกขั้นแล้ว" เหนือขึ้นไป) |
+| ทุกหน้าที่แตะฐานข้อมูลขึ้น 500 + `could not locate the Query Engine` | Prisma ถูกลากเข้า bundle ของ Next — ล็อกไว้แล้วใน `apps/web/next.config.ts` ถ้าเจออีกแปลว่าค่านั้นหายไป (`apps/web/src/next-config.test.ts` จะจับได้) |
 
 > `pnpm install`, `pnpm dev`, `pnpm build` และ `pnpm typecheck` เรียก
 > `scripts/ensure-prisma.mjs` ให้อัตโนมัติแล้ว จึงไม่ควรเจอ TS7006 อีก —
