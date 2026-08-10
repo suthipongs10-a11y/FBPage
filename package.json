@@ -7,17 +7,19 @@
     "node": ">=22"
   },
   "scripts": {
-    "setup": "node scripts/setup.mjs",
-    "doctor": "node scripts/doctor.mjs",
-    "dev": "tsc -b && node scripts/dev.mjs",
-    "db:push": "pnpm --filter @page-os/db db:push",
-    "db:generate": "pnpm --filter @page-os/db db:generate",
-    "db:studio": "pnpm --filter @page-os/db exec prisma studio",
-    "build": "tsc -b",
-    "clean": "rm -rf packages/*/dist packages/*/*.tsbuildinfo tsconfig.tsbuildinfo",
+    "postinstall": "node scripts/ensure-prisma.mjs",
+    "configure": "node scripts/setup.mjs",
+    "preflight": "node scripts/doctor.mjs",
+    "dev": "node scripts/ensure-prisma.mjs && tsc -b && node scripts/dev.mjs",
+    "db:push": "node scripts/prisma.mjs db push",
+    "db:migrate": "node scripts/prisma.mjs migrate dev",
+    "db:generate": "node scripts/prisma.mjs generate",
+    "db:studio": "node scripts/prisma.mjs studio",
+    "build": "node scripts/ensure-prisma.mjs && tsc -b",
+    "clean": "node scripts/clean.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -b --force && tsc -p tsconfig.test.json",
+    "typecheck": "node scripts/ensure-prisma.mjs && tsc -b --force && tsc -p tsconfig.test.json",
     "check": "pnpm run typecheck && pnpm run test"
   },
   "devDependencies": {

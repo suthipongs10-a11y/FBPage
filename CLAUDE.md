@@ -35,20 +35,32 @@
 packages/core     crypto (AES-256-GCM), logger ที่ redact token, Clock ที่ inject ได้
 packages/meta     Meta Gateway + error mapping + rate limit + OAuth/token lifecycle
 packages/db       Prisma schema + TokenStore ที่เข้ารหัส + health check
-apps/web          Next.js 15 (dashboard + client portal)      [ยังไม่ได้ทำ]
-apps/webhook      Fastify service รับ webhook                  [ยังไม่ได้ทำ]
-apps/worker       BullMQ workers                               [ยังไม่ได้ทำ]
+packages/store    ที่เดียวในระบบที่รู้จัก Prisma — implement interface ของทุกโดเมน
+packages/queue    ที่เดียวในระบบที่รู้จัก BullMQ — คิว, ตารางงาน, การปิดระบบ
+apps/web          Next.js 15 (หอบังคับการ + ศูนย์ปฏิบัติการ + portal ลูกค้า)
+apps/webhook      Fastify service รับ webhook จาก Meta แล้วส่งเข้าคิว
+apps/worker       BullMQ workers + cron
 ```
+
+โดเมนที่เหลืออยู่ใน `packages/{publish,moderation,analytics,inbox,bot,studio,portal,ops}`
+— ดูตารางเต็มใน `README.md`
 
 ## คำสั่ง
 
 ```bash
-pnpm install
+pnpm install      # ลง dependency + สร้าง Prisma Client ให้เอง (postinstall)
 pnpm check        # typecheck + test ทั้งหมด (รันก่อน commit ทุกครั้ง)
 pnpm test         # เฉพาะเทสต์
 pnpm typecheck    # เฉพาะ typecheck (รวมไฟล์เทสต์)
 pnpm build        # build dist ของทุก package
+pnpm configure    # ตัวถาม-ตอบ เขียนไฟล์ .env
+pnpm preflight    # ตรวจความพร้อมก่อนเปิดระบบ
+pnpm dev          # เปิด web + webhook + worker พร้อมกัน
 ```
+
+> ชื่อคำสั่งห้ามชนกับคำสั่งในตัวของ pnpm (`setup`, `doctor`, `init`, `pack`, …)
+> — pnpm จะรันของตัวเองเงียบๆ โดยไม่บอกว่ามีสคริปต์ชื่อเดียวกันอยู่
+> `scripts/package-scripts.test.ts` บังคับกฎนี้ไว้แล้ว
 
 ## แนวทางเขียนโค้ดในโปรเจ็คนี้
 

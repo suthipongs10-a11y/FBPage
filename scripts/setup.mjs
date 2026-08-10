@@ -2,7 +2,7 @@
 /**
  * ตัวตั้งค่าแบบถาม-ตอบ — สร้างไฟล์ `.env` ให้
  *
- *   pnpm setup
+ *   pnpm configure
  *
  * ─── เรื่องที่ระวังเป็นพิเศษ ───
  *
@@ -51,7 +51,7 @@ function genVerifyToken() {
  * `readline.question()` ดักบรรทัดแบบ "ครั้งเดียวต่อหนึ่งคำถาม" ตอนคนพิมพ์
  * บรรทัดมาทีละบรรทัดพอดีกับจังหวะที่มีคำถามค้างอยู่ จึงไม่มีปัญหา
  *
- * แต่ตอนป้อนผ่าน pipe (`pnpm setup < answers.txt`) ข้อมูลมาถึงพร้อมกันทั้งก้อน
+ * แต่ตอนป้อนผ่าน pipe (`pnpm configure < answers.txt`) ข้อมูลมาถึงพร้อมกันทั้งก้อน
  * readline ยิง event ออกมารวดเดียวทุกบรรทัด — คำถามแรกรับไปบรรทัดเดียว
  * **ที่เหลือหายหมด** แล้วคำถามที่สองจะรอตลอดกาลจนโปรเซสจบไปเฉยๆ (exit 0)
  * โดยไม่มี error อะไรเลย ซึ่งหลอกมาก
@@ -151,7 +151,7 @@ async function main() {
       if (attempt > 3) {
         throw new Error(
           `ใส่ค่า ${spec.key} ไม่ผ่านสามครั้งติด — หยุดไว้ก่อนเพื่อไม่ให้วนไม่รู้จบ ` +
-            `ลองรัน pnpm setup ใหม่ หรือแก้ไฟล์ .env ตรงๆ`,
+            `ลองรัน pnpm configure ใหม่ หรือแก้ไฟล์ .env ตรงๆ`,
         );
       }
       const hint = shown === "" ? "" : ` [${shown}]`;
@@ -197,8 +197,8 @@ async function main() {
   }
 
   const lines = [
-    "# สร้างโดย `pnpm setup` — ห้าม commit ไฟล์นี้",
-    "# แก้ค่าทีหลังได้โดยรัน `pnpm setup` ใหม่ หรือแก้ไฟล์นี้ตรงๆ",
+    "# สร้างโดย `pnpm configure` — ห้าม commit ไฟล์นี้",
+    "# แก้ค่าทีหลังได้โดยรัน `pnpm configure` ใหม่ หรือแก้ไฟล์นี้ตรงๆ",
     "",
   ];
   let group = "";
@@ -229,7 +229,7 @@ async function main() {
   head("ขั้นต่อไป");
   say("  1. ยกฐานข้อมูลขึ้น        docker compose up -d");
   say("  2. สร้างตาราง            pnpm db:push");
-  say("  3. ตรวจความพร้อม         pnpm doctor");
+  say("  3. ตรวจความพร้อม         pnpm preflight");
   say("  4. เปิดระบบ              pnpm dev");
   say("");
 }

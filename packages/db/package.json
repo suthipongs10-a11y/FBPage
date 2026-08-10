@@ -13,9 +13,9 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push"
+    "db:generate": "node ../../scripts/prisma.mjs generate",
+    "db:migrate": "node ../../scripts/prisma.mjs migrate dev",
+    "db:push": "node ../../scripts/prisma.mjs db push"
   },
   "dependencies": {
     "@page-os/core": "workspace:*",

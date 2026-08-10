@@ -57,8 +57,8 @@ export function metaGateway(): { gateway: MetaGateway; tokens: EncryptedTokenSto
 
   const gateway = new MetaGateway(
     {
-      appId: required("META_APP_ID", "รัน `pnpm setup` แล้วใส่ App ID จาก Meta"),
-      appSecret: required("META_APP_SECRET", "รัน `pnpm setup` แล้วใส่ App Secret"),
+      appId: required("META_APP_ID", "รัน `pnpm configure` แล้วใส่ App ID จาก Meta"),
+      appSecret: required("META_APP_SECRET", "รัน `pnpm configure` แล้วใส่ App Secret"),
       // กฎข้อ 2: เวอร์ชันมาจาก env ที่เดียว — ห้ามส่ง graphVersion เข้ามาที่นี่
     },
     { tokenStore: tokens, logger, callLog: new PrismaCallLog({ prisma: db, logger }) },
@@ -71,7 +71,7 @@ export function tokenService(gateway: MetaGateway): TokenService {
   return new TokenService(
     gateway,
     {
-      appId: required("META_APP_ID", "รัน `pnpm setup`"),
+      appId: required("META_APP_ID", "รัน `pnpm configure`"),
       redirectUri: process.env["META_OAUTH_REDIRECT_URI"] ?? "",
     },
     logger,

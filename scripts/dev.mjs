@@ -96,7 +96,7 @@ function pretty(line) {
 function main() {
   if (!existsSync(join(ROOT, ".env"))) {
     console.error(
-      `${C.red}ยังไม่มีไฟล์ .env${C.reset} — รัน ${C.bold}pnpm setup${C.reset} ก่อน`,
+      `${C.red}ยังไม่มีไฟล์ .env${C.reset} — รัน ${C.bold}pnpm configure${C.reset} ก่อน`,
     );
     process.exit(1);
   }
@@ -188,7 +188,7 @@ function main() {
         process.stdout.write(
           `\n${C.red}${C.bold}${svc.name.trim()} สตาร์ทไม่ขึ้น${C.reset} — ` +
             `ดูสาเหตุเต็มๆ ที่ ${C.bold}.logs/${svc.name.trim()}.log${C.reset}\n` +
-            `${C.dim}ถ้ายังไม่แน่ใจ ลองรัน ${C.reset}${C.bold}pnpm doctor${C.reset}${C.dim} เพื่อไล่ทีละข้อ${C.reset}\n\n`,
+            `${C.dim}ถ้ายังไม่แน่ใจ ลองรัน ${C.reset}${C.bold}pnpm preflight${C.reset}${C.dim} เพื่อไล่ทีละข้อ${C.reset}\n\n`,
         );
       }
     });

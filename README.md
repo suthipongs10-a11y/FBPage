@@ -9,27 +9,46 @@
 
 ## เริ่มใช้งานบนเครื่องตัวเอง
 
-ต้องมี **Node 22 ขึ้นไป**, **pnpm** และ **Docker** (ไว้ยก Postgres กับ Redis)
+### ต้องมีอะไรก่อน
+
+| ของ | เอามาจากไหน | เช็คว่ามีแล้วยังไง |
+|---|---|---|
+| **Node 22 ขึ้นไป** | <https://nodejs.org> (เลือก LTS) | `node -v` ต้องขึ้น `v22.x` หรือสูงกว่า |
+| **pnpm** | `npm install -g pnpm` | `pnpm -v` |
+| **Docker Desktop** | <https://www.docker.com/products/docker-desktop/> | `docker -v` — และต้อง**เปิดโปรแกรมค้างไว้** ไม่ใช่แค่ติดตั้ง |
+
+Docker มีไว้ยก Postgres + Redis เท่านั้น ถ้ามีสองตัวนี้อยู่แล้วก็ข้ามได้ —
+ตอน `pnpm configure` ให้ใส่ที่อยู่ของตัวที่มีอยู่แทน
+
+### ห้าคำสั่ง
 
 ```bash
-pnpm install
+pnpm install             # ลง dependency + สร้าง Prisma Client ให้เอง
 docker compose up -d     # ยก Postgres + Redis (image มี pgvector มาให้แล้ว)
-pnpm setup               # ถามทีละค่า แล้วเขียน .env ให้
+pnpm configure           # ถามทีละค่า แล้วเขียน .env ให้
 pnpm db:push             # สร้างตารางในฐานข้อมูล
-pnpm doctor              # ตรวจว่าพร้อมจริงไหม — บอกด้วยว่าต้องพิมพ์อะไรต่อ
+pnpm preflight           # ตรวจว่าพร้อมจริงไหม — บอกด้วยว่าต้องพิมพ์อะไรต่อ
 pnpm dev                 # เปิดทั้งสามตัวพร้อมกัน
 ```
 
 เปิด <http://localhost:3000/settings> แล้วเชื่อมเพจแรก
 
+> ⚠️ **ชื่อคำสั่งคือ `configure` กับ `preflight` ไม่ใช่ `setup` กับ `doctor`**
+> เพราะสองชื่อหลังเป็นคำสั่งในตัวของ pnpm อยู่แล้ว — พิมพ์ `pnpm setup` จะได้
+> ตัวตั้งค่าของ pnpm เอง (ขึ้นว่า "Setup complete") ทั้งที่ `.env` ไม่ถูกสร้าง
+> แล้วไปพังต่อที่ `pnpm db:push` แบบเดาสาเหตุไม่ออก
+
 ### แต่ละคำสั่งทำอะไร
 
 | คำสั่ง | ทำอะไร |
 |---|---|
-| `pnpm setup` | ถามค่าทีละตัวเป็นภาษาไทย พร้อมบอกว่าไปเอามาจากไหน สร้างกุญแจเข้ารหัสให้เอง แล้วเขียน `.env` (สิทธิ์ 600) |
-| `pnpm doctor` | ตรวจ Node, `.env`, ต่อ Postgres/Redis ได้ไหม, ตารางมีหรือยัง — ทุกข้อที่ไม่ผ่านมีคำสั่งแก้ติดมาด้วย |
+| `pnpm configure` | ถามค่าทีละตัวเป็นภาษาไทย พร้อมบอกว่าไปเอามาจากไหน สร้างกุญแจเข้ารหัสให้เอง แล้วเขียน `.env` (สิทธิ์ 600) |
+| `pnpm preflight` | ตรวจ Node, Prisma Client, `.env`, ต่อ Postgres/Redis ได้ไหม, ตารางมีหรือยัง — ทุกข้อที่ไม่ผ่านมีคำสั่งแก้ติดมาด้วย |
 | `pnpm dev` | build แล้วเปิด web + webhook + worker พร้อมกัน รวม log มาไว้ที่เดียว กด Ctrl+C ปิดทั้งหมดแบบเรียบร้อย |
 | `pnpm check` | typecheck + เทสต์ทั้งหมด — รันก่อน commit ทุกครั้ง |
+| `pnpm db:push` | สร้าง/อัปเดตตารางในฐานข้อมูลตาม `schema.prisma` |
+| `pnpm db:generate` | สร้าง Prisma Client ใหม่ (ปกติ `pnpm install` / `pnpm dev` ทำให้เองแล้ว) |
+| `pnpm clean` | ลบของที่ build ไว้ทั้งหมด |
 
 `pnpm dev` เปิดสามโปรเซส:
 
@@ -59,15 +78,27 @@ URL ที่แสดงคือของจริงเสมอ — ถ้�
 `.logs/<ชื่อ>.log` — สาเหตุที่พบบ่อยที่สุดคือ Postgres/Redis ยังไม่ขึ้น
 (`docker compose ps` เช็ค แล้ว `docker compose up -d`)
 
-**3. `pnpm doctor`** ไล่ให้ทีละข้อว่าติดตรงไหน พร้อมคำสั่งแก้
+**3. `pnpm preflight`** ไล่ให้ทีละข้อว่าติดตรงไหน พร้อมคำสั่งแก้
+
+### ตารางอาการ → สาเหตุ
 
 | อาการ | มักเป็นเพราะ |
 |---|---|
 | หน้าเว็บขาว / ต่อไม่ติด | พอร์ตไม่ใช่ 3000 — ดูบนจอ |
 | `ECONNREFUSED ...:6379` | Redis ยังไม่ขึ้น → `docker compose up -d` |
 | `ECONNREFUSED ...:5432` | Postgres ยังไม่ขึ้น → `docker compose up -d` |
-| `ยังไม่มีไฟล์ .env` | ยังไม่ได้รัน `pnpm setup` |
+| `ยังไม่มีไฟล์ .env` | ยังไม่ได้รัน `pnpm configure` |
 | `table ... does not exist` | ยังไม่ได้รัน `pnpm db:push` |
+| `docker : The term 'docker' is not recognized` | ยังไม่ได้ติดตั้ง Docker Desktop (ลิงก์อยู่ตารางบนสุด) |
+| `error during connect: ... docker_engine` | ติดตั้ง Docker แล้วแต่ยังไม่ได้เปิดโปรแกรม |
+| `Setup complete. Open a new terminal...` | พิมพ์ `pnpm setup` ไป — ตัวที่ต้องการคือ `pnpm configure` |
+| `Environment variable not found: DATABASE_URL` (P1012) | ยังไม่มี `.env` → `pnpm configure` |
+| `TS7006: Parameter 'r' implicitly has an 'any' type` ในไฟล์ที่ไม่ได้แก้ | Prisma Client ยังไม่ถูกสร้าง → `pnpm db:generate` |
+| `ELIFECYCLE Command failed.` ตอนกด Ctrl+C | ไม่ใช่ error — เป็นเสียงบ่นของ pnpm เวลาโดนสัญญาณหยุด ปิดครบทุกตัวแล้ว (ดูบรรทัด "ปิดระบบครบทุกขั้นแล้ว" เหนือขึ้นไป) |
+
+> `pnpm install`, `pnpm dev`, `pnpm build` และ `pnpm typecheck` เรียก
+> `scripts/ensure-prisma.mjs` ให้อัตโนมัติแล้ว จึงไม่ควรเจอ TS7006 อีก —
+> ถ้ายังเจอแปลว่า `prisma generate` พัง ให้สั่ง `pnpm db:generate` ดู error เต็ม
 
 ---
 
@@ -75,7 +106,7 @@ URL ที่แสดงคือของจริงเสมอ — ถ้�
 
 แบ่งเป็นสองที่ ตามว่าค่านั้นถูกอ่านตอนไหน — **ไม่ใช่เพราะทำไม่เสร็จ**
 
-### 1. ค่าที่อ่านตอนโปรเซสสตาร์ท → `pnpm setup`
+### 1. ค่าที่อ่านตอนโปรเซสสตาร์ท → `pnpm configure`
 
 `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `TOKEN_ENC_KEYS`,
 `DATABASE_URL`, `REDIS_URL` และค่าตั้งค่าอื่นๆ
@@ -84,7 +115,7 @@ URL ที่แสดงคือของจริงเสมอ — ถ้�
 และตัวที่สำคัญที่สุดคือ `TOKEN_ENC_KEYS` ซึ่งเป็นกุญแจถอดรหัส token ทุกเพจ —
 ถ้าหน้าเว็บเขียนทับได้ ใครที่เข้าหน้านั้นได้ก็ทำให้ token ทุกเพจใช้ไม่ได้ถาวรในคลิกเดียว
 
-> ⚠️ **`TOKEN_ENC_KEYS` สร้างครั้งเดียว** `pnpm setup` จะไม่สร้างทับของเดิมเด็ดขาด
+> ⚠️ **`TOKEN_ENC_KEYS` สร้างครั้งเดียว** `pnpm configure` จะไม่สร้างทับของเดิมเด็ดขาด
 > ถ้าไฟล์ `.env` หายหลังเชื่อมเพจไปแล้ว token เดิมถอดรหัสไม่ได้อีกเลย ต้องเชื่อมใหม่ทุกเพจ
 
 ### 2. token ของแต่ละเพจ → หน้า `/settings`

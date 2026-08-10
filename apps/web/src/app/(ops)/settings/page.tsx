@@ -77,7 +77,7 @@ export default async function SettingsPage() {
             style={{ background: "var(--danger-bg)", color: "var(--danger)" }}
           >
             ยังตั้งค่าไม่ครบ ({env.missingRequired.join(", ")}) — เชื่อมเพจไม่ได้จนกว่า
-            จะรัน <code className="font-mono">pnpm setup</code> ให้ครบก่อน
+            จะรัน <code className="font-mono">pnpm configure</code> ให้ครบก่อน
           </div>
         ) : (
           <ConnectPageForm action={connect} />
@@ -177,7 +177,7 @@ export default async function SettingsPage() {
       <Card>
         <SectionHeader
           title="ค่าตั้งค่าในไฟล์ .env"
-          hint="ดูอย่างเดียว — แก้ด้วย pnpm setup แล้วรีสตาร์ท"
+          hint="ดูอย่างเดียว — แก้ด้วย pnpm configure แล้วรีสตาร์ท"
         />
 
         <p className="mb-4 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
