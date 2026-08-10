@@ -24,17 +24,52 @@ function expiryLabel(expiresAt: Date | null, nowMs: number) {
   return { text: `เหลือ ${Math.floor(left / DAY)} วัน`, tone: "green" as const };
 }
 
+/**
+ * แปล error ของฐานข้อมูลเป็นสิ่งที่ทำต่อได้
+ *
+ * หน้านี้คือหน้าที่คน "กำลังติดตั้ง" เปิด ซึ่งแปลว่าโอกาสที่ฐานข้อมูลยังไม่พร้อม
+ * สูงกว่าหน้าอื่นทั้งหมด — ถ้าปล่อยให้ throw ขึ้นไปจะได้หน้า error ของ Next
+ * ที่เขียนว่า `PrismaClientInitializationError` ซึ่งไม่ได้บอกว่าต้องทำอะไรเลย
+ */
+function describeDbError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+
+  if (msg.includes("Can't reach database server")) {
+    return (
+      "ต่อฐานข้อมูลไม่ได้ — ฐานข้อมูลยังไม่ขึ้น หรือที่อยู่ใน DATABASE_URL ไม่ตรง " +
+      "ลองสั่ง docker compose up -d แล้วรีเฟรชหน้านี้"
+    );
+  }
+  if (msg.includes("does not exist") || msg.includes("P2021")) {
+    return "ยังไม่ได้สร้างตารางในฐานข้อมูล — สั่ง pnpm db:push แล้วรีเฟรชหน้านี้";
+  }
+  if (msg.includes("Authentication failed")) {
+    return "ฐานข้อมูลปฏิเสธรหัสผ่าน — เช็ค DATABASE_URL ใน .env ว่าตรงกับที่ตั้งไว้จริง";
+  }
+  // ที่เหลือ: เอาบรรทัดแรกมาให้ดู ดีกว่าซ่อนแล้วบอกว่า "เกิดข้อผิดพลาด"
+  return `ถามฐานข้อมูลไม่สำเร็จ: ${msg.split("\n")[0]} — ลองรัน pnpm preflight เพื่อไล่ทีละข้อ`;
+}
+
 export default async function SettingsPage() {
   const env = readEnvStatus();
   const nowMs = Date.now();
 
-  const pages = await prisma().page.findMany({
-    include: {
-      workspace: { select: { clientName: true } },
-      tokens: { orderBy: { updatedAt: "desc" }, take: 1 },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const query = () =>
+    prisma().page.findMany({
+      include: {
+        workspace: { select: { clientName: true } },
+        tokens: { orderBy: { updatedAt: "desc" }, take: 1 },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+  let pages: Awaited<ReturnType<typeof query>> = [];
+  let dbErrorTh: string | null = null;
+  try {
+    pages = await query();
+  } catch (err) {
+    dbErrorTh = describeDbError(err);
+  }
 
   /** เชื่อมเพจ — ทำงานฝั่งเซิร์ฟเวอร์เท่านั้น token ไม่เคยผ่านมือ client component */
   async function connect(_prev: unknown, formData: FormData) {
@@ -126,8 +161,20 @@ export default async function SettingsPage() {
 
       {/* ── เพจที่เชื่อมแล้ว ──────────────────────────────────────────── */}
       <Card>
-        <SectionHeader title="เพจในระบบ" count={pages.length} />
-        {pages.length === 0 ? (
+        <SectionHeader title="เพจในระบบ" count={dbErrorTh === null ? pages.length : undefined} />
+        {dbErrorTh !== null ? (
+          <div
+            className="rounded-[var(--radius-card)] px-4 py-3 text-sm leading-relaxed"
+            style={{ background: "var(--danger-bg)" }}
+          >
+            <div className="font-semibold" style={{ color: "var(--danger)" }}>
+              ต่อฐานข้อมูลไม่ได้
+            </div>
+            <p className="mt-1" style={{ color: "var(--text-muted)" }}>
+              {dbErrorTh}
+            </p>
+          </div>
+        ) : pages.length === 0 ? (
           <EmptyState>ยังไม่มีเพจ — เชื่อมเพจแรกจากช่องข้างบน</EmptyState>
         ) : (
           <ul className="flex flex-col gap-2">

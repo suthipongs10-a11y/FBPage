@@ -1,6 +1,7 @@
 import { STATE_LABEL_TH, STATE_TONE } from "@page-os/db";
 import { Badge, Card, ClientStripe, SectionHeader, StatTile } from "@/components/ui";
 import { compactTh, durationTh, numTh } from "@/lib/format";
+import { DemoBanner } from "@/components/demo-banner";
 import { demoSource } from "@/lib/demo-workspace";
 import { WEBHOOK_SILENT_MS } from "@/lib/today";
 import { PLAN_LABEL_TH } from "@/lib/workspace";
@@ -30,6 +31,7 @@ export default async function PagesPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoBanner />
       <header>
         <h1 className="text-2xl font-bold tracking-tight">เพจทั้งหมด</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>

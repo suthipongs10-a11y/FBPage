@@ -14,6 +14,7 @@ import {
   timeTh,
   truncate,
 } from "@/lib/format";
+import { DemoBanner } from "@/components/demo-banner";
 import { demoSource } from "@/lib/demo-workspace";
 import type { ScheduledPostRow } from "@/lib/workspace";
 
@@ -127,6 +128,7 @@ export default async function CalendarPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoBanner />
       <header>
         <h1 className="text-2xl font-bold tracking-tight">ปฏิทินคอนเทนต์</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>

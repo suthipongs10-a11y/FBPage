@@ -71,7 +71,9 @@ export default async function OpsLayout({
                   PAGE OS
                 </div>
                 <div className="text-xs" style={{ color: "var(--text-faint)" }}>
-                  {ws.pages.length} เพจ · {clients.length} ลูกค้า
+                  {/* บอกว่าเป็นของสมมติตั้งแต่ตรงนี้ด้วย — คนดูตัวเลขนี้ก่อนอย่างอื่น */}
+                  {ws.pages.length} เพจ · {clients.length} ลูกค้า{" "}
+                  <span style={{ color: "var(--warn)" }}>(ตัวอย่าง)</span>
                 </div>
               </Link>
 

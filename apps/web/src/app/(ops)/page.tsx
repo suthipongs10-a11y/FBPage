@@ -6,6 +6,7 @@ import {
 } from "@/components/today-sections";
 import { StatTile } from "@/components/ui";
 import { dateTimeTh, numTh } from "@/lib/format";
+import { DemoBanner } from "@/components/demo-banner";
 import { demoSource } from "@/lib/demo-workspace";
 import { buildTodayView } from "@/lib/today";
 import { totalsOf } from "@/lib/workspace";
@@ -24,6 +25,7 @@ export default async function TodayPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoBanner />
       <header>
         <div
           className="text-xs tracking-wide"

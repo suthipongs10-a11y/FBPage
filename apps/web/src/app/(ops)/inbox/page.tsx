@@ -1,6 +1,7 @@
 import { PLAN_SLA_MINUTES } from "@page-os/inbox";
 import { Badge, Card, ClientDot, ClientStripe, EmptyState, SectionHeader, StatTile } from "@/components/ui";
 import { durationTh, numTh, relativeTh } from "@/lib/format";
+import { DemoBanner } from "@/components/demo-banner";
 import { demoSource } from "@/lib/demo-workspace";
 import { buildTodayView } from "@/lib/today";
 import { PLAN_LABEL_TH } from "@/lib/workspace";
@@ -21,6 +22,7 @@ export default async function InboxPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoBanner />
       <header>
         <h1 className="text-2xl font-bold tracking-tight">กล่องข้อความ</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
