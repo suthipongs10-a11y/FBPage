@@ -19,3 +19,7 @@ apps/web/tsconfig.tsbuildinfo
 
 # log ตอนรัน pnpm dev
 .logs/
+
+# ไฟล์ที่ redis-server สร้างถ้าเผลอรันจากโฟลเดอร์นี้
+appendonlydir/
+dump.rdb
