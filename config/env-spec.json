@@ -1,0 +1,105 @@
+[
+  {
+    "key": "META_APP_ID",
+    "need": "required",
+    "group": "Meta App",
+    "labelTh": "App ID ของแอปใน Meta",
+    "whereTh": "developers.facebook.com → เลือกแอป → Settings → Basic → App ID (เป็นตัวเลขล้วน)"
+  },
+  {
+    "key": "META_APP_SECRET",
+    "need": "required",
+    "group": "Meta App",
+    "labelTh": "App Secret",
+    "whereTh": "หน้าเดียวกับ App ID → กด Show ข้าง App Secret (ต้องใส่รหัสผ่าน Facebook ยืนยัน)",
+    "secret": true
+  },
+  {
+    "key": "META_WEBHOOK_VERIFY_TOKEN",
+    "need": "required",
+    "group": "Meta App",
+    "labelTh": "Verify Token ของ webhook",
+    "whereTh": "ตั้งเองเป็นข้อความอะไรก็ได้ แล้วเอาค่าเดียวกันไปใส่ตอน subscribe webhook ในหน้า Meta (ปล่อยว่างให้ระบบสุ่มให้ได้)",
+    "secret": true
+  },
+  {
+    "key": "GRAPH_VERSION",
+    "need": "optional",
+    "group": "Meta App",
+    "labelTh": "เวอร์ชัน Graph API",
+    "whereTh": "ปกติไม่ต้องแก้ — v25.0 คือตัวปัจจุบัน ณ ส.ค. 2026",
+    "defaultValue": "v25.0"
+  },
+  {
+    "key": "TOKEN_ENC_KEYS",
+    "need": "required",
+    "group": "การเข้ารหัส",
+    "labelTh": "กุญแจเข้ารหัส token (AES-256-GCM)",
+    "whereTh": "ระบบสร้างให้เอง — ⚠️ ห้ามเปลี่ยนหลังจากเชื่อมเพจแล้ว เพราะ token ที่เก็บไว้จะถอดรหัสไม่ได้อีกเลย ต้องไปเชื่อมเพจใหม่ทุกเพจ",
+    "secret": true,
+    "generated": true
+  },
+  {
+    "key": "DATABASE_URL",
+    "need": "required",
+    "group": "ฐานข้อมูล",
+    "labelTh": "ที่อยู่ Postgres",
+    "whereTh": "ถ้ายก Postgres ด้วย `docker compose up -d` ตามคู่มือ ใช้ค่าเริ่มต้นได้เลย",
+    "defaultValue": "postgresql://pageos:pageos@localhost:5432/pageos"
+  },
+  {
+    "key": "REDIS_URL",
+    "need": "required",
+    "group": "ฐานข้อมูล",
+    "labelTh": "ที่อยู่ Redis (คิวงาน)",
+    "whereTh": "ถ้ายก Redis ด้วย docker compose ตามคู่มือ ใช้ค่าเริ่มต้นได้เลย",
+    "defaultValue": "redis://localhost:6379"
+  },
+  {
+    "key": "APP_ENV",
+    "need": "optional",
+    "group": "ทั่วไป",
+    "labelTh": "ชื่อสภาพแวดล้อม",
+    "whereTh": "ใช้คั่นคิวงานของแต่ละเครื่องออกจากกัน — ถ้าเผลอชี้เครื่องทดสอบไปที่ Redis ตัวเดียวกับของจริง ค่านี้คือสิ่งที่กันไม่ให้ worker ทดสอบหยิบงานจริงไปทำ",
+    "defaultValue": "dev"
+  },
+  {
+    "key": "APP_TIMEZONE",
+    "need": "optional",
+    "group": "ทั่วไป",
+    "labelTh": "timezone สำหรับตีความเวลาในตารางงาน",
+    "whereTh": "เพจลูกค้าอยู่ไทยก็ใช้ค่าเริ่มต้น (ในฐานข้อมูลเก็บ UTC เสมอ)",
+    "defaultValue": "Asia/Bangkok"
+  },
+  {
+    "key": "WEBHOOK_PORT",
+    "need": "optional",
+    "group": "ทั่วไป",
+    "labelTh": "พอร์ตของตัวรับ webhook",
+    "whereTh": "เปลี่ยนเมื่อพอร์ตนี้ถูกใช้อยู่แล้ว",
+    "defaultValue": "3001"
+  },
+  {
+    "key": "LOG_LEVEL",
+    "need": "optional",
+    "group": "ทั่วไป",
+    "labelTh": "ระดับ log",
+    "whereTh": "ใส่ \"debug\" ตอนไล่ปัญหา แล้วเปลี่ยนกลับเป็น \"info\"",
+    "defaultValue": "info"
+  },
+  {
+    "key": "LINE_CHANNEL_ACCESS_TOKEN",
+    "need": "optional",
+    "group": "แจ้งเตือน (ยังไม่ได้ต่อ)",
+    "labelTh": "LINE Messaging API access token",
+    "whereTh": "developers.line.biz → Provider → Channel (Messaging API) → Channel access token — ⚠️ ใส่ไว้ได้ แต่ตอนนี้ยังไม่มีโค้ดที่เรียกใช้ (ดูรายการที่ยังไม่ได้ทำใน STATUS.md)",
+    "secret": true
+  },
+  {
+    "key": "LINE_ADMIN_USER_ID",
+    "need": "optional",
+    "group": "แจ้งเตือน (ยังไม่ได้ต่อ)",
+    "labelTh": "LINE user id ของคนที่จะรับแจ้งเตือน",
+    "whereTh": "ดูได้จาก webhook ของ LINE ตอนทักเข้าไปหา OA ครั้งแรก"
+  }
+]

@@ -7,6 +7,12 @@
     "node": ">=22"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "dev": "tsc -b && node scripts/dev.mjs",
+    "db:push": "pnpm --filter @page-os/db db:push",
+    "db:generate": "pnpm --filter @page-os/db db:generate",
+    "db:studio": "pnpm --filter @page-os/db exec prisma studio",
     "build": "tsc -b",
     "clean": "rm -rf packages/*/dist packages/*/*.tsbuildinfo tsconfig.tsbuildinfo",
     "test": "vitest run",

@@ -50,6 +50,9 @@ importers:
       '@page-os/publish':
         specifier: workspace:*
         version: link:../../packages/publish
+      '@page-os/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       '@page-os/studio':
         specifier: workspace:*
         version: link:../../packages/studio
@@ -62,6 +65,9 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.2.8(react@19.2.8)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.3.3
@@ -1538,6 +1544,9 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  server-only@0.0.1:
+    resolution: {integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==}
+
   set-cookie-parser@2.7.2:
     resolution: {integrity: sha512-oeM1lpU/UvhTxw+g3cIfxXHyJRc/uidd3yK1P242gzHds0udQBYzs3y8j4gCCW+ZJ7ad0yctld8RYO+bdurlvw==}
 
@@ -2711,6 +2720,8 @@ snapshots:
   secure-json-parse@4.1.0: {}
 
   semver@7.8.5: {}
+
+  server-only@0.0.1: {}
 
   set-cookie-parser@2.7.2: {}
 

@@ -19,10 +19,12 @@
     "@page-os/ops": "workspace:*",
     "@page-os/portal": "workspace:*",
     "@page-os/publish": "workspace:*",
+    "@page-os/store": "workspace:*",
     "@page-os/studio": "workspace:*",
     "next": "15.5.23",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

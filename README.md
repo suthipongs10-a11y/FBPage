@@ -9,62 +9,70 @@
 
 ## เริ่มใช้งานบนเครื่องตัวเอง
 
+ต้องมี **Node 22 ขึ้นไป**, **pnpm** และ **Docker** (ไว้ยก Postgres กับ Redis)
+
 ```bash
-# 1. ติดตั้ง
 pnpm install
-
-# 2. ยก Postgres + Redis ขึ้น (ใช้ image ที่มี pgvector มาให้แล้ว)
-docker compose up -d
-
-# 3. ตั้งค่า
-cp .env.example .env
-node -e "console.log('TOKEN_ENC_KEYS=k1:'+require('crypto').randomBytes(32).toString('base64'))" >> .env
-#    แล้วเปิด .env ใส่ META_APP_ID / META_APP_SECRET ที่ได้จาก Meta for Developers
-
-# 4. สร้างตารางในฐานข้อมูล
-pnpm --filter @page-os/db db:push
-
-# 5. เปิดหน้าเว็บ
-pnpm --filter @page-os/web dev     # http://localhost:3000
-
-# 6. เปิดตัวรับ webhook และ worker (คนละหน้าต่าง)
-pnpm build
-pnpm --filter @page-os/webhook start   # http://localhost:3001/webhook
-pnpm --filter @page-os/worker start
+docker compose up -d     # ยก Postgres + Redis (image มี pgvector มาให้แล้ว)
+pnpm setup               # ถามทีละค่า แล้วเขียน .env ให้
+pnpm db:push             # สร้างตารางในฐานข้อมูล
+pnpm doctor              # ตรวจว่าพร้อมจริงไหม — บอกด้วยว่าต้องพิมพ์อะไรต่อ
+pnpm dev                 # เปิดทั้งสามตัวพร้อมกัน
 ```
 
-> `apps/worker` คือตัวที่ทำให้ "ตั้งเวลาโพสต์" เป็นเรื่องจริง
-> ถ้าไม่รัน โพสต์ที่ตั้งเวลาไว้จะนอนอยู่ใน DB เฉยๆ โดยไม่มี error ที่ไหนเลย
+เปิด <http://localhost:3000/settings> แล้วเชื่อมเพจแรก
 
-### คำสั่งที่ใช้บ่อย
+### แต่ละคำสั่งทำอะไร
 
-```bash
-pnpm check        # typecheck + test ทั้งหมด — รันก่อน commit ทุกครั้ง
-pnpm test         # เฉพาะเทสต์
-pnpm typecheck    # เฉพาะ typecheck (รวมไฟล์เทสต์)
-pnpm build        # build dist ของทุก package
-```
+| คำสั่ง | ทำอะไร |
+|---|---|
+| `pnpm setup` | ถามค่าทีละตัวเป็นภาษาไทย พร้อมบอกว่าไปเอามาจากไหน สร้างกุญแจเข้ารหัสให้เอง แล้วเขียน `.env` (สิทธิ์ 600) |
+| `pnpm doctor` | ตรวจ Node, `.env`, ต่อ Postgres/Redis ได้ไหม, ตารางมีหรือยัง — ทุกข้อที่ไม่ผ่านมีคำสั่งแก้ติดมาด้วย |
+| `pnpm dev` | build แล้วเปิด web + webhook + worker พร้อมกัน รวม log มาไว้ที่เดียว กด Ctrl+C ปิดทั้งหมดแบบเรียบร้อย |
+| `pnpm check` | typecheck + เทสต์ทั้งหมด — รันก่อน commit ทุกครั้ง |
 
-### รันเทสต์ที่ต่อของจริง
+`pnpm dev` เปิดสามโปรเซส:
 
-เทสต์ที่ต้องใช้ Postgres/Redis จะ **ข้ามทั้งไฟล์** ถ้าไม่ได้ตั้ง env ที่มันต้องการ
-เครื่องที่ไม่มีจึงยังรัน `pnpm check` ผ่าน ส่วนเครื่องที่มีจะได้ตรวจของจริง
-
-```bash
-createdb pageos_test
-DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test \
-  pnpm --filter @page-os/db db:push
-
-DATABASE_URL=postgresql://pageos:pageos@localhost:5432/pageos_test \
-REDIS_URL=redis://localhost:6379 \
-  pnpm test
-```
-
-| ชนิดเทสต์ | จำนวน | ต้องมี |
+| โปรเซส | ที่อยู่ | ถ้าไม่รันจะเป็นยังไง |
 |---|---|---|
-| ทั่วไป | 1,457 | — |
-| ต่อ Postgres จริง | 57 | `DATABASE_URL` |
-| ต่อ Redis จริง | 18 | `REDIS_URL` |
+| web | <http://localhost:3000> | ไม่มีหน้าจอให้ดู |
+| webhook | <http://localhost:3001/healthz> | Meta ส่ง event มาไม่ได้ |
+| worker | — | **โพสต์ที่ตั้งเวลาไว้ไม่ขึ้น** โดยไม่มี error ที่ไหนเลย |
+
+log แบบเต็ม (JSON) อยู่ใน `.logs/` ส่วนบนจอย่อให้อ่านง่ายแล้ว
+
+---
+
+## ป้อนคีย์ต่างๆ ตรงไหน
+
+แบ่งเป็นสองที่ ตามว่าค่านั้นถูกอ่านตอนไหน — **ไม่ใช่เพราะทำไม่เสร็จ**
+
+### 1. ค่าที่อ่านตอนโปรเซสสตาร์ท → `pnpm setup`
+
+`META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `TOKEN_ENC_KEYS`,
+`DATABASE_URL`, `REDIS_URL` และค่าตั้งค่าอื่นๆ
+
+หน้าเว็บแก้ค่าพวกนี้ไม่ได้โดยตั้งใจ: มันถูกอ่านตอนสตาร์ท แก้แล้วก็ต้องรีสตาร์ทอยู่ดี
+และตัวที่สำคัญที่สุดคือ `TOKEN_ENC_KEYS` ซึ่งเป็นกุญแจถอดรหัส token ทุกเพจ —
+ถ้าหน้าเว็บเขียนทับได้ ใครที่เข้าหน้านั้นได้ก็ทำให้ token ทุกเพจใช้ไม่ได้ถาวรในคลิกเดียว
+
+> ⚠️ **`TOKEN_ENC_KEYS` สร้างครั้งเดียว** `pnpm setup` จะไม่สร้างทับของเดิมเด็ดขาด
+> ถ้าไฟล์ `.env` หายหลังเชื่อมเพจไปแล้ว token เดิมถอดรหัสไม่ได้อีกเลย ต้องเชื่อมใหม่ทุกเพจ
+
+### 2. token ของแต่ละเพจ → หน้า `/settings`
+
+วาง **Page Access Token** จาก [Graph API Explorer](https://developers.facebook.com/tools/explorer/)
+ระบบจะตรวจกับ Meta ให้ก่อน (ใช้ได้จริงไหม · ออกโดยแอปเราหรือเปล่า · เป็น token
+ของเพจหรือของผู้ใช้) แล้วเก็บแบบเข้ารหัส AES-256-GCM ลงฐานข้อมูล
+
+หน้านี้ยังแสดงสถานะค่าใน `.env` ทั้งหมดให้ดูด้วย (ปิดบังค่าลับไว้) จะได้เห็นในที่เดียว
+ว่าตั้งครบหรือยัง
+
+> ทางนี้มีไว้สำหรับช่วงทดสอบ เพราะ OAuth เต็มรูปแบบใช้ได้หลังผ่าน App Review เท่านั้น
+> token จาก Explorer อายุสั้น (1–2 ชม.) — ถ้าจะใช้ยาวให้ใช้ System User Token
+> จาก Business Manager ที่ไม่หมดอายุ
+
+---
 
 ---
 
@@ -133,11 +141,16 @@ REDIS_URL=redis://localhost:6379 \
   พร้อมนับถอยหลังหน้าต่าง 24 ชม. และตั้งกำหนดเวลา SLA ตามแพ็กเกจของลูกค้า
 - ตรวจปัญหาทุก 5 นาที (token ใกล้หมด / webhook เงียบ / โพสต์ล้มเหลว)
 
+> ℹ️ **หน้าเว็บส่วนอื่นยังเป็นข้อมูลตัวอย่าง** — ตอนนี้มีแต่หน้า `/settings`
+> ที่ต่อฐานข้อมูลจริง ส่วนหน้า "วันนี้ / กล่องข้อความ / ปฏิทิน / ศูนย์ปฏิบัติการ"
+> ยังโชว์ข้อมูลสมมติไว้ดูหน้าตา ตัวเลขในแถบข้างจึงยังไม่ตรงกับของจริง
+> (เบื้องหลังทำงานกับของจริงหมดแล้ว — เหลือแค่ต่อสายหน้าจอ)
+
 **ยังไม่มี** และเป็นสิ่งที่เหลืออยู่ก่อนใช้ดูแลเพจจริงได้:
 
-- หน้าเชื่อมเพจ (OAuth callback) ใน `apps/web` — ยังไม่มีวิธีใส่ token เข้าระบบ
-  ⚠️ ตัวนี้เป็นตัวกั้นสุดท้ายที่แท้จริง ทุกอย่างที่เหลือทำงานได้หมดแล้ว
-  แต่ยังไม่มีทางเอา token ของเพจจริงเข้ามา
+- ต่อหน้าเว็บที่เหลือเข้ากับฐานข้อมูลจริง (ตอนนี้มีแต่ `/settings`)
+- OAuth เต็มรูปแบบ — ตอนนี้ใส่ token ผ่านหน้า `/settings` ได้แล้ว
+  แต่ยังต้องไปหยิบมาจาก Graph API Explorer เอง
 - ปลายทางแจ้งเตือนจริง (LINE) — ตอนนี้ตรวจเจอปัญหาแล้วแต่ยังไม่ได้ส่งไปไหน
 - รอบ cron ที่ยังไม่ได้ต่อ: `token-health`, `analytics-sync`,
   `morning-digest`, `monthly-report`, `purge-expired`

@@ -55,6 +55,8 @@ export default async function OpsLayout({
         (p) => p.kind === "token" && p.severity === "critical",
       ),
     },
+    // ท้ายสุดเพราะเป็นของที่แตะตอนติดตั้ง ไม่ใช่ของที่เปิดทุกวัน
+    { href: "/settings", label: "ตั้งค่า" },
   ];
 
   return (

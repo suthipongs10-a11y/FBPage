@@ -62,7 +62,7 @@ export default defineConfig({
     ],
   },
   test: {
-    include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
+    include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "scripts/**/*.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**"],
     environment: "node",
     testTimeout: 15_000,

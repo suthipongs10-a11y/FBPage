@@ -16,3 +16,6 @@ coverage/
 apps/web/.next/
 apps/web/next-env.d.ts
 apps/web/tsconfig.tsbuildinfo
+
+# log ตอนรัน pnpm dev
+.logs/
