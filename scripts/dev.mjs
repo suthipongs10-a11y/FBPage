@@ -32,24 +32,41 @@ const C = {
   yellow: "\x1b[33m",
 };
 
+const IS_WINDOWS = process.platform === "win32";
+
 /**
  * สีประจำบริการ ให้กวาดตาแล้วแยกออกทันที
  *
- * เรียก `next` ตรงๆ ไม่ผ่าน `pnpm --filter` โดยตั้งใจ: ตัว pnpm จะแทรกโปรเซส
- * ห่อไว้อีกชั้น แล้วตอนกด Ctrl+C มันจะพ่น "ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL /
- * Command failed" ออกมา ทั้งที่เป็นการปิดตามปกติ — คนเห็นแล้วนึกว่าพัง
- * ยิงตรงแบบนี้ SIGTERM ถึง next ทันทีและไม่มีเสียงรบกวน
+ * ─── ทำไมเรียก node ใส่ไฟล์ .js ของ next ตรงๆ ───
+ *
+ * 1. ไม่ผ่าน `pnpm --filter` เพราะ pnpm แทรกโปรเซสห่อไว้อีกชั้น แล้วตอนกด Ctrl+C
+ *    มันจะพ่น "ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL / Command failed" ออกมา
+ *    ทั้งที่เป็นการปิดตามปกติ — คนเห็นแล้วนึกว่าพัง
+ * 2. ไม่เรียก `node_modules/.bin/next` เพราะไฟล์นั้นเป็นสคริปต์เชลล์ (`#!/bin/sh`)
+ *    `spawn()` บน Windows รันไฟล์แบบนั้นไม่ได้ — ต้องเป็น `next.CMD` แทน
+ *    เรียก `node <ไฟล์ .js จริง>` จึงใช้ได้เหมือนกันทุกระบบปฏิบัติการ
+ *    โดยไม่ต้องแยกเคส
  */
 const SERVICES = [
   {
     name: "web    ",
     color: "\x1b[36m",
-    cmd: "node_modules/.bin/next",
-    args: ["dev"],
+    cmd: process.execPath,
+    args: ["node_modules/next/dist/bin/next", "dev"],
     cwd: "apps/web",
   },
-  { name: "webhook", color: "\x1b[35m", cmd: "node", args: ["apps/webhook/dist/server.js"] },
-  { name: "worker ", color: "\x1b[32m", cmd: "node", args: ["apps/worker/dist/main.js"] },
+  {
+    name: "webhook",
+    color: "\x1b[35m",
+    cmd: process.execPath,
+    args: ["apps/webhook/dist/server.js"],
+  },
+  {
+    name: "worker ",
+    color: "\x1b[32m",
+    cmd: process.execPath,
+    args: ["apps/worker/dist/main.js"],
+  },
 ];
 
 const LEVEL_COLOR = { error: C.red, warn: C.yellow, info: "", debug: C.dim };
@@ -135,8 +152,8 @@ function main() {
       env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
       // ให้ลูกเป็นหัวหน้ากลุ่มโปรเซสของตัวเอง เพื่อให้ส่งสัญญาณถึง "หลานๆ" ได้ด้วย
-      // ดูเหตุผลที่ `killTree()`
-      detached: true,
+      // ดูเหตุผลที่ `killTree()` — Windows ไม่มีกลุ่มโปรเซสแบบนี้
+      detached: !IS_WINDOWS,
     });
 
     for (const stream of [child.stdout, child.stderr]) {
@@ -148,11 +165,32 @@ function main() {
       });
     }
 
+    child.on("error", (err) => {
+      // เกิดตอนสั่งรันไม่ได้เลย (หาไฟล์ไม่เจอ / ไม่มีสิทธิ์) — คนละเรื่องกับ
+      // "รันแล้วตาย" และถ้าไม่ดักไว้ Node จะถือเป็น unhandled แล้วปิดทั้งชุด
+      process.stdout.write(
+        `${svc.color}${svc.name}${C.reset} │ ${C.red}สั่งรันไม่ได้: ${err.message}${C.reset}\n`,
+      );
+    });
+
     child.on("exit", (code, signal) => {
       if (shuttingDown) return;
       process.stdout.write(
         `${svc.color}${svc.name}${C.reset} │ ${C.red}หยุดทำงาน (code=${code} signal=${signal})${C.reset}\n`,
       );
+      /**
+       * ตายก่อนที่หน้าเว็บจะพร้อม = สตาร์ทไม่ขึ้น ไม่ใช่ล้มระหว่างทาง
+       *
+       * ถ้าไม่บอกอะไรเลย คนจะนั่งรอบรรทัด "เปิดครบแล้ว" ที่ไม่มีวันมา
+       * แล้วไปเปิด localhost:3000 เจอหน้าว่าง โดยไม่รู้ว่าต้องดู log ตรงไหน
+       */
+      if (!announced) {
+        process.stdout.write(
+          `\n${C.red}${C.bold}${svc.name.trim()} สตาร์ทไม่ขึ้น${C.reset} — ` +
+            `ดูสาเหตุเต็มๆ ที่ ${C.bold}.logs/${svc.name.trim()}.log${C.reset}\n` +
+            `${C.dim}ถ้ายังไม่แน่ใจ ลองรัน ${C.reset}${C.bold}pnpm doctor${C.reset}${C.dim} เพื่อไล่ทีละข้อ${C.reset}\n\n`,
+        );
+      }
     });
 
     children.push({ svc, child });
@@ -180,6 +218,19 @@ function main() {
    */
   const killTree = (child, signal) => {
     if (child.pid === undefined || child.exitCode !== null) return;
+
+    if (IS_WINDOWS) {
+      // Windows ไม่มีกลุ่มโปรเซสแบบ POSIX — ใช้ taskkill ไล่ลบทั้งต้นไม้แทน
+      try {
+        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+        });
+      } catch {
+        child.kill();
+      }
+      return;
+    }
+
     try {
       process.kill(-child.pid, signal);
     } catch {
