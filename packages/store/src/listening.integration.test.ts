@@ -31,10 +31,13 @@ async function freshWorkspace(): Promise<string> {
 describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเสียง", () => {
   let repo: PrismaListeningRepository;
   let workspaceId: string;
+  /** id ของเพจที่เทสต์นี้สร้างเอง — ใช้แยกออกจากของค้างในฐานข้อมูล */
+  let mine: Set<string>;
 
   beforeEach(async () => {
     workspaceId = await freshWorkspace();
     repo = new PrismaListeningRepository(prisma);
+    mine = new Set();
   });
 
   afterAll(async () => {
@@ -47,8 +50,8 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     name?: string;
     lastFetchedAt?: Date | null;
     source?: "META_API" | "EXTERNAL" | "MANUAL";
-  }) =>
-    prisma.trackedPage.create({
+  }) => {
+    const page = await prisma.trackedPage.create({
       data: {
         workspaceId,
         fbPageId: over.fbPageId,
@@ -58,6 +61,43 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
         lastFetchedAt: over.lastFetchedAt ?? null,
       },
     });
+    mine.add(page.id);
+    return page;
+  };
+
+  /**
+   * คิวที่ถึงเวลาดึง เอาเฉพาะเพจที่เทสต์นี้สร้างเอง
+   *
+   * `duePages` เป็นคิว**ระดับเครื่อง** — มันมองข้าม workspace โดยตั้งใจ เพราะ
+   * cron ตัวเดียวดูแลทุกเพจที่เฝ้าอยู่ ไม่ว่าจะของลูกค้าคนไหน จะใส่ตัวกรอง
+   * workspace ลงไปในโค้ดจริงเพื่อให้เทสต์ผ่านไม่ได้
+   *
+   * แต่แปลว่าถ้าในฐานข้อมูลมีเพจค้างอยู่จากที่อื่น (seed, เทสต์ไฟล์อื่น, ของที่คน
+   * เปิดเครื่องทิ้งไว้) มันจะปนกลับมาด้วย จึงต้องกรองที่ฝั่งเทสต์ — และต้องขอ
+   * limit เผื่อไว้เยอะ เพราะถ้าขอไปน้อย เพจของคนอื่นจะกินโควตาจนเพจของเรา
+   * ไม่โผล่มาเลย แล้วเทสต์จะพังทั้งที่โค้ดถูก
+   *
+   * (ตัวกรองไม่ทำให้เทสต์อ่อนลง เพราะสิ่งที่ตรวจคือ "ลำดับ" ซึ่งการกรอง
+   * รักษาลำดับสัมพัทธ์ไว้ครบ)
+   */
+  const dueHere = async (args: { nowMs: number; staleAfterMs: number }) => {
+    const rows = await repo.duePages({ ...args, limit: 10_000 });
+    return rows.filter((p) => mine.has(p.id));
+  };
+
+  /**
+   * นับ/หาคอมเมนต์เฉพาะของ workspace ตัวเอง
+   *
+   * เคยเขียนเป็น `prisma.trackedComment.count()` เฉยๆ แล้วพังทันทีที่มีข้อมูล
+   * ค้างอยู่ในฐานข้อมูลจากที่อื่น (seed, เทสต์ไฟล์อื่นที่รันขนาน, ของที่คนเปิดเครื่อง
+   * ทิ้งไว้) — เทสต์ที่พังเพราะข้อมูลของคนอื่นคือเทสต์ที่เชื่อไม่ได้
+   * เป็นบทเรียนเดียวกับ call-log flush test ใน M-J
+   */
+  const ownComments = () => ({
+    trackedPost: { trackedPage: { workspaceId } },
+  });
+  const countComments = () => prisma.trackedComment.count({ where: ownComments() });
+  const firstComment = () => prisma.trackedComment.findFirst({ where: ownComments() });
 
   describe("เลือกเพจที่ถึงเวลาดึง", () => {
     /**
@@ -69,7 +109,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
       await addPage({ fbPageId: "เก่ามาก", lastFetchedAt: new Date(now - 10 * 86_400_000) });
       await addPage({ fbPageId: "ยังไม่เคยดึง", lastFetchedAt: null });
 
-      const due = await repo.duePages({ nowMs: now, staleAfterMs: 3_600_000, limit: 10 });
+      const due = await dueHere({ nowMs: now, staleAfterMs: 3_600_000 });
       expect(due.map((p) => p.fbPageId)).toEqual(["ยังไม่เคยดึง", "เก่ามาก"]);
     });
 
@@ -78,10 +118,15 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
       await addPage({ fbPageId: "เพิ่งดึง", lastFetchedAt: new Date(now - 60_000) });
       await addPage({ fbPageId: "ถึงเวลาแล้ว", lastFetchedAt: new Date(now - 7_200_000) });
 
-      const due = await repo.duePages({ nowMs: now, staleAfterMs: 3_600_000, limit: 10 });
+      const due = await dueHere({ nowMs: now, staleAfterMs: 3_600_000 });
       expect(due.map((p) => p.fbPageId)).toEqual(["ถึงเวลาแล้ว"]);
     });
 
+    /**
+     * ข้อนี้เรียก `duePages` ตรงๆ ไม่ผ่าน `dueHere` เพราะสิ่งที่ตรวจคือ
+     * "ขอ 2 ต้องได้ 2 ไม่ใช่ 3" ซึ่งเป็นสัญญาของ `take` ล้วนๆ ไม่เกี่ยวว่า
+     * แถวที่ได้มาเป็นของ workspace ไหน
+     */
     it("จำกัดจำนวนตามที่ขอ", async () => {
       for (const id of ["a", "b", "c"]) await addPage({ fbPageId: id });
       const due = await repo.duePages({ nowMs: Date.now(), staleAfterMs: 1, limit: 2 });
@@ -90,7 +135,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
 
     it("ส่ง kind/source กลับมาให้ตัวดึงตัดสินใจได้", async () => {
       await addPage({ fbPageId: "ภายนอก", source: "EXTERNAL" });
-      const due = await repo.duePages({ nowMs: Date.now(), staleAfterMs: 1, limit: 10 });
+      const due = await dueHere({ nowMs: Date.now(), staleAfterMs: 1 });
       expect(due[0]).toMatchObject({ kind: "COMPETITOR", source: "EXTERNAL" });
     });
   });
@@ -228,7 +273,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
         comments: [comment("c1"), comment("c2"), comment("c3")],
       });
       expect(second).toBe(1);
-      expect(await prisma.trackedComment.count()).toBe(3);
+      expect(await countComments()).toBe(3);
     });
 
     /**
@@ -256,7 +301,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
         comments: [{ ...comment("c1"), authorId: null, authorName: null }],
       });
 
-      const row = await prisma.trackedComment.findFirst();
+      const row = await firstComment();
       expect(row).toMatchObject({ authorId: null, authorName: null });
     });
 
@@ -273,7 +318,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
       );
 
       expect(counts.reduce((a, b) => a + b, 0)).toBe(3);
-      expect(await prisma.trackedComment.count()).toBe(3);
+      expect(await countComments()).toBe(3);
     });
   });
 
@@ -281,10 +326,10 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     it("จดแล้วเพจนั้นหลุดออกจากคิวรอบถัดไป", async () => {
       const now = Date.now();
       const page = await addPage({ fbPageId: "p", lastFetchedAt: null });
-      expect(await repo.duePages({ nowMs: now, staleAfterMs: 3_600_000, limit: 10 })).toHaveLength(1);
+      expect(await dueHere({ nowMs: now, staleAfterMs: 3_600_000 })).toHaveLength(1);
 
       await repo.markFetched({ trackedPageId: page.id, atMs: now });
-      expect(await repo.duePages({ nowMs: now, staleAfterMs: 3_600_000, limit: 10 })).toHaveLength(0);
+      expect(await dueHere({ nowMs: now, staleAfterMs: 3_600_000 })).toHaveLength(0);
     });
   });
 });

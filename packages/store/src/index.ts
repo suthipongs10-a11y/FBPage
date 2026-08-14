@@ -30,6 +30,7 @@ export {
   PrismaListeningQueries,
   type CommentDigest,
   type CommentRow,
+  type DigestRow,
   type TrackedPageRow,
   type TrackedPageWithPosts,
 } from "./listening-queries.js";

@@ -43,17 +43,27 @@ export interface CommentRow {
   fbPostId: string;
 }
 
+/**
+ * คอมเมนต์หนึ่งอันในรูปย่อ
+ *
+ * มีฟิลด์ครบพอสำหรับทั้งสามงานที่ใช้ชุดนี้ — นับหัวข้อ (`message`),
+ * หาแฟนตัวยง (`authorId`/`authorName`/`trackedPageId`) และสแกนสัญญาณผิดปกติ
+ * (ต้องใช้ `createdAtMs` ด้วย) — ดึงรอบเดียวแล้วแจกให้ทุกตัวใช้
+ */
+export interface DigestRow {
+  message: string | null;
+  authorId: string | null;
+  authorName: string | null;
+  trackedPageId: string;
+  createdAtMs: number;
+}
+
 export interface CommentDigest {
   /** จำนวนคอมเมนต์ทั้งหมดที่เข้าเงื่อนไข (ไม่ถูกตัดด้วยเพดาน) */
   total: number;
   /** `true` เมื่อโดนเพดานตัด — ตัวเลขที่คิดจากชุดนี้เป็นของตัวอย่าง ไม่ใช่ทั้งหมด */
   truncated: boolean;
-  messages: Array<string | null>;
-  authors: Array<{
-    authorId: string | null;
-    authorName: string | null;
-    trackedPageId: string;
-  }>;
+  rows: DigestRow[];
 }
 
 /**
@@ -235,6 +245,7 @@ export class PrismaListeningQueries {
           message: true,
           authorId: true,
           authorName: true,
+          createdAt: true,
           trackedPost: { select: { trackedPageId: true } },
         },
       }),
@@ -244,11 +255,12 @@ export class PrismaListeningQueries {
     return {
       total,
       truncated: total > rows.length,
-      messages: rows.map((r) => r.message),
-      authors: rows.map((r) => ({
+      rows: rows.map((r) => ({
+        message: r.message,
         authorId: r.authorId,
         authorName: r.authorName,
         trackedPageId: r.trackedPost.trackedPageId,
+        createdAtMs: r.createdAt.getTime(),
       })),
     };
   }

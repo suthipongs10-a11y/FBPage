@@ -62,3 +62,30 @@ export {
   type OverlapResult,
   type TopFan,
 } from "./fans.js";
+
+export {
+  BURST_COUNT,
+  BURST_WINDOW_MS,
+  COORDINATED_ACCOUNTS,
+  COORDINATED_WINDOW_MS,
+  MIN_DUPLICATE_LENGTH,
+  SCAN_CAVEAT_TH,
+  SELF_REPEAT_TIMES,
+  SELF_REPEAT_WINDOW_MS,
+  scanForSuspicion,
+  type AccountFinding,
+  type AccountSignal,
+  type ScanComment,
+  type ScanResult,
+  type SignalKey,
+  type SuspicionLevel,
+} from "./suspicion.js";
+
+export {
+  UTF8_BOM,
+  commentsToCsv,
+  csvCell,
+  exportFileName,
+  toCsv,
+  type ExportableComment,
+} from "./export.js";

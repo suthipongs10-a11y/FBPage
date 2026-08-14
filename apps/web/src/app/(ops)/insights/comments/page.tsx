@@ -51,6 +51,15 @@ export default async function CommentsPage({
 
   const lastPage = Math.max(1, Math.ceil(view.total / COMMENTS_PAGE_SIZE));
 
+  /** ลิงก์ดาวน์โหลด — ใช้ตัวกรองเดียวกับที่เห็นบนหน้า แต่ไม่เอาเลขหน้า */
+  const exportParams = new URLSearchParams();
+  if (view.selectedPageId !== null) exportParams.set("page", view.selectedPageId);
+  if (view.keyword !== "") exportParams.set("q", view.keyword);
+  const exportHref =
+    exportParams.toString() === ""
+      ? "/insights/comments/export"
+      : `/insights/comments/export?${exportParams.toString()}`;
+
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -142,6 +151,23 @@ export default async function CommentsPage({
                   </Link>
                 )}
               </form>
+
+              {/**
+                * ดาวน์โหลดได้ทั้งชุดที่ตรงเงื่อนไข ไม่ใช่แค่ 25 อันที่เห็นบนหน้า
+                * — คนกดดาวน์โหลดต้องการข้อมูลไปทำงานต่อ ไม่ใช่หน้าจอที่เห็นอยู่
+                */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                <a
+                  href={exportHref}
+                  className="underline underline-offset-2"
+                  style={{ color: "var(--accent)" }}
+                >
+                  ↓ ดาวน์โหลด CSV ({numTh(view.total)} แถว)
+                </a>
+                <span style={{ color: "var(--text-faint)" }}>
+                  เปิดใน Excel ได้เลย ภาษาไทยไม่เพี้ยน
+                </span>
+              </div>
             </div>
           </Card>
 
@@ -317,6 +343,80 @@ export default async function CommentsPage({
                     </ul>
                   </div>
                 ))}
+              </div>
+            )}
+          </Card>
+
+          {/* ── สัญญาณผิดปกติ ────────────────────────────────────────── */}
+          <Card>
+            <SectionHeader
+              title="บัญชีจริง vs สัญญาณผิดปกติ"
+              hint={`สแกน ${numTh(view.suspicion.accountsScanned)} บัญชี จาก ${numTh(view.suspicion.commentsScanned)} คอมเมนต์`}
+            />
+            {view.suspicion.accountsScanned === 0 ? (
+              <EmptyState>ยังไม่มีบัญชีที่รู้ชื่อให้สแกน</EmptyState>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-baseline gap-x-3">
+                  <span
+                    className="tabular text-3xl leading-none font-bold"
+                    style={{
+                      color:
+                        view.suspicion.flagged.length === 0 ? "var(--ok)" : "var(--warn)",
+                    }}
+                  >
+                    {view.suspicion.flaggedPct.toFixed(1)}%
+                  </span>
+                  <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+                    {numTh(view.suspicion.flagged.length)} จาก{" "}
+                    {numTh(view.suspicion.accountsScanned)} บัญชี พบสัญญาณผิดปกติ
+                  </span>
+                </div>
+
+                {view.suspicion.flagged.length > 0 && (
+                  <ul className="flex flex-col gap-2">
+                    {view.suspicion.flagged.slice(0, 20).map((f) => (
+                      <li
+                        key={f.name}
+                        className="rounded-[var(--radius-card)] px-4 py-3"
+                        style={{ background: "var(--bg-sunken)" }}
+                      >
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <b className="text-sm">{f.name}</b>
+                          <Badge tone={f.level === "high" ? "red" : "amber"}>
+                            {f.level === "high" ? "เข้าข่ายชัด" : "น่าดูต่อ"}
+                          </Badge>
+                          <span className="tabular text-xs" style={{ color: "var(--text-faint)" }}>
+                            {numTh(f.comments)} คอมเมนต์
+                          </span>
+                        </div>
+                        {/* บอกว่า "เห็นอะไร" ไม่ใช่แค่ "ติดธง" — คนต้องตรวจสอบเองได้ */}
+                        <ul className="mt-1.5 flex flex-col gap-0.5">
+                          {f.signals.map((sig) => (
+                            <li
+                              key={sig.key}
+                              className="text-xs leading-relaxed"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              • <b>{sig.labelTh}</b> — {sig.detailTh}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/**
+                  * คำเตือนนี้ไม่ใช่ของประดับ — ฟีเจอร์นี้ชี้นิ้วไปที่คนจริง
+                  * ถ้าคนอ่านว่าเป็นคำตัดสิน จะเกิดการกล่าวหาลูกค้าตัวจริง
+                  */}
+                <p
+                  className="rounded-[var(--radius-card)] px-3 py-2 text-xs leading-relaxed"
+                  style={{ background: "var(--warn-bg)", color: "var(--text-muted)" }}
+                >
+                  ⚠️ {view.suspicion.caveatTh}
+                </p>
               </div>
             )}
           </Card>

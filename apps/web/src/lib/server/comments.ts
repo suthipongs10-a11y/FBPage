@@ -9,9 +9,11 @@ import "server-only";
 import {
   fanBoards,
   overlapAcrossPages,
+  scanForSuspicion,
   tallyTopics,
   type FanBoard,
   type OverlapResult,
+  type ScanResult,
   type TopicSummary,
 } from "@page-os/listening";
 import {
@@ -37,6 +39,7 @@ export interface CommentsView {
   topicsFromSample: boolean;
   fans: FanBoard[];
   overlap: OverlapResult;
+  suspicion: ScanResult;
   errorTh: string | null;
 }
 
@@ -78,6 +81,13 @@ export async function loadComments(args: {
     topicsFromSample: false,
     fans: [],
     overlap: { people: [], caveatTh: "" },
+    suspicion: {
+      accountsScanned: 0,
+      flagged: [],
+      flaggedPct: 0,
+      commentsScanned: 0,
+      caveatTh: "",
+    },
     errorTh: null,
   };
 
@@ -121,13 +131,19 @@ export async function loadComments(args: {
       pages,
       rows: found.rows,
       total: found.total,
-      topics: tallyTopics(digest.messages),
+      topics: tallyTopics(digest.rows.map((r) => r.message)),
       topicsFromSample: digest.truncated,
       fans: fanBoards({
         pages: pages.map((p) => ({ id: p.id, name: p.name })),
-        comments: fanDigest.authors,
+        comments: fanDigest.rows,
       }),
-      overlap: overlapAcrossPages(fanDigest.authors),
+      overlap: overlapAcrossPages(fanDigest.rows),
+      /**
+       * สแกนจากชุดที่**ไม่กรองคำค้น**เหมือนแฟนตัวยง — สัญญาณอย่าง "ข้อความ
+       * ซ้ำกับบัญชีอื่น" ต้องดูจากคอมเมนต์ทั้งหมด ถ้ากรองคำค้นก่อนจะเห็นแค่
+       * ส่วนเดียวแล้วสรุปผิด (ข้อความที่ซ้ำอาจไม่มีคำค้นอยู่เลย)
+       */
+      suspicion: scanForSuspicion(fanDigest.rows),
     };
   } catch (err) {
     return { ...base, errorTh: describeDbError(err) };
