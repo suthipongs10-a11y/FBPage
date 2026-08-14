@@ -42,7 +42,7 @@ apps/webhook      Fastify service รับ webhook จาก Meta แล้ว�
 apps/worker       BullMQ workers + cron
 ```
 
-โดเมนที่เหลืออยู่ใน `packages/{publish,moderation,analytics,inbox,bot,studio,portal,ops}`
+โดเมนที่เหลืออยู่ใน `packages/{publish,moderation,analytics,inbox,bot,studio,portal,ops,listening}`
 — ดูตารางเต็มใน `README.md`
 
 ## คำสั่ง

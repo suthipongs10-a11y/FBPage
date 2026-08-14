@@ -30,8 +30,9 @@ model Workspace {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  pages     Page[]
-  auditLogs AuditLog[]
+  pages        Page[]
+  auditLogs    AuditLog[]
+  trackedPages TrackedPage[]
 
   @@map("workspaces")
 }
@@ -65,6 +66,7 @@ model Page {
   automationRules AutomationRule[]
   leads           Lead[]
   insights        InsightsDaily[]
+  trackedPages    TrackedPage[]
 
   @@index([workspaceId])
   @@map("pages")
@@ -496,4 +498,119 @@ model MetaCallLog {
   @@index([pageId, createdAt])
   @@index([ok, createdAt])
   @@map("meta_call_logs")
+}
+
+// -------------------------------------------------------------- listening
+//
+// ─── ทำไมไม่ใช้ตาราง `pages` / `posts` / `comments` ที่มีอยู่แล้ว ───
+//
+// ตารางชุดนั้นคือ "เพจที่เราดูแล" — มี token, มี workspace, โพสต์ผ่านระบบเรา
+// ส่วนชุดนี้คือ "เพจที่เราเฝ้าดู" ซึ่งรวมเพจคู่แข่งที่เราไม่ได้เป็นแอดมิน
+// ไม่มี token ให้ และแก้อะไรไม่ได้เลยนอกจากอ่าน
+//
+// ถ้าเอามารวมตารางเดียวกัน ทุกที่ที่วนลูป `pages` เพื่อทำงาน (ยิงโพสต์,
+// ตอบแชท, ต่ออายุ token) จะเจอเพจคู่แข่งปนเข้ามา แล้วต้องไปเติมเงื่อนไข
+// กรองออกทีละจุด — พลาดจุดเดียวคือพยายามโพสต์ลงเพจชาวบ้าน
+
+enum TrackedKind {
+  /// เพจของเราเอง — ดึงข้อมูลด้วย Page Access Token ของเพจนั้น
+  OWNED
+  /// เพจคู่แข่ง — ต้องมีสิทธิ์ Page Public Content Access หรือแหล่งข้อมูลภายนอก
+  COMPETITOR
+  /// กลุ่มสาธารณะ
+  GROUP
+}
+
+enum TrackedSource {
+  /// ดึงผ่าน MetaGateway ด้วย token ของเพจเราเอง
+  META_API
+  /// มาจากผู้ให้บริการข้อมูลภายนอก (ใช้ตอนยังไม่ผ่าน App Review ของ Meta)
+  EXTERNAL
+  /// คนกรอกเอง
+  MANUAL
+}
+
+model TrackedPage {
+  id          String        @id @default(uuid())
+  workspaceId String        @map("workspace_id")
+  fbPageId    String        @map("fb_page_id")
+  name        String
+  kind        TrackedKind
+  source      TrackedSource @default(META_API)
+  /// null = ยังไม่รู้ตัวเลขนี้ ต่างจาก 0 ที่แปลว่ารู้แล้วว่าไม่มีคนตาม
+  /// ปัจจัย "ผู้ติดตาม" ในหน้าเทียบเพจแยกไม่ได้ถ้าค่านี้เป็น null
+  followers   Int?
+  /// เพจของเราเองผูกกลับไปที่ตาราง pages — คู่แข่งเป็น null
+  pageId      String?       @map("page_id")
+  /// ดึงข้อมูลสำเร็จครั้งล่าสุดเมื่อไหร่ — null = ยังไม่เคยดึงเลย
+  lastFetchedAt DateTime?   @map("last_fetched_at") @db.Timestamptz(6)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  page      Page?                 @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  posts     TrackedPost[]
+  snapshots TrackedPageSnapshot[]
+
+  /// เพจเดียวกันเฝ้าซ้ำใน workspace เดิมไม่ได้ แต่คนละ workspace เฝ้าเพจเดียวกันได้
+  @@unique([workspaceId, fbPageId])
+  @@index([workspaceId, kind])
+  @@map("tracked_pages")
+}
+
+model TrackedPost {
+  id            String   @id @default(uuid())
+  trackedPageId String   @map("tracked_page_id")
+  fbPostId      String   @map("fb_post_id")
+  publishedAt   DateTime @map("published_at") @db.Timestamptz(6)
+  message       String?
+  permalink     String?
+  /// ยอด ณ ตอนที่ดึงล่าสุด ไม่ใช่ยอดสะสมรายวัน — Meta ไม่ได้ให้ timestamp
+  /// ของรีแอ็กชันมา จึงบอกได้แค่ "ตอนนี้เท่าไร" ดูเหตุผลเต็มที่ engagement.ts
+  reactions     Int      @default(0)
+  shares        Int      @default(0)
+  commentCount  Int      @default(0) @map("comment_count")
+  fetchedAt     DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  trackedPage TrackedPage      @relation(fields: [trackedPageId], references: [id], onDelete: Cascade)
+  comments    TrackedComment[]
+
+  @@unique([trackedPageId, fbPostId])
+  /// ดัชนีหลักของทั้งระบบ — ทุกหน้าจอถามว่า "เพจนี้ ช่วงนี้ มีโพสต์อะไรบ้าง"
+  @@index([trackedPageId, publishedAt])
+  @@map("tracked_posts")
+}
+
+model TrackedComment {
+  id            String   @id @default(uuid())
+  trackedPostId String   @map("tracked_post_id")
+  fbCommentId   String   @map("fb_comment_id")
+  /// id ของคนคอมเมนต์ — Meta ให้มาเป็น scoped id ต่างกันในแต่ละเพจ
+  /// จึงเอามาจับว่า "คนเดียวกัน" ข้ามเพจไม่ได้ ต้องอาศัยชื่อซึ่งไม่แม่นเสมอ
+  authorId      String?  @map("author_id")
+  authorName    String?  @map("author_name")
+  message       String?
+  createdAt     DateTime @map("created_at") @db.Timestamptz(6)
+  fetchedAt     DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  trackedPost TrackedPost @relation(fields: [trackedPostId], references: [id], onDelete: Cascade)
+
+  @@unique([trackedPostId, fbCommentId])
+  @@index([trackedPostId, createdAt])
+  /// หา "ใครคอมเมนต์บ่อยสุด" โดยไม่ต้องอ่านทั้งตาราง
+  @@index([authorName])
+  @@map("tracked_comments")
+}
+
+/// จำนวนผู้ติดตามย้อนหลัง — Meta ให้มาแต่ค่า ณ ปัจจุบัน ถ้าไม่จดไว้เองทุกวัน
+/// จะย้อนดูไม่ได้เลยว่าเดือนที่แล้วมีเท่าไร ซึ่งทำให้เทียบข้ามช่วงเวลาไม่ได้
+model TrackedPageSnapshot {
+  trackedPageId String   @map("tracked_page_id")
+  date          DateTime @db.Date
+  followers     Int
+
+  trackedPage TrackedPage @relation(fields: [trackedPageId], references: [id], onDelete: Cascade)
+
+  @@id([trackedPageId, date])
+  @@map("tracked_page_snapshots")
 }

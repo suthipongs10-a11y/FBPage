@@ -59,6 +59,10 @@ export default defineConfig({
         find: "@page-os/queue",
         replacement: r("./packages/queue/src/index.ts"),
       },
+      {
+        find: "@page-os/listening",
+        replacement: r("./packages/listening/src/index.ts"),
+      },
     ],
   },
   test: {

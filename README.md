@@ -152,6 +152,7 @@ URL ที่แสดงคือของจริงเสมอ — ถ้�
 | `packages/studio` | AI Content Studio + Template Library |
 | `packages/portal` | Client Portal (magic link, ขอบเขตข้อมูล, white-label) |
 | `packages/ops` | Ops Center (ตรวจปัญหา, alert, audit log, bulk actions) |
+| `packages/listening` | ฟังเสียง — engagement, ส่วนแบ่งเสียง, แยกช่องว่างเทียบคู่แข่ง |
 | `packages/queue` | **ที่เดียวในระบบที่รู้จัก BullMQ** — คิว, ตารางงาน, การปิดระบบ |
 | `apps/web` | Next.js 15 — หอบังคับการ + ศูนย์ปฏิบัติการ + portal ลูกค้า |
 | `apps/webhook` | Fastify — รับ event จาก Meta แล้วส่งต่อเข้าคิว |
