@@ -1,8 +1,8 @@
 import { PLAN_SLA_MINUTES } from "@page-os/inbox";
 import { Badge, Card, ClientDot, ClientStripe, EmptyState, SectionHeader, StatTile } from "@/components/ui";
 import { durationTh, numTh, relativeTh } from "@/lib/format";
-import { DemoBanner } from "@/components/demo-banner";
-import { demoSource } from "@/lib/demo-workspace";
+import { WorkspaceNotice } from "@/components/workspace-notice";
+import { loadWorkspace } from "@/lib/server/workspace";
 import { buildTodayView } from "@/lib/today";
 import { PLAN_LABEL_TH } from "@/lib/workspace";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function InboxPage() {
   const nowMs = Date.now();
-  const ws = await demoSource.load(nowMs);
+  const { ws, errorTh, empty } = await loadWorkspace(nowMs);
   const today = buildTodayView(ws);
   const { tasks, summary } = today.inbox;
 
@@ -22,7 +22,7 @@ export default async function InboxPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DemoBanner />
+      <WorkspaceNotice errorTh={errorTh} empty={empty} />
       <header>
         <h1 className="text-2xl font-bold tracking-tight">กล่องข้อความ</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>

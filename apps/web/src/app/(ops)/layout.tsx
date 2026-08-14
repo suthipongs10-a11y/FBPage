@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ClientDot } from "@/components/ui";
-import { demoSource } from "@/lib/demo-workspace";
+import { loadWorkspace } from "@/lib/server/workspace";
 import { buildTodayView } from "@/lib/today";
 import { compactTh } from "@/lib/format";
 
@@ -12,7 +12,7 @@ export default async function OpsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const ws = await demoSource.load(Date.now());
+  const { ws } = await loadWorkspace(Date.now());
   const today = buildTodayView(ws);
   const clients = [...new Set(ws.pages.map((p) => p.clientName))];
 
@@ -73,9 +73,7 @@ export default async function OpsLayout({
                   PAGE OS
                 </div>
                 <div className="text-xs" style={{ color: "var(--text-faint)" }}>
-                  {/* บอกว่าเป็นของสมมติตั้งแต่ตรงนี้ด้วย — คนดูตัวเลขนี้ก่อนอย่างอื่น */}
-                  {ws.pages.length} เพจ · {clients.length} ลูกค้า{" "}
-                  <span style={{ color: "var(--warn)" }}>(ตัวอย่าง)</span>
+                  {ws.pages.length} เพจ · {clients.length} ลูกค้า
                 </div>
               </Link>
 

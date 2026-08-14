@@ -63,6 +63,17 @@ export default defineConfig({
         find: "@page-os/listening",
         replacement: r("./packages/listening/src/index.ts"),
       },
+      /**
+       * alias ของ `apps/web` — ต้องมีให้ตรงกับ `apps/web/tsconfig.json`
+       *
+       * ไฟล์ใน `apps/web` ที่ import **ค่าจริง** (ไม่ใช่แค่ type) จากไฟล์ข้างเคียง
+       * ต้องเขียนเป็น `@/lib/...` ไม่ใช่ `./xxx.js` เพราะ webpack ของ Next
+       * หานามสกุล `.js` ที่บนดิสก์เป็น `.ts` ไม่เจอ — ส่วน type ล้วนใช้ได้ทั้งสองแบบ
+       * เพราะ TypeScript ลบทิ้งก่อน bundler จะเห็น
+       *
+       * ไม่ชนกับ `@page-os/*` ข้างบนเพราะขึ้นต้นคนละแบบ
+       */
+      { find: /^@\//, replacement: `${r("./apps/web/src")}/` },
     ],
   },
   test: {

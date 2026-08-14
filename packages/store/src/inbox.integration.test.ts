@@ -48,8 +48,24 @@ describe.skipIf(!HAS_DB)("ที่เก็บของ inbox", () => {
     await prisma.workspace.deleteMany({ where: { name: WORKSPACE_NAME } });
   });
 
+  /**
+   * ⚠️ ต้องล้างใน `afterAll` ด้วย ไม่ใช่แค่ `beforeEach`
+   *
+   * ล้างแค่ก่อนเทสต์แต่ละตัว = ข้อมูลของเทสต์**ตัวสุดท้าย**ค้างอยู่ในฐานข้อมูล
+   * ตลอดไป ตอนที่หน้าจอยังอ่านข้อมูลตัวอย่างเรื่องนี้ไม่มีใครเห็น แต่ตอนนี้
+   * `/`, `/pages`, `/inbox`, `/calendar` อ่านของจริงแล้ว — คนที่รัน
+   * `pnpm check` บนเครื่องตัวเองจะเห็น "เพจ ก" "ครัวคุณยาย" โผล่บนหน้าแรก
+   * พร้อมรายการปัญหาปลอม ทั้งที่ยังไม่ได้เชื่อมเพจอะไรเลย
+   *
+   * (นี่คืออาการเดียวกับที่เคยทำให้ต้องมีป้าย "ข้อมูลตัวอย่าง" — กลับมาทาง
+   * ประตูอื่น)
+   */
   afterAll(async () => {
-    if (HAS_DB) await prisma.$disconnect();
+    if (HAS_DB) {
+      await prisma.webhookSeen.deleteMany();
+      await prisma.workspace.deleteMany({ where: { name: WORKSPACE_NAME } });
+      await prisma.$disconnect();
+    }
   });
 
   describe("กันซ้ำ (กฎข้อ 6)", () => {

@@ -14,8 +14,11 @@ import {
   recentAudit,
   runBulk,
 } from "@/lib/demo-ops";
-import { DemoBanner } from "@/components/demo-banner";
-import { demoSource } from "@/lib/demo-workspace";
+import {
+  PartialDemoNotice,
+  WorkspaceNotice,
+} from "@/components/workspace-notice";
+import { loadWorkspace } from "@/lib/server/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +31,7 @@ const ACTOR_TONE: Record<string, Tone> = {
 
 export default async function OpsPage() {
   const nowMs = Date.now();
-  const ws = await demoSource.load(nowMs);
+  const { ws, errorTh, empty } = await loadWorkspace(nowMs);
   const digest = morningDigest(nowMs);
   const audit = await recentAudit(nowMs);
 
@@ -95,7 +98,8 @@ export default async function OpsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DemoBanner />
+      <WorkspaceNotice errorTh={errorTh} empty={empty} />
+      <PartialDemoNotice whatTh="แผงคำสั่งหมู่และประวัติการดำเนินการด้านล่างยังใช้ที่เก็บข้อมูลในหน่วยความจำ — กดได้ ผลจะหายเมื่อรีสตาร์ท และยังไม่ไปแก้การตั้งค่าเพจจริง" />
       <header>
         <h1 className="text-2xl font-bold tracking-tight">ศูนย์ปฏิบัติการ</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>

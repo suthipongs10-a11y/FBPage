@@ -4,8 +4,9 @@
  * ตั้งใจให้เป็นชนิดข้อมูลล้วนๆ ไม่มีตรรกะ — ตรรกะอยู่ที่ `today.ts`
  * และแพ็กเกจโดเมน ส่วนที่นี่คือสัญญาระหว่างชั้นข้อมูลกับชั้น UI
  *
- * ตอนนี้ข้อมูลมาจาก `demo-workspace.ts` พอมี Prisma repository แล้ว
- * แค่เปลี่ยนตัวที่ implement `WorkspaceSource` หน้าจอไม่ต้องแก้
+ * หน้าจอฝั่งปฏิบัติการอ่านของจริงจาก `server/workspace.ts` แล้ว
+ * ส่วน `demo-workspace.ts` เหลือไว้ป้อนแผงคำสั่งหมู่ใน `/ops` กับหน้า portal
+ * ตัวอย่างเท่านั้น — สองส่วนนั้นเป็นเส้นทาง**เขียน** ต้องต่อพร้อมด่านยืนยันตัวตน
  */
 import type { ConnectionState } from "@page-os/meta";
 import type { ApprovalStatus, PostType } from "@page-os/publish";

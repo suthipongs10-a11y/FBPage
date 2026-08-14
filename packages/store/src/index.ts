@@ -24,6 +24,20 @@ export {
   type PrismaInboxStoreOptions,
 } from "./inbox-repository.js";
 
+export {
+  INCIDENT_WINDOW_MS,
+  PrismaWorkspaceQueries,
+  SCHEDULE_FUTURE_MS,
+  SCHEDULE_PAST_MS,
+  WORKSPACE_CAPS,
+  type StoredTokenStatus,
+  type WorkspaceConversationRow,
+  type WorkspaceIncidentRow,
+  type WorkspacePageRow,
+  type WorkspaceScheduledRow,
+  type WorkspaceSnapshot,
+} from "./workspace-queries.js";
+
 export { PrismaListeningRepository } from "./listening-repository.js";
 export {
   DIGEST_CAP,

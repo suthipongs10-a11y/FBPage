@@ -6,8 +6,8 @@ import {
 } from "@/components/today-sections";
 import { StatTile } from "@/components/ui";
 import { dateTimeTh, numTh } from "@/lib/format";
-import { DemoBanner } from "@/components/demo-banner";
-import { demoSource } from "@/lib/demo-workspace";
+import { WorkspaceNotice } from "@/components/workspace-notice";
+import { loadWorkspace } from "@/lib/server/workspace";
 import { buildTodayView } from "@/lib/today";
 import { totalsOf } from "@/lib/workspace";
 
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
   const nowMs = Date.now();
-  const ws = await demoSource.load(nowMs);
+  const { ws, errorTh, empty } = await loadWorkspace(nowMs);
   const today = buildTodayView(ws);
   const totals = totalsOf(ws);
   const tz = ws.pages[0]?.timeZone ?? "Asia/Bangkok";
@@ -25,7 +25,7 @@ export default async function TodayPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DemoBanner />
+      <WorkspaceNotice errorTh={errorTh} empty={empty} />
       <header>
         <div
           className="text-xs tracking-wide"

@@ -14,8 +14,8 @@ import {
   timeTh,
   truncate,
 } from "@/lib/format";
-import { DemoBanner } from "@/components/demo-banner";
-import { demoSource } from "@/lib/demo-workspace";
+import { WorkspaceNotice } from "@/components/workspace-notice";
+import { loadWorkspace } from "@/lib/server/workspace";
 import type { ScheduledPostRow } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +49,7 @@ const WEEKS = 4;
 
 export default async function CalendarPage() {
   const nowMs = Date.now();
-  const ws = await demoSource.load(nowMs);
+  const { ws, errorTh, empty } = await loadWorkspace(nowMs);
 
   // เริ่มตารางที่วันอาทิตย์ของสัปดาห์นี้ ไม่ใช่วันนี้ —
   // ปฏิทินที่คอลัมน์แรกไม่ใช่วันอาทิตย์อ่านยากกว่าที่คิด
@@ -128,7 +128,7 @@ export default async function CalendarPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DemoBanner />
+      <WorkspaceNotice errorTh={errorTh} empty={empty} />
       <header>
         <h1 className="text-2xl font-bold tracking-tight">ปฏิทินคอนเทนต์</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
