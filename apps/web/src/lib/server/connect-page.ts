@@ -15,12 +15,20 @@ import "server-only";
  * ⚠️ token จาก Explorer มักเป็นแบบอายุสั้น (1–2 ชม.) ตัวนี้จึงบอกอายุที่เหลือ
  * กลับไปให้เห็นชัดๆ ไม่งั้นจะงงว่าทำไมเมื่อวานใช้ได้วันนี้ใช้ไม่ได้
  */
-import { MetaApiError } from "@page-os/meta";
+import { describeMissingScopesTh, MetaApiError } from "@page-os/meta";
 import { metaGateway, prisma, tokenService, WebConfigError } from "@/lib/server/deps";
 
 export interface ConnectResult {
   ok: boolean;
   th: string;
+  /**
+   * เชื่อมสำเร็จ **แต่** token ขาดสิทธิ์บางตัว → ฟีเจอร์บางอย่างจะเงียบ
+   *
+   * แยกจาก `th` เพราะสองอย่างนี้คนละสถานะกัน: เชื่อมสำเร็จคือข่าวดี
+   * ส่วนอันนี้คือ "ทำต่อได้ แต่มีเรื่องต้องรู้" ถ้ายัดรวมเป็นข้อความเดียว
+   * คนจะอ่านแค่คำว่า "เรียบร้อย" แล้วปิดหน้าไป
+   */
+  warnTh?: string;
   page?: {
     fbPageId: string;
     name: string;
@@ -150,9 +158,11 @@ export async function connectPageWithToken(args: {
       status: "active",
     });
 
+    const warnTh = describeMissingScopesTh(info.scopes);
     return {
       ok: true,
       th: `เชื่อมเพจ "${name}" เรียบร้อย`,
+      ...(warnTh !== undefined ? { warnTh } : {}),
       page: { fbPageId, name, expiresAtMs, scopes: info.scopes },
     };
   } catch (err) {

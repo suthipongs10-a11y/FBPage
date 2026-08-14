@@ -257,7 +257,7 @@
 - รองรับ System User Token (ไม่หมดอายุ)
 - เก็บเข้ารหัส AES-256-GCM + AAD ผูกกับ pageId + รองรับ key rotation
 - `debug_token` health check ทุก 6 ชม. พร้อมส่ง alert
-- ตรวจ permission ครบ 11 ตัว + บอกว่าฟีเจอร์ไหนใช้ไม่ได้เพราะขาดสิทธิ์อะไร
+- ตรวจ permission ครบ 12 ตัว + บอกว่าฟีเจอร์ไหนใช้ไม่ได้เพราะขาดสิทธิ์อะไร
 
 **Data model (`packages/db/prisma/schema.prisma`)** — ครบตามสเปกข้อ 3
 รวม `meta_call_logs` สำหรับตอบคำถาม "ทำไมโพสต์ไม่ขึ้น"
@@ -300,6 +300,11 @@
 - [ ] Meta Business Manager + Business Verification (ภ.พ.20)
 - [ ] สร้าง App ประเภท Business + Privacy Policy URL, Terms URL, Data Deletion Callback URL
 - [ ] อัดวิดีโอ screencast สาธิตแต่ละ permission
+- [ ] **ยื่น `pages_read_user_content` ไปพร้อมชุดด้วย** — ตัวที่ให้อ่าน
+      **เนื้อหาที่คนอื่นเขียน** (คอมเมนต์ โพสต์ของผู้มาเยือน) ต่างจาก
+      `pages_read_engagement` ที่ให้แค่ยอดกับเนื้อหาที่เพจเขียนเอง
+      ขาดตัวนี้แล้ว M3 กับ M-K จะได้ข้อมูลว่างกลับมาโดยไม่มี error ให้เห็น
+      และต้องยื่นรีวิวใหม่ทั้งชุด
 - [ ] อัปเดต trust store บน VPS ให้ trust Meta CA (webhook mTLS)
 - [ ] เตรียมสัญญาบริการ + หนังสือมอบอำนาจ
 - [ ] LINE Official Account + Messaging API สำหรับ alert

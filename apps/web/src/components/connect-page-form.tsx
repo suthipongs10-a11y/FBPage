@@ -16,6 +16,8 @@ import { useActionState, useEffect, useRef } from "react";
 interface Result {
   ok: boolean;
   th: string;
+  /** เชื่อมสำเร็จแต่ token ขาดสิทธิ์ — ต้องเห็นชัดพอๆ กับข้อความสำเร็จ */
+  warnTh?: string;
   page?: { name: string; fbPageId: string };
 }
 
@@ -97,6 +99,23 @@ export function ConnectPageForm({
           >
             {state.ok ? "✓ " : "✗ "}
             {state.th}
+          </p>
+        )}
+
+        {/*
+          แยกกล่องออกมาต่างหาก ไม่ต่อท้ายข้อความสำเร็จ — เพราะคนอ่านคำว่า
+          "เรียบร้อย" แล้วหยุดอ่าน ถ้าคำเตือนอยู่ในบรรทัดเดียวกันจะไม่มีใครเห็น
+        */}
+        {state?.warnTh !== undefined && (
+          <p
+            role="alert"
+            className="rounded-[var(--radius-row)] px-3 py-2.5 text-sm leading-relaxed"
+            style={{ background: "var(--warn-bg)", color: "var(--text)" }}
+          >
+            <span className="font-semibold" style={{ color: "var(--warn)" }}>
+              สิทธิ์ไม่ครบ{" "}
+            </span>
+            {state.warnTh}
           </p>
         )}
       </div>

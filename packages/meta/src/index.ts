@@ -46,6 +46,7 @@ export {
   PERMISSION_DEPENDENCIES,
   FEATURE_PERMISSIONS,
   checkPermissions,
+  describeMissingScopesTh,
   expandWithDependencies,
   oauthScopeString,
   type PermissionGap,
