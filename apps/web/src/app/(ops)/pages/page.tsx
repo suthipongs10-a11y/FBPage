@@ -1,5 +1,5 @@
 import { STATE_LABEL_TH, STATE_TONE } from "@page-os/db";
-import { Badge, Card, ClientStripe, SectionHeader, StatTile } from "@/components/ui";
+import { Badge, Card, Row, SectionHeader, StatTile } from "@/components/ui";
 import { compactTh, durationTh, numTh } from "@/lib/format";
 import { WorkspaceNotice } from "@/components/workspace-notice";
 import { loadWorkspace } from "@/lib/server/workspace";
@@ -39,7 +39,7 @@ export default async function PagesPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         <StatTile
           label="เชื่อมต่อปกติ"
           value={`${healthy}/${ws.pages.length}`}
@@ -78,49 +78,39 @@ export default async function PagesPage() {
               pages.reduce((s, p) => s + p.followers, 0),
             )} ผู้ติดตาม`}
           />
-          <ul className="flex flex-col gap-2">
+          <ul className="divide-rows -mx-2.5 flex flex-col">
             {pages.map((p) => {
               const silentFor =
                 p.lastWebhookAtMs === null ? null : nowMs - p.lastWebhookAtMs;
               const webhookBad =
                 silentFor === null || silentFor > WEBHOOK_SILENT_MS;
               return (
-                <li
-                  key={p.pageId}
-                  className="relative overflow-hidden rounded-[var(--radius-card)] border py-3 pr-3 pl-4"
-                  style={{
-                    background: "var(--bg-sunken)",
-                    borderColor: "var(--border)",
-                  }}
-                >
-                  <ClientStripe colorIndex={p.colorIndex} />
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">
-                        {p.pageName}
-                      </div>
-                      <div
-                        className="tabular text-xs"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        รหัสเพจ {p.pageId} · {compactTh(p.followers)} ผู้ติดตาม ·{" "}
-                        {p.timeZone}
-                      </div>
+                <Row key={p.pageId} colorIndex={p.colorIndex}>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {p.pageName}
                     </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <Badge tone={STATE_TONE[p.connection.state]}>
-                        {STATE_LABEL_TH[p.connection.state]}
-                        {p.connection.hoursUntilExpiry !== undefined &&
-                          ` · เหลือ ${Math.floor(p.connection.hoursUntilExpiry / 24)} วัน`}
-                      </Badge>
-                      <Badge tone={webhookBad ? "amber" : "green"}>
-                        {silentFor === null
-                          ? "ยังไม่เคยรับ webhook"
-                          : `webhook ${durationTh(silentFor)}ที่แล้ว`}
-                      </Badge>
+                    <div
+                      className="tabular truncate text-xs"
+                      style={{ color: "var(--text-faint)" }}
+                    >
+                      {p.fbPageId} · {compactTh(p.followers)} ผู้ติดตาม ·{" "}
+                      {p.timeZone}
                     </div>
                   </div>
-                </li>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    <Badge tone={STATE_TONE[p.connection.state]}>
+                      {STATE_LABEL_TH[p.connection.state]}
+                      {p.connection.hoursUntilExpiry !== undefined &&
+                        ` · เหลือ ${Math.floor(p.connection.hoursUntilExpiry / 24)} วัน`}
+                    </Badge>
+                    <Badge tone={webhookBad ? "amber" : "green"}>
+                      {silentFor === null
+                        ? "ยังไม่เคยรับ webhook"
+                        : `webhook ${durationTh(silentFor)}ที่แล้ว`}
+                    </Badge>
+                  </div>
+                </Row>
               );
             })}
           </ul>

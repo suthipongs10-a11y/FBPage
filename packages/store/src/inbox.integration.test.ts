@@ -19,6 +19,20 @@ const FB_PAGE = "fb-inbox-a";
 
 const prisma = HAS_DB ? new PrismaClient() : (null as unknown as PrismaClient);
 
+/**
+ * นับ/หาของเฉพาะเพจที่ไฟล์นี้สร้าง ไม่ใช่ทั้งตาราง
+ *
+ * เขียนเป็น `prisma.contact.count()` เฉยๆ แล้วพังทันทีที่ในฐานข้อมูลมีเพจอื่น
+ * — รวมถึง**เพจจริงของคนที่ใช้โปรแกรมนี้อยู่** ซึ่งแปลว่าเขารัน `pnpm check`
+ * บนเครื่องตัวเองไม่ได้เลย เทสต์ที่พังเพราะข้อมูลของคนอื่นคือเทสต์ที่เชื่อไม่ได้
+ */
+const ownPage = () => ({ page: { fbPageId: FB_PAGE } });
+const countContacts = () => prisma.contact.count({ where: ownPage() });
+const countConversations = () => prisma.conversation.count({ where: ownPage() });
+const firstConversation = () => prisma.conversation.findFirst({ where: ownPage() });
+const countMessages = () =>
+  prisma.message.count({ where: { conversation: ownPage() } });
+
 async function seedPage(botEnabled = true): Promise<void> {
   const ws = await prisma.workspace.create({
     data: { name: WORKSPACE_NAME, clientName: "ครัวคุณยาย", slaMinutes: 60 },
@@ -117,7 +131,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บของ inbox", () => {
       expect(conv.pageId).toBe(FB_PAGE);
       expect(conv.contactId).toBe("cust_1");
       expect(conv.unread).toBe(0);
-      expect(await prisma.contact.count()).toBe(1);
+      expect(await countContacts()).toBe(1);
     });
 
     it("ทักซ้ำได้บทสนทนาเดิม ไม่สร้างใหม่", async () => {
@@ -134,7 +148,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บของ inbox", () => {
         channel: "messenger",
       });
       expect(b.conversationId).toBe(a.conversationId);
-      expect(await prisma.conversation.count()).toBe(1);
+      expect(await countConversations()).toBe(1);
     });
 
     /**
@@ -337,10 +351,10 @@ describe.skipIf(!HAS_DB)("ที่เก็บของ inbox", () => {
       const [result] = await processor.processAll([incoming("m_1")]);
       expect(result?.skipped).toBeUndefined();
 
-      const conv = await prisma.conversation.findFirst();
+      const conv = await firstConversation();
       expect(conv?.lastCustomerMessageAt?.getTime()).toBe(NOW);
       expect(conv?.windowExpiresAt?.getTime()).toBe(NOW + STANDARD_WINDOW_MS);
-      expect(await prisma.message.count()).toBe(1);
+      expect(await countMessages()).toBe(1);
     });
 
     /** Meta ส่ง event เดิมซ้ำ — ด่านสุดท้ายอยู่ที่ `hasSeen()` ใน DB */
@@ -353,7 +367,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บของ inbox", () => {
       const [second] = await processor.processAll([incoming("m_1")]);
 
       expect(second?.skipped).toBeDefined();
-      expect(await prisma.message.count()).toBe(1);
+      expect(await countMessages()).toBe(1);
     });
   });
 });

@@ -37,6 +37,27 @@ import {
   type Workspace,
 } from "@/lib/workspace";
 
+export function describeDbError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("Can't reach database server")) {
+    return "ต่อฐานข้อมูลไม่ได้ — สั่ง docker compose up -d แล้วรีเฟรชหน้านี้";
+  }
+  if (msg.includes("does not exist") || msg.includes("P2021")) {
+    return "ยังไม่ได้สร้างตารางในฐานข้อมูล — สั่ง pnpm db:push แล้วรีเฟรช";
+  }
+  /**
+   * เอาบรรทัดแรกที่**มีตัวอักษรจริง** ไม่ใช่บรรทัดแรกเฉยๆ
+   *
+   * ข้อความ error ของ Prisma ขึ้นต้นด้วยบรรทัดว่าง (`\nInvalid \`prisma...\``)
+   * `split("\n")[0]` จึงได้สตริงว่าง แล้วหน้าจอขึ้นว่า "อ่านข้อมูลไม่สำเร็จ:"
+   * ตามด้วยความว่างเปล่า — บอกคนอ่านน้อยกว่าไม่บอกอะไรเลย
+   */
+  const firstLine = msg.split("\n").find((l) => l.trim() !== "")?.trim();
+  return firstLine === undefined || firstLine === ""
+    ? "อ่านข้อมูลไม่สำเร็จ และระบบไม่ได้บอกสาเหตุมาด้วย — ดูรายละเอียดในเทอร์มินัลที่รัน pnpm dev"
+    : `อ่านข้อมูลไม่สำเร็จ: ${firstLine}`;
+}
+
 export function emptyWorkspace(nowMs: number): Workspace {
   return { nowMs, pages: [], conversations: [], scheduled: [], incidents: [] };
 }
@@ -138,6 +159,7 @@ export function assembleWorkspace(
 
     return {
       pageId: p.id,
+      fbPageId: p.fbPageId,
       pageName: p.name,
       clientName: p.clientName,
       colorIndex: colorOf(p.clientName),

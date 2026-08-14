@@ -157,7 +157,13 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลจริง", 
       await repo.upsert({ ...base, encryptedToken: "เก่า" });
       await repo.upsert({ ...base, encryptedToken: "ใหม่" });
 
-      expect(await prisma.pageToken.count()).toBe(1);
+      /**
+       * นับเฉพาะ token ของเพจนี้ ไม่ใช่ทั้งตาราง — คนที่เชื่อมเพจจริงไว้แล้ว
+       * ก็ต้องรัน `pnpm check` ผ่านได้ ไม่ใช่พังเพราะมีข้อมูลของตัวเองอยู่
+       */
+      expect(
+        await prisma.pageToken.count({ where: { page: { fbPageId: fbA } } }),
+      ).toBe(1);
       expect((await repo.findByPageId(fbA))!.encryptedToken).toBe("ใหม่");
     });
 
@@ -216,7 +222,13 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลจริง", 
       await repo.upsert({ ...base, pageId: fbA });
       await repo.upsert({ ...base, pageId: fbB });
 
-      const all = await repo.listAll();
+      /**
+       * `listAll()` คืน token ของ**ทุกเพจในเครื่อง**โดยตั้งใจ (ตัวตรวจสุขภาพ
+       * token วนดูทุกเพจ) จึงกรองเอาเฉพาะสองเพจที่เทสต์นี้สร้างมาตรวจ
+       * — ห้ามใส่ตัวกรองลงโค้ดจริงเพื่อให้เทสต์ผ่าน
+       */
+      const mine = new Set([fbA, fbB]);
+      const all = (await repo.listAll()).filter((r) => mine.has(r.pageId));
       expect(all.map((r) => r.pageId).sort()).toEqual([fbA, fbB].sort());
     });
   });

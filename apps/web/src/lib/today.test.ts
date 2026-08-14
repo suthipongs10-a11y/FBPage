@@ -22,6 +22,7 @@ const HOUR = 3_600_000;
 function page(over: Partial<ClientPage> = {}): ClientPage {
   return {
     pageId: "p1",
+    fbPageId: "10012345678",
     pageName: "เพจทดสอบ",
     clientName: "ลูกค้า ก",
     colorIndex: 0,

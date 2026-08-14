@@ -344,6 +344,7 @@ export function buildDemoWorkspace(nowMs: number): Workspace {
 
   const pages: ClientPage[] = PAGE_SEEDS.map((seed) => ({
     pageId: seed.pageId,
+    fbPageId: seed.pageId,
     pageName: seed.pageName,
     clientName: seed.clientName,
     // เพจของลูกค้าเดียวกันได้สีเดียวกัน — นั่นคือประเด็นของ "สีแยกตามลูกค้า"

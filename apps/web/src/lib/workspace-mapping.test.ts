@@ -12,7 +12,7 @@ import type {
   WorkspaceScheduledRow,
   WorkspaceSnapshot,
 } from "@page-os/store";
-import { assembleWorkspace } from "./workspace-mapping.js";
+import { assembleWorkspace, describeDbError } from "./workspace-mapping.js";
 
 const NOW = Date.UTC(2026, 7, 14, 9);
 
@@ -131,6 +131,22 @@ describe("แปลงสถานะ token เป็นสถานะการ
       NOW,
     );
     expect(ws.pages[0]?.connection.hoursUntilExpiry).toBe(0);
+  });
+});
+
+describe("รหัสเพจ", () => {
+  /**
+   * `pageId` กับ `fbPageId` เป็นคนละค่ากัน — อันแรกคือ uuid ภายในของเรา
+   * อันหลังคือรหัสที่ Facebook ใช้ ถ้าโชว์ผิดตัว คนจะได้ uuid ที่เอาไปค้น
+   * อะไรไม่ได้เลยใต้ป้ายที่เขียนว่า "รหัสเพจ"
+   */
+  it("แยก uuid ภายในออกจากรหัสของ Facebook", () => {
+    const ws = assembleWorkspace(
+      snapshot({ pages: [page({ id: "uuid-abc", fbPageId: "10011223344" })] }),
+      NOW,
+    );
+    expect(ws.pages[0]?.pageId).toBe("uuid-abc");
+    expect(ws.pages[0]?.fbPageId).toBe("10011223344");
   });
 });
 
@@ -333,5 +349,38 @@ describe("เวิร์กสเปซว่าง", () => {
       scheduled: [],
       incidents: [],
     });
+  });
+});
+
+describe("แปลง error ของฐานข้อมูลเป็นภาษาไทย", () => {
+  it("ต่อฐานข้อมูลไม่ได้ → บอกคำสั่งที่ต้องพิมพ์", () => {
+    const th = describeDbError(new Error("Can't reach database server at `x:5432`"));
+    expect(th).toContain("docker compose up -d");
+  });
+
+  it("ยังไม่ได้สร้างตาราง → บอกให้สั่ง db:push", () => {
+    expect(describeDbError(new Error("P2021 table does not exist"))).toContain(
+      "pnpm db:push",
+    );
+  });
+
+  /**
+   * ข้อความ error ของ Prisma ขึ้นต้นด้วยบรรทัดว่างเสมอ ถ้าหยิบ `split("\n")[0]`
+   * จะได้สตริงว่าง แล้วหน้าจอขึ้น "อ่านข้อมูลไม่สำเร็จ:" ตามด้วยความว่างเปล่า
+   * — เจอตอนถ่ายภาพหน้าจอจริง ไม่มีเทสต์ไหนจับได้
+   */
+  it("error ที่ขึ้นต้นด้วยบรรทัดว่าง → ยังได้ใจความมา ไม่ใช่ค่าว่าง", () => {
+    const th = describeDbError(new Error("\n\nInvalid `prisma.page.findMany()`\nรายละเอียด"));
+    expect(th).toBe("อ่านข้อมูลไม่สำเร็จ: Invalid `prisma.page.findMany()`");
+  });
+
+  it("error ที่ไม่มีข้อความเลย → บอกให้ไปดูเทอร์มินัล ไม่ใช่ทิ้งค้างไว้", () => {
+    const th = describeDbError(new Error("   \n  \n "));
+    expect(th).toContain("ดูรายละเอียดในเทอร์มินัล");
+    expect(th.endsWith(":")).toBe(false);
+  });
+
+  it("ของที่ไม่ใช่ Error ก็ยังอ่านได้", () => {
+    expect(describeDbError("พังเฉยๆ")).toBe("อ่านข้อมูลไม่สำเร็จ: พังเฉยๆ");
   });
 });

@@ -28,7 +28,16 @@ export const PLAN_LABEL_TH: Record<PlanKey, string> = {
 export const CLIENT_COLOR_COUNT = 10;
 
 export interface ClientPage {
+  /** id ภายในระบบเรา (uuid) — ใช้เป็นคีย์และอ้างอิงข้ามตาราง */
   pageId: string;
+  /**
+   * รหัสเพจของ Facebook — ตัวที่คนเอาไปค้นหรือส่งให้ลูกค้าดูได้
+   *
+   * ต้องมีแยกจาก `pageId` เพราะสองอันนี้คนละค่ากัน (ดูคำเตือนเรื่อง
+   * "pageId สองความหมาย" ที่หัว `token-repository.ts`) — เคยโชว์ uuid
+   * ภายใต้ป้าย "รหัสเพจ" ซึ่งเอาไปใช้ทำอะไรไม่ได้เลย
+   */
+  fbPageId: string;
   /** ชื่อเพจตามที่แสดงบน Facebook */
   pageName: string;
   /** ชื่อลูกค้า (บริษัท/เจ้าของ) — เพจหลายเพจอาจเป็นลูกค้าเดียวกัน */

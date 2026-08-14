@@ -1,4 +1,12 @@
-import { Badge, Card, ClientDot, ClientStripe, EmptyState, SectionHeader, type Tone } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  ClientDot,
+  EmptyState,
+  Row,
+  SectionHeader,
+  type Tone,
+} from "@/components/ui";
 import { dateTimeTh, durationTh, timeTh, truncate } from "@/lib/format";
 import type { ApprovalTask, InboxTask, Problem, Severity } from "@/lib/today";
 import type { ScheduledPostRow, Workspace } from "@/lib/workspace";
@@ -14,6 +22,38 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   warning: "ต้องดู",
   info: "รับทราบ",
 };
+
+const SEVERITY_COLOR: Record<Severity, string> = {
+  critical: "var(--danger)",
+  warning: "var(--warn)",
+  info: "var(--info)",
+};
+
+/**
+ * จุดสถานะที่มี "วงกระเพื่อม" เฉพาะเรื่องที่พังอยู่จริง
+ *
+ * ใช้กับ `critical` เท่านั้นโดยตั้งใจ — ถ้าทุกอย่างกระพริบได้ ไม่มีอะไรเด่น
+ * และหน้าจอที่เปิดค้างทั้งวันจะกลายเป็นของที่มองแล้วเหนื่อย
+ */
+function SeverityDot({ severity }: { severity: Severity }) {
+  const color = SEVERITY_COLOR[severity];
+  return (
+    <span className="relative flex h-2 w-2 shrink-0">
+      {severity === "critical" && (
+        <span
+          aria-hidden
+          className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
+          style={{ background: color }}
+        />
+      )}
+      <span
+        aria-hidden
+        className="relative inline-flex h-2 w-2 rounded-full"
+        style={{ background: color }}
+      />
+    </span>
+  );
+}
 
 /**
  * รายการสิ่งที่พัง
@@ -40,42 +80,38 @@ export function ProblemList({
         hint={problems.length > 0 ? "เรียงจากแรงที่สุด" : undefined}
       />
       {problems.length === 0 ? (
-        <EmptyState>ทุกเพจเชื่อมต่อปกติ ไม่มีอะไรพัง</EmptyState>
+        <EmptyState kind="done">ทุกเพจเชื่อมต่อปกติ ไม่มีอะไรพัง</EmptyState>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {shown.map((p) => (
-            <li
-              key={p.id}
-              className="relative overflow-hidden rounded-[var(--radius-card)] border py-3 pr-3 pl-4"
-              style={{
-                background: "var(--bg-sunken)",
-                borderColor: "var(--border)",
-              }}
-            >
-              <ClientStripe colorIndex={p.colorIndex} />
-              <div className="flex flex-wrap items-center gap-2">
+        <>
+          <ul className="divide-rows -mx-2.5 flex flex-col">
+            {shown.map((p) => (
+              <Row key={p.id} colorIndex={p.colorIndex}>
+                <SeverityDot severity={p.severity} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm" style={{ color: "var(--text)" }}>
+                    {p.th}
+                  </p>
+                  <div
+                    className="flex items-center gap-1.5 truncate text-xs"
+                    style={{ color: "var(--text-faint)" }}
+                  >
+                    <span className="truncate">{p.pageName}</span>
+                    <span aria-hidden>·</span>
+                    <span className="truncate">{p.clientName}</span>
+                  </div>
+                </div>
                 <Badge tone={SEVERITY_TONE[p.severity]}>
                   {SEVERITY_LABEL[p.severity]}
                 </Badge>
-                <span className="text-sm font-medium">{p.pageName}</span>
-                <span className="text-xs" style={{ color: "var(--text-faint)" }}>
-                  {p.clientName}
-                </span>
-              </div>
-              <p
-                className="mt-1 text-sm"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {p.th}
-              </p>
-            </li>
-          ))}
+              </Row>
+            ))}
+          </ul>
           {problems.length > shown.length && (
-            <li className="pt-1 text-xs" style={{ color: "var(--text-faint)" }}>
+            <p className="mt-2.5 text-xs" style={{ color: "var(--text-faint)" }}>
               และอีก {problems.length - shown.length} เรื่องที่ไม่รุนแรงเท่านี้
-            </li>
+            </p>
           )}
-        </ul>
+        </>
       )}
     </Card>
   );
@@ -105,22 +141,12 @@ export function InboxQueue({
         hint={tasks.length > 0 ? "เหลือเวลาน้อยสุดขึ้นก่อน" : undefined}
       />
       {tasks.length === 0 ? (
-        <EmptyState>ตอบครบทุกข้อความแล้ว</EmptyState>
+        <EmptyState kind="done">ตอบครบทุกข้อความแล้ว</EmptyState>
       ) : (
         <>
-          <ul className="flex flex-col">
-            {shown.map((t, i) => (
-              <li
-                key={t.conversationId}
-                className="flex items-start gap-3 py-2.5"
-                style={{
-                  borderTop:
-                    i === 0 ? "none" : "1px solid var(--border)",
-                }}
-              >
-                <span className="mt-2">
-                  <ClientDot colorIndex={t.colorIndex} />
-                </span>
+          <ul className="divide-rows -mx-2.5 flex flex-col">
+            {shown.map((t) => (
+              <Row key={t.conversationId} colorIndex={t.colorIndex}>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-sm font-medium">
@@ -142,7 +168,7 @@ export function InboxQueue({
                 </div>
                 <div className="shrink-0 text-right">
                   <div
-                    className="tabular text-sm font-semibold"
+                    className="tabular text-sm font-semibold whitespace-nowrap"
                     style={{
                       color:
                         t.sla.tone === "red"
@@ -164,12 +190,12 @@ export function InboxQueue({
                     </div>
                   )}
                 </div>
-              </li>
+              </Row>
             ))}
           </ul>
           {tasks.length > shown.length && (
             <p
-              className="mt-3 text-xs"
+              className="mt-2.5 text-xs"
               style={{ color: "var(--text-faint)" }}
             >
               และอีก {tasks.length - shown.length} บทสนทนา
@@ -205,59 +231,37 @@ export function ApprovalList({
         }
       />
       {approvals.length === 0 ? (
-        <EmptyState>ไม่มีโพสต์ค้างรออนุมัติ</EmptyState>
+        <EmptyState kind="done">ไม่มีโพสต์ค้างรออนุมัติ</EmptyState>
       ) : (
         <>
-          <ul className="flex flex-col gap-2">
+          <ul className="divide-rows -mx-2.5 flex flex-col">
             {shown.map((a) => (
-              <li
-                key={a.postId}
-                className="relative overflow-hidden rounded-[var(--radius-card)] border py-2.5 pr-3 pl-4"
-                style={{
-                  background: "var(--bg-sunken)",
-                  borderColor: "var(--border)",
-                }}
-              >
-                <ClientStripe colorIndex={a.colorIndex} />
-                <div className="flex items-center justify-between gap-3">
-                  <span
-                    className="truncate text-xs"
+              <Row key={a.postId} colorIndex={a.colorIndex}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{truncate(a.preview, 60)}</p>
+                  <div
+                    className="flex items-center gap-1.5 truncate text-xs"
                     style={{ color: "var(--text-faint)" }}
                   >
-                    {a.pageName}
-                  </span>
-                  <Badge
-                    tone={
-                      a.remainingMs < 0
-                        ? "red"
-                        : a.urgent
-                          ? "amber"
-                          : "gray"
-                    }
-                  >
-                    {a.remainingMs < 0
-                      ? "เลยเวลาแล้ว"
-                      : `อีก ${durationTh(a.remainingMs)}`}
-                  </Badge>
+                    <span className="truncate">{a.pageName}</span>
+                    <span aria-hidden>·</span>
+                    <span className="tabular shrink-0">
+                      {dateTimeTh(a.scheduledAtMs, timeZone)}
+                    </span>
+                  </div>
                 </div>
-                <p className="mt-0.5 truncate text-sm">
-                  {truncate(a.preview, 60)}
-                </p>
-                <div
-                  className="mt-1 flex items-center gap-2 text-xs"
-                  style={{ color: "var(--text-faint)" }}
+                <Badge
+                  tone={a.remainingMs < 0 ? "red" : a.urgent ? "amber" : "gray"}
                 >
-                  <span>{a.pillarLabelTh}</span>
-                  <span aria-hidden>·</span>
-                  <span className="tabular">
-                    {dateTimeTh(a.scheduledAtMs, timeZone)}
-                  </span>
-                </div>
-              </li>
+                  {a.remainingMs < 0
+                    ? "เลยเวลาแล้ว"
+                    : `อีก ${durationTh(a.remainingMs)}`}
+                </Badge>
+              </Row>
             ))}
           </ul>
           {approvals.length > shown.length && (
-            <p className="mt-3 text-xs" style={{ color: "var(--text-faint)" }}>
+            <p className="mt-2.5 text-xs" style={{ color: "var(--text-faint)" }}>
               และอีก {approvals.length - shown.length} โพสต์
             </p>
           )}
@@ -289,17 +293,11 @@ export function GoingOut({
       {posts.length === 0 ? (
         <EmptyState>ไม่มีโพสต์ที่ตั้งเวลาไว้ในช่วงนี้</EmptyState>
       ) : (
-        <ul className="flex flex-col">
-          {shown.map((p, i) => {
+        <ul className="divide-rows -mx-2.5 flex flex-col">
+          {shown.map((p) => {
             const page = ws.pages.find((x) => x.pageId === p.pageId);
             return (
-              <li
-                key={p.postId}
-                className="flex items-center gap-3 py-2"
-                style={{
-                  borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                }}
-              >
+              <Row key={p.postId}>
                 <span
                   className="tabular w-11 shrink-0 text-sm font-semibold"
                   style={{ color: "var(--text-muted)" }}
@@ -310,13 +308,7 @@ export function GoingOut({
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {truncate(p.preview, 52)}
                 </span>
-                <span
-                  className="shrink-0 text-xs"
-                  style={{ color: "var(--text-faint)" }}
-                >
-                  {p.pillarLabelTh}
-                </span>
-              </li>
+              </Row>
             );
           })}
         </ul>

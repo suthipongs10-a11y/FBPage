@@ -63,7 +63,7 @@ export default async function InboxPage() {
           hint="เรียงตามเวลาที่เหลือ ไม่ใช่ตามลำดับที่เข้ามา"
         />
         {tasks.length === 0 ? (
-          <EmptyState>ตอบครบทุกข้อความแล้ว</EmptyState>
+          <EmptyState kind="done">ตอบครบทุกข้อความแล้ว</EmptyState>
         ) : (
           <ul className="flex flex-col gap-2">
             {tasks.map((t) => {

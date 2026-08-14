@@ -43,7 +43,11 @@ export function Card({
   return (
     <section
       className={`rounded-[var(--radius-card)] border ${padded ? "p-5" : ""} ${className}`}
-      style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+      style={{
+        background: "var(--surface)",
+        borderColor: "var(--border)",
+        boxShadow: "var(--shadow-card)",
+      }}
     >
       {children}
     </section>
@@ -62,12 +66,12 @@ export function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="mb-4 flex items-baseline justify-between gap-4">
-      <div className="flex items-baseline gap-2.5 min-w-0">
-        <h2 className="text-[0.95rem] font-semibold tracking-tight">{title}</h2>
+    <header className="mb-3 flex items-baseline justify-between gap-4">
+      <div className="flex min-w-0 items-baseline gap-2.5">
+        <h2 className="text-[1.0625rem] font-semibold tracking-tight">{title}</h2>
         {count !== undefined && (
           <span
-            className="tabular rounded-[var(--radius-pill)] px-2 py-0.5 text-xs font-medium"
+            className="tabular rounded-[var(--radius-pill)] px-1.5 py-0.5 text-[0.7rem] font-semibold"
             style={{ background: "var(--bg-sunken)", color: "var(--text-muted)" }}
           >
             {count}
@@ -136,6 +140,21 @@ export function ClientStripe({ colorIndex }: { colorIndex: number }) {
   );
 }
 
+/**
+ * ตัวเลขสรุปหนึ่งช่อง
+ *
+ * ─── ทำไมตัวเลขต้องใหญ่ขนาดนี้ ───
+ *
+ * นี่คือของที่คนกวาดตาดูตอนเปิดหน้าจอวินาทีแรก ก่อนจะอ่านอะไรทั้งสิ้น
+ * ถ้าตัวเลขเล็กพอๆ กับข้อความรอบข้าง มันก็ไม่ได้ทำหน้าที่ "สรุป" อะไรเลย
+ * — แค่เป็นข้อความอีกบรรทัด
+ *
+ * ─── แถบสีด้านซ้าย ───
+ *
+ * สถานะบอกด้วย**ตำแหน่งและรูปทรง**ก่อน แล้วค่อยเสริมด้วยสี ไม่ใช่สีอย่างเดียว
+ * คนตาบอดสีแยก "แดง/ส้ม/เขียว" ไม่ออก แต่แยก "มีแถบ/ไม่มีแถบ" ออกเสมอ
+ * และตัวเลขที่ยังเป็นสีตามสถานะคือชั้นที่สอง ไม่ใช่ชั้นเดียว
+ */
 export function StatTile({
   label,
   value,
@@ -148,22 +167,40 @@ export function StatTile({
   tone?: Tone;
 }) {
   const c = TONE_VAR[tone];
+  const quiet = tone === "gray";
   return (
     <div
-      className="rounded-[var(--radius-card)] border px-4 py-3.5"
-      style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+      className="relative overflow-hidden rounded-[var(--radius-card)] border px-4 py-4"
+      style={{
+        background: "var(--surface)",
+        borderColor: "var(--border)",
+        boxShadow: "var(--shadow-card)",
+      }}
     >
-      <div className="text-xs" style={{ color: "var(--text-faint)" }}>
+      {!quiet && (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-[3px]"
+          style={{ background: c.fg }}
+        />
+      )}
+      <div
+        className="text-[0.7rem] font-medium tracking-wide"
+        style={{ color: "var(--text-faint)" }}
+      >
         {label}
       </div>
       <div
-        className="tabular mt-1 text-2xl leading-none font-semibold"
-        style={{ color: tone === "gray" ? "var(--text)" : c.fg }}
+        className="tabular mt-1.5 text-[2rem] leading-none font-semibold tracking-tight"
+        style={{ color: quiet ? "var(--text)" : c.fg }}
       >
         {value}
       </div>
       {sub && (
-        <div className="mt-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="mt-2 text-xs leading-snug"
+          style={{ color: "var(--text-muted)" }}
+        >
           {sub}
         </div>
       )}
@@ -172,17 +209,93 @@ export function StatTile({
 }
 
 /**
+ * แถวหนึ่งบรรทัดในรายการ — ตัวที่ทำให้หน้าจอแน่นขึ้นเท่าตัว
+ *
+ * ของเดิมทุกแถวเป็น "การ์ดซ้อนในการ์ด" (มีพื้นหลัง มีขอบ มี padding รอบด้าน)
+ * หกแถวจึงกลายเป็นกำแพงสี่เหลี่ยมสูง 660px ที่บรรจุข้อความจริงแค่สิบสองบรรทัด
+ *
+ * แบบใหม่ใช้**เส้นคั่น**แทนกล่อง และแถบสีลูกค้าบางๆ ด้านซ้ายแทนขอบเต็มใบ
+ * ได้ข้อมูลเท่าเดิมในพื้นที่ราวครึ่งเดียว และสายตาไล่ลงตามคอลัมน์ได้
+ * แทนที่จะต้องกระโดดข้ามขอบกล่องทีละใบ
+ */
+export function Row({
+  colorIndex,
+  children,
+  className = "",
+}: {
+  /** สีประจำลูกค้า — ไม่ส่งมาก็ได้ถ้าแถวนี้ไม่ผูกกับลูกค้าคนไหน */
+  colorIndex?: number;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <li
+      className={`interactive relative flex items-center gap-3 rounded-[var(--radius-row)] px-2.5 py-2.5 ${className}`}
+    >
+      {colorIndex !== undefined && (
+        <span
+          aria-hidden
+          className="client-dot absolute top-2 bottom-2 left-0 w-[2px] rounded-full"
+          style={clientStyle(colorIndex)}
+        />
+      )}
+      {children}
+    </li>
+  );
+}
+
+/**
  * สถานะว่าง — จงใจให้เป็นข้อความบวก ไม่ใช่ "ไม่มีข้อมูล"
  * เพราะในหน้านี้ "ว่าง" แปลว่างานเสร็จ ซึ่งควรรู้สึกดี
  */
-export function EmptyState({ children }: { children: ReactNode }) {
+/**
+ * สถานะว่าง
+ *
+ * ─── "ว่าง" มีสองความหมาย และห้ามใช้หน้าตาเดียวกัน ───
+ *
+ * `done` = **ทำครบแล้ว** ("ตอบครบทุกข้อความแล้ว") — ควรรู้สึกดี ติดเครื่องหมายถูก
+ * `none` = **ยังไม่มีข้อมูล** ("ยังไม่มี engagement ในช่วงนี้") — เป็นกลาง
+ *
+ * ค่าเริ่มต้นคือ `none` โดยตั้งใจ เพราะถ้าเผลอไม่ระบุ การได้ข้อความกลางๆ
+ * เสียหายน้อยกว่าการติดเครื่องหมายถูกสีเขียวไว้ข้างข้อความที่แปลว่า
+ * "ยังตั้งค่าไม่เสร็จ" — อันหลังคือการบอกคนใช้ว่าเรียบร้อยดีทั้งที่ยังไม่เรียบร้อย
+ */
+export function EmptyState({
+  children,
+  kind = "none",
+}: {
+  children: ReactNode;
+  kind?: "done" | "none";
+}) {
   return (
     <p
-      className="rounded-[var(--radius-card)] border border-dashed px-4 py-6 text-center text-sm"
-      style={{ color: "var(--text-faint)", borderColor: "var(--border)" }}
+      className="flex items-center justify-center gap-2 rounded-[var(--radius-row)] px-4 py-7 text-center text-sm"
+      style={{ color: "var(--text-faint)", background: "var(--bg-sunken)" }}
     >
+      {kind === "done" && <CheckIcon />}
       {children}
     </p>
+  );
+}
+
+/** เครื่องหมายถูก — ใช้กับสถานะว่างที่แปลว่า "งานเสร็จ" ไม่ใช่ "ไม่มีข้อมูล" */
+function CheckIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="shrink-0"
+      style={{ color: "var(--ok)" }}
+    >
+      <path d="m5 13 4 4L19 7" />
+    </svg>
   );
 }
 

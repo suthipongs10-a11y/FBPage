@@ -19,7 +19,11 @@ import "server-only";
  */
 import { PrismaWorkspaceQueries } from "@page-os/store";
 import { prisma } from "@/lib/server/deps";
-import { assembleWorkspace, emptyWorkspace } from "@/lib/workspace-mapping";
+import {
+  assembleWorkspace,
+  describeDbError,
+  emptyWorkspace,
+} from "@/lib/workspace-mapping";
 import type { Workspace } from "@/lib/workspace";
 
 export interface WorkspaceLoad {
@@ -28,17 +32,6 @@ export interface WorkspaceLoad {
   errorTh: string | null;
   /** ยังไม่ได้เชื่อมเพจสักเพจ — หน้าจอควรชวนไปหน้าตั้งค่าแทนที่จะโชว์ศูนย์เปล่าๆ */
   empty: boolean;
-}
-
-function describeDbError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes("Can't reach database server")) {
-    return "ต่อฐานข้อมูลไม่ได้ — สั่ง docker compose up -d แล้วรีเฟรชหน้านี้";
-  }
-  if (msg.includes("does not exist") || msg.includes("P2021")) {
-    return "ยังไม่ได้สร้างตารางในฐานข้อมูล — สั่ง pnpm db:push แล้วรีเฟรช";
-  }
-  return `อ่านข้อมูลไม่สำเร็จ: ${msg.split("\n")[0]}`;
 }
 
 /**

@@ -18,7 +18,8 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* ระยะที่ใช้ซ้ำในตาราง/การ์ด */
-  --radius-card: 0.875rem;
+  --radius-card: 1rem;
+  --radius-row: 0.625rem;
   --radius-pill: 999px;
 }
 
@@ -49,6 +50,25 @@
 
   --accent: oklch(0.7 0.15 285);
   --accent-bg: oklch(0.3 0.08 285);
+
+  /*
+   * ความลึก — สิ่งที่ทำให้การ์ด "ลอย" แทนที่จะเป็นสี่เหลี่ยมสีต่างกันนิดเดียว
+   *
+   * บนพื้นมืด เงาอย่างเดียวแทบมองไม่เห็น (เงาดำบนพื้นดำ) ตัวที่ทำงานจริงคือ
+   * **เส้นสว่างบางๆ ที่ขอบบน** (`inset 0 1px 0`) ซึ่งเลียนแบบแสงตกจากด้านบน
+   * — เทคนิคเดียวกับที่ทำให้ปุ่มบนจอมืดดูกดได้
+   *
+   * บนพื้นสว่างสลับกัน: เงาทำงาน เส้นขอบบนไม่ทำงาน จึงต้องแยกค่าสองชุด
+   * ไม่ใช่ชุดเดียวแล้วหวังว่าจะใช้ได้ทั้งคู่
+   */
+  --shadow-card:
+    inset 0 1px 0 oklch(1 0 0 / 0.045), 0 1px 2px oklch(0 0 0 / 0.4),
+    0 6px 16px -6px oklch(0 0 0 / 0.35);
+  --shadow-pop:
+    inset 0 1px 0 oklch(1 0 0 / 0.06), 0 2px 4px oklch(0 0 0 / 0.4),
+    0 12px 28px -8px oklch(0 0 0 / 0.5);
+  /* วงแหวนโฟกัส — ต้องเห็นชัดบนทุกพื้นหลัง */
+  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
 
 /*
@@ -83,6 +103,11 @@
 
     --accent: oklch(0.5 0.19 285);
     --accent-bg: oklch(0.95 0.04 285);
+
+    --shadow-card:
+      0 1px 2px oklch(0.2 0.03 258 / 0.05), 0 4px 12px -4px oklch(0.2 0.03 258 / 0.08);
+    --shadow-pop:
+      0 2px 4px oklch(0.2 0.03 258 / 0.06), 0 14px 32px -10px oklch(0.2 0.03 258 / 0.16);
   }
 }
 
@@ -112,6 +137,12 @@
 
   --accent: oklch(0.5 0.19 285);
   --accent-bg: oklch(0.95 0.04 285);
+
+
+  --shadow-card:
+    0 1px 2px oklch(0.2 0.03 258 / 0.05), 0 4px 12px -4px oklch(0.2 0.03 258 / 0.08);
+  --shadow-pop:
+    0 2px 4px oklch(0.2 0.03 258 / 0.06), 0 14px 32px -10px oklch(0.2 0.03 258 / 0.16);
 }
 
 * {
@@ -148,6 +179,44 @@ h3 {
 ::selection {
   background: var(--accent-bg);
   color: var(--text);
+}
+
+/*
+ * วงแหวนโฟกัสชุดเดียวทั้งระบบ
+ *
+ * `:focus-visible` ไม่ใช่ `:focus` — เบราว์เซอร์จะโชว์เฉพาะตอนคนใช้คีย์บอร์ด
+ * ไม่ใช่ตอนคลิกเมาส์ ซึ่งเป็นสิ่งที่คนคาดหวังจากแอปสมัยใหม่
+ */
+:where(a, button, [role="button"], input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-row);
+}
+
+/*
+ * ของที่กดได้ต้องขยับตอนเอาเมาส์ไปชี้
+ *
+ * 120ms คือช่วงที่รู้สึกว่า "ตอบสนอง" — ต่ำกว่านี้เหมือนกระตุก สูงกว่านี้เหมือนหน่วง
+ */
+.interactive {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+.interactive:hover {
+  background: var(--surface-hover);
+}
+
+/*
+ * เส้นคั่นบางระหว่างแถวในรายการ
+ *
+ * ใช้ `:not(:first-child)` แทนการส่ง prop `i === 0` ลงไปทุกแถว — ตรรกะการวาด
+ * เส้นคั่นไม่ควรอยู่ใน JavaScript
+ */
+.divide-rows > * + * {
+  border-top: 1px solid var(--border);
 }
 
 /* scrollbar ที่ไม่แย่งความสนใจ */
