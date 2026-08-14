@@ -24,6 +24,7 @@ import { ConfigError, loadWorkerConfig } from "./config.js";
 import { buildDeps } from "./deps.js";
 import {
   alertsTickHandler,
+  listeningSyncHandler,
   notWiredHandler,
   publishTickHandler,
 } from "./handlers/cron.js";
@@ -86,6 +87,13 @@ async function main(): Promise<void> {
     alertsTickHandler({
       center: deps.alertCenter,
       collect: deps.collectProblemsNow,
+    }),
+    listeningSyncHandler({
+      sync: deps.listeningSync,
+      // ดึงใหม่เมื่อข้อมูลเก่าเกิน 50 นาที — ต่ำกว่าคาบ 1 ชม. เล็กน้อย
+      // ไม่งั้นรอบที่มาถึงตอน 59 นาที 59 วินาทีจะข้ามเพจนั้นไปทั้งรอบ
+      staleAfterMs: 50 * 60_000,
+      limit: 10,
     }),
     ...NOT_WIRED.map((n) => notWiredHandler(n.cron, n.missingTh)),
   ]);

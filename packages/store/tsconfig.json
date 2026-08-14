@@ -1,15 +1,39 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "outDir": "./dist", "rootDir": "./src" },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"],
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ],
   "references": [
-    { "path": "../core" },
-    { "path": "../db" },
-    { "path": "../inbox" },
-    { "path": "../meta" },
-    { "path": "../ops" },
-    { "path": "../portal" },
-    { "path": "../publish" }
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../inbox"
+    },
+    {
+      "path": "../meta"
+    },
+    {
+      "path": "../ops"
+    },
+    {
+      "path": "../portal"
+    },
+    {
+      "path": "../publish"
+    },
+    {
+      "path": "../listening"
+    }
   ]
 }

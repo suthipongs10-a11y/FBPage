@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nullLogger } from "@page-os/core";
+import type { ListeningSync } from "@page-os/listening";
 import type { AlertCenter, Problem } from "@page-os/ops";
 import type { PublishScheduler } from "@page-os/publish";
 import { CRON_JOBS, encodeSweepJob, JobPayloadError } from "@page-os/queue";
@@ -7,6 +8,7 @@ import { JobRouter, NotWiredError, type JobContext } from "../router.js";
 import {
   alertsTickHandler,
   cronJobName,
+  listeningSyncHandler,
   notWiredHandler,
   publishTickHandler,
 } from "./cron.js";
@@ -129,9 +131,12 @@ describe("ทุกตารางงานต้องมีตัวจัด�
       run: async () => ({ sent: [], heldBack: 0, resolved: [], th: "" }),
     } as unknown as AlertCenter;
 
+    const sync = { syncDue: async () => [] } as unknown as ListeningSync;
+
     const router = new JobRouter([
       publishTickHandler(scheduler),
       alertsTickHandler({ center, collect: async () => [] }),
+      listeningSyncHandler({ sync, staleAfterMs: 1, limit: 1 }),
       notWiredHandler("token-health", "x"),
       notWiredHandler("analytics-sync", "x"),
       notWiredHandler("morning-digest", "x"),

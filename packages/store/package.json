@@ -18,6 +18,7 @@
     "@page-os/core": "workspace:*",
     "@page-os/db": "workspace:*",
     "@page-os/inbox": "workspace:*",
+    "@page-os/listening": "workspace:*",
     "@page-os/meta": "workspace:*",
     "@page-os/ops": "workspace:*",
     "@page-os/portal": "workspace:*",

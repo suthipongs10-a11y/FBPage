@@ -8,6 +8,7 @@
 import { createLogger, Keyring, systemClock, type Clock, type Logger } from "@page-os/core";
 import { EncryptedTokenStore } from "@page-os/db";
 import { WebhookProcessor } from "@page-os/inbox";
+import { ListeningSync } from "@page-os/listening";
 import { MetaGateway } from "@page-os/meta";
 import {
   AlertCenter,
@@ -37,6 +38,7 @@ import {
   PrismaCallLog,
   PrismaDuePostSource,
   PrismaInboxStore,
+  PrismaListeningRepository,
   PrismaPageTokenRepository,
   PrismaPostRepository,
   PrismaPublishedPostLookup,
@@ -62,6 +64,7 @@ export interface WorkerDeps {
   auditStore: PrismaAuditStore;
   inboxStore: PrismaInboxStore;
   webhookProcessor: WebhookProcessor;
+  listeningSync: ListeningSync;
   collectProblemsNow: (nowMs: number) => Promise<ReturnType<typeof collectProblems>>;
 }
 
@@ -152,6 +155,13 @@ export function buildDeps(opts: BuildDepsOptions): WorkerDeps {
     quietHours: { fromHour: 22, toHour: 7, timeZone: config.timeZone },
   });
 
+  const listeningSync = new ListeningSync({
+    gateway,
+    repo: new PrismaListeningRepository(prisma),
+    clock,
+    logger,
+  });
+
   return {
     config,
     logger,
@@ -168,6 +178,7 @@ export function buildDeps(opts: BuildDepsOptions): WorkerDeps {
     auditStore: new PrismaAuditStore(prisma),
     inboxStore,
     webhookProcessor,
+    listeningSync,
     collectProblemsNow: (nowMs) => collectProblemsFromDb(prisma, nowMs),
   };
 }

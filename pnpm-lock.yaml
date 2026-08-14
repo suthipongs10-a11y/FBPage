@@ -114,6 +114,9 @@ importers:
       '@page-os/inbox':
         specifier: workspace:*
         version: link:../../packages/inbox
+      '@page-os/listening':
+        specifier: workspace:*
+        version: link:../../packages/listening
       '@page-os/meta':
         specifier: workspace:*
         version: link:../../packages/meta
@@ -179,6 +182,15 @@ importers:
         version: 6.19.3(typescript@5.9.3)
 
   packages/inbox:
+    dependencies:
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@page-os/meta':
+        specifier: workspace:*
+        version: link:../meta
+
+  packages/listening:
     dependencies:
       '@page-os/core':
         specifier: workspace:*
@@ -270,6 +282,9 @@ importers:
       '@page-os/inbox':
         specifier: workspace:*
         version: link:../inbox
+      '@page-os/listening':
+        specifier: workspace:*
+        version: link:../listening
       '@page-os/meta':
         specifier: workspace:*
         version: link:../meta

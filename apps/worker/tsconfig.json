@@ -1,18 +1,48 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "outDir": "./dist", "rootDir": "./src" },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"],
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ],
   "references": [
-    { "path": "../../packages/analytics" },
-    { "path": "../../packages/core" },
-    { "path": "../../packages/db" },
-    { "path": "../../packages/inbox" },
-    { "path": "../../packages/meta" },
-    { "path": "../../packages/moderation" },
-    { "path": "../../packages/ops" },
-    { "path": "../../packages/publish" },
-    { "path": "../../packages/queue" },
-    { "path": "../../packages/store" }
+    {
+      "path": "../../packages/analytics"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/inbox"
+    },
+    {
+      "path": "../../packages/meta"
+    },
+    {
+      "path": "../../packages/moderation"
+    },
+    {
+      "path": "../../packages/ops"
+    },
+    {
+      "path": "../../packages/publish"
+    },
+    {
+      "path": "../../packages/queue"
+    },
+    {
+      "path": "../../packages/store"
+    },
+    {
+      "path": "../../packages/listening"
+    }
   ]
 }

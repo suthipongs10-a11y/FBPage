@@ -21,3 +21,19 @@ export {
   type GapSide,
   type GapUnavailable,
 } from "./gap.js";
+
+export {
+  DEFAULT_LOOKBACK_DAYS,
+  DEFAULT_MAX_COMMENTS,
+  DEFAULT_MAX_POSTS,
+  ListeningSync,
+  dateKeyUtc,
+  type FetchedComment,
+  type FetchedPost,
+  type ListeningRepository,
+  type ListeningSyncOptions,
+  type PageSyncResult,
+  type TrackedKind,
+  type TrackedPageRef,
+  type TrackedSource,
+} from "./ingest.js";

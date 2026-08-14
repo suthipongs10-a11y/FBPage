@@ -23,3 +23,5 @@ export {
   PrismaInboxStore,
   type PrismaInboxStoreOptions,
 } from "./inbox-repository.js";
+
+export { PrismaListeningRepository } from "./listening-repository.js";
