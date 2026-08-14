@@ -35,6 +35,9 @@ importers:
       '@page-os/inbox':
         specifier: workspace:*
         version: link:../../packages/inbox
+      '@page-os/listening':
+        specifier: workspace:*
+        version: link:../../packages/listening
       '@page-os/meta':
         specifier: workspace:*
         version: link:../../packages/meta

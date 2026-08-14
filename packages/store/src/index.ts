@@ -25,3 +25,8 @@ export {
 } from "./inbox-repository.js";
 
 export { PrismaListeningRepository } from "./listening-repository.js";
+export {
+  PrismaListeningQueries,
+  type TrackedPageRow,
+  type TrackedPageWithPosts,
+} from "./listening-queries.js";

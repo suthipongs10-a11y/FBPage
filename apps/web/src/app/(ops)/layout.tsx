@@ -46,6 +46,8 @@ export default async function OpsLayout({
       urgent: today.inbox.summary.breached > 0,
     },
     { href: "/calendar", label: "ปฏิทินคอนเทนต์" },
+    // ไม่มี badge — หน้านี้ไม่มี "งานค้าง" ให้นับ เป็นหน้าไว้ดู ไม่ใช่หน้าไว้เคลียร์
+    { href: "/insights", label: "ฟังเสียง" },
     { href: "/ops", label: "ศูนย์ปฏิบัติการ" },
     {
       href: "/pages",
