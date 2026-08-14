@@ -245,17 +245,24 @@ export default async function InsightsPage() {
           </div>
         )}
 
-        {view.pages.length >= 2 && (
-          <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link
+            href="/insights/comments"
+            className="underline underline-offset-2"
+            style={{ color: "var(--accent)" }}
+          >
+            อ่านคอมเมนต์จริง →
+          </Link>
+          {view.pages.length >= 2 && (
             <Link
               href="/insights/compare"
-              className="text-sm underline underline-offset-2"
+              className="underline underline-offset-2"
               style={{ color: "var(--accent)" }}
             >
-              เปิดหน้าเทียบเพจแบบเลือกเอง →
+              เทียบเพจแบบเลือกเอง →
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </Card>
 
       {/* ── เพิ่มเพจ ──────────────────────────────────────────────────── */}

@@ -37,3 +37,28 @@ export {
   type TrackedPageRef,
   type TrackedSource,
 } from "./ingest.js";
+
+export {
+  QUESTION_MARKERS,
+  TOPICS,
+  TOPIC_EXCEPTIONS,
+  analyzeComment,
+  normalizeForTopics,
+  tallyTopics,
+  type CommentAnalysis,
+  type TopicDef,
+  type TopicKey,
+  type TopicSummary,
+  type TopicTally,
+} from "./topics.js";
+
+export {
+  fanBoards,
+  overlapAcrossPages,
+  topFansOfPage,
+  type CommentAuthor,
+  type FanBoard,
+  type OverlapPerson,
+  type OverlapResult,
+  type TopFan,
+} from "./fans.js";

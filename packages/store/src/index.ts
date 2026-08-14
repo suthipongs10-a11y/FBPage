@@ -26,7 +26,10 @@ export {
 
 export { PrismaListeningRepository } from "./listening-repository.js";
 export {
+  DIGEST_CAP,
   PrismaListeningQueries,
+  type CommentDigest,
+  type CommentRow,
   type TrackedPageRow,
   type TrackedPageWithPosts,
 } from "./listening-queries.js";

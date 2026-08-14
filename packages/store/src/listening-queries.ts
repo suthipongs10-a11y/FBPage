@@ -31,6 +31,39 @@ export interface TrackedPageWithPosts extends TrackedPageRow {
   uniqueCommenters: number;
 }
 
+export interface CommentRow {
+  id: string;
+  authorId: string | null;
+  authorName: string | null;
+  message: string | null;
+  createdAtMs: number;
+  trackedPageId: string;
+  pageName: string;
+  postPermalink: string | null;
+  fbPostId: string;
+}
+
+export interface CommentDigest {
+  /** จำนวนคอมเมนต์ทั้งหมดที่เข้าเงื่อนไข (ไม่ถูกตัดด้วยเพดาน) */
+  total: number;
+  /** `true` เมื่อโดนเพดานตัด — ตัวเลขที่คิดจากชุดนี้เป็นของตัวอย่าง ไม่ใช่ทั้งหมด */
+  truncated: boolean;
+  messages: Array<string | null>;
+  authors: Array<{
+    authorId: string | null;
+    authorName: string | null;
+    trackedPageId: string;
+  }>;
+}
+
+/**
+ * เพดานคอมเมนต์ที่เอามาคิดหัวข้อ/แฟนตัวยงต่อครั้ง
+ *
+ * 20,000 แถว × ~3 คอลัมน์สั้นๆ ราวไม่กี่ MB — เปิดหน้าเว็บแล้วยังไว
+ * เกินกว่านี้หน้าจะหน่วงจนคนคิดว่าค้าง ซึ่งแย่กว่าการบอกว่า "คิดจากตัวอย่าง"
+ */
+export const DIGEST_CAP = 20_000;
+
 export class PrismaListeningQueries {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -117,6 +150,131 @@ export class PrismaListeningQueries {
       else list.push(who);
     }
     return out;
+  }
+
+  /**
+   * ค้นคอมเมนต์ — ตัวที่ทำให้ "อ่านคอมเมนต์จริง" เป็นไปได้
+   *
+   * ค้นด้วย `contains` ธรรมดาบนคอลัมน์ `message` ซึ่งกลายเป็น `ILIKE '%คำ%'`
+   * ใน Postgres — ใช้กับภาษาไทยได้ตรงๆ เพราะเป็นการหา substring ล้วน
+   * (full-text search ของ Postgres แยกคำไทยไม่ได้ ใส่ไปก็ไม่ได้ผลดีกว่า)
+   */
+  async searchComments(args: {
+    workspaceId?: string;
+    trackedPageId?: string;
+    keyword?: string;
+    fromMs: number;
+    toMs: number;
+    limit: number;
+    offset?: number;
+  }): Promise<{ rows: CommentRow[]; total: number }> {
+    const where = this.commentWhere(args);
+
+    const [rows, total] = await Promise.all([
+      this.prisma.trackedComment.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: args.limit,
+        skip: args.offset ?? 0,
+        include: {
+          trackedPost: {
+            select: {
+              fbPostId: true,
+              permalink: true,
+              trackedPage: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.trackedComment.count({ where }),
+    ]);
+
+    return {
+      total,
+      rows: rows.map((r) => ({
+        id: r.id,
+        authorId: r.authorId,
+        authorName: r.authorName,
+        message: r.message,
+        createdAtMs: r.createdAt.getTime(),
+        trackedPageId: r.trackedPost.trackedPage.id,
+        pageName: r.trackedPost.trackedPage.name,
+        postPermalink: r.trackedPost.permalink,
+        fbPostId: r.trackedPost.fbPostId,
+      })),
+    };
+  }
+
+  /**
+   * คอมเมนต์ทั้งช่วงในรูปย่อ — เอาไปนับหัวข้อและหาแฟนตัวยง
+   *
+   * ดึงเฉพาะคอลัมน์ที่ต้องใช้จริง (ข้อความ + คนพูด + เพจ) เพราะการจัดหมวด
+   * ภาษาไทยทำใน JS จะ `GROUP BY` ใน SQL แทนไม่ได้
+   *
+   * มีเพดานกันหน้าเว็บค้างเมื่อข้อมูลโต — และ**บอกกลับไปว่าถูกตัดหรือเปล่า**
+   * เพราะเปอร์เซ็นต์ที่คิดจากตัวอย่างบางส่วนกับคิดจากทั้งหมดเป็นคนละเรื่องกัน
+   * ถ้าไม่บอก คนจะอ่านว่าเป็นตัวเลขของทั้งหมด
+   */
+  async commentDigest(args: {
+    workspaceId?: string;
+    trackedPageId?: string;
+    keyword?: string;
+    fromMs: number;
+    toMs: number;
+    cap?: number;
+  }): Promise<CommentDigest> {
+    const cap = args.cap ?? DIGEST_CAP;
+    const where = this.commentWhere(args);
+
+    const [rows, total] = await Promise.all([
+      this.prisma.trackedComment.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: cap,
+        select: {
+          message: true,
+          authorId: true,
+          authorName: true,
+          trackedPost: { select: { trackedPageId: true } },
+        },
+      }),
+      this.prisma.trackedComment.count({ where }),
+    ]);
+
+    return {
+      total,
+      truncated: total > rows.length,
+      messages: rows.map((r) => r.message),
+      authors: rows.map((r) => ({
+        authorId: r.authorId,
+        authorName: r.authorName,
+        trackedPageId: r.trackedPost.trackedPageId,
+      })),
+    };
+  }
+
+  /** เงื่อนไขค้นหาที่ใช้ร่วมกันระหว่างรายการกับตัวนับ — ต้องเป็นชุดเดียวกันเป๊ะ */
+  private commentWhere(args: {
+    workspaceId?: string;
+    trackedPageId?: string;
+    keyword?: string;
+    fromMs: number;
+    toMs: number;
+  }): Record<string, unknown> {
+    const keyword = args.keyword?.trim() ?? "";
+    const pageWhere: Record<string, unknown> = {};
+    if (args.trackedPageId !== undefined) pageWhere["id"] = args.trackedPageId;
+    if (args.workspaceId !== undefined) pageWhere["workspaceId"] = args.workspaceId;
+
+    return {
+      createdAt: { gte: new Date(args.fromMs), lt: new Date(args.toMs) },
+      ...(keyword === ""
+        ? {}
+        : { message: { contains: keyword, mode: "insensitive" } }),
+      ...(Object.keys(pageWhere).length === 0
+        ? {}
+        : { trackedPost: { trackedPage: pageWhere } }),
+    };
   }
 
   /** เพิ่มเพจเข้ารายการเฝ้าดู — เพจเดิมใน workspace เดิมเพิ่มซ้ำไม่ได้ */
