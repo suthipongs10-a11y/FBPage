@@ -25,6 +25,7 @@
       "@page-os/ops": ["./packages/ops/src/index.ts"],
       "@page-os/store": ["./packages/store/src/index.ts"],
       "@page-os/queue": ["./packages/queue/src/index.ts"],
+      "@page-os/youtube": ["./packages/youtube/src/index.ts"],
       // ลอง ".ts" ก่อน เพราะ NodeNext ไม่เติมนามสกุลให้เองแม้จะมาจาก path mapping
       // ส่วน next build ใช้ตัวแก้ปัญหาของ webpack ซึ่งหาเจออยู่แล้ว
       "@/*": ["./apps/web/src/*.ts", "./apps/web/src/*.tsx", "./apps/web/src/*"]

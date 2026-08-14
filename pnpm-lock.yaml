@@ -319,6 +319,12 @@ importers:
         specifier: workspace:*
         version: link:../publish
 
+  packages/youtube:
+    dependencies:
+      '@page-os/core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

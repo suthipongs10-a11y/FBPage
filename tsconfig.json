@@ -32,6 +32,9 @@
       "path": "./packages/listening"
     },
     {
+      "path": "./packages/youtube"
+    },
+    {
       "path": "./packages/portal"
     },
     {

@@ -63,6 +63,10 @@ export default defineConfig({
         find: "@page-os/listening",
         replacement: r("./packages/listening/src/index.ts"),
       },
+      {
+        find: "@page-os/youtube",
+        replacement: r("./packages/youtube/src/index.ts"),
+      },
       /**
        * alias ของ `apps/web` — ต้องมีให้ตรงกับ `apps/web/tsconfig.json`
        *

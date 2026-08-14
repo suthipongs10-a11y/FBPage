@@ -19,6 +19,24 @@
  * Prisma แปลง `include` ซ้อนหลายชั้นเป็น query แยกอยู่ดี แต่ควบคุมเพดาน
  * แต่ละชั้นไม่ได้ — เพจที่มีบทสนทนา 50,000 อันจะลากมาทั้งหมด เขียนแยกแล้ว
  * ใส่ `take` ได้ตรงจุด
+ *
+ * ─── ⚠️ กฎเหล็กของไฟล์นี้: ห้าม `include` ความสัมพันธ์แบบ required ───
+ *
+ * `page.workspace`, `conversation.contact`, `postTarget.post` ประกาศเป็น
+ * required ใน schema ทั้งหมด ถ้า `include` มันแล้วเจอแถวที่ปลายทางหายไป
+ * Prisma โยน `Inconsistent query result: Field X is required` แล้ว
+ * **query ทั้งก้อนพัง** ไม่ใช่แค่แถวนั้นหาย
+ *
+ * "ปลายทางหายไป" เกิดขึ้นได้จริงแม้จะมี foreign key แบบ cascade เพราะ
+ * cascade ไม่ได้เกิดพร้อมกันในพริบตา — ระหว่างที่ Postgres ทยอยลบ
+ * คนที่อ่านพร้อมกันจะเห็นสถานะครึ่งๆ กลางๆ ได้
+ *
+ * และ `snapshot()` อ่าน**ทุกเพจในเครื่อง**โดยตั้งใจ โอกาสชนจึงสูงกว่าที่คิด
+ * — เจอครั้งแรกตอนรันเทสต์ขนานกัน แต่บนของจริงคือ "มีคนกดลบลูกค้าพอดีกับ
+ * ที่อีกจอกำลังโหลด" แล้วหน้าแรกทั้งหน้าขึ้น "อ่านข้อมูลไม่ได้"
+ *
+ * วิธีที่ใช้แทน: `select` เอา foreign key มา แล้วยิงอีกรอบไปดึงของที่ต้องใช้
+ * ค่าที่หายกลายเป็น `null` ซึ่งชั้นแปลงรองรับอยู่แล้ว
  */
 import type { PrismaClient } from "./client.js";
 
@@ -159,8 +177,15 @@ export class PrismaWorkspaceQueries {
     const rows = await this.prisma.page.findMany({
       take: WORKSPACE_CAPS.pages,
       orderBy: { createdAt: "asc" },
-      include: {
-        workspace: { select: { clientName: true, plan: true } },
+      // ⚠️ ไม่ include `workspace` — ดูกฎ "ห้าม include ความสัมพันธ์แบบ required"
+      select: {
+        id: true,
+        workspaceId: true,
+        fbPageId: true,
+        name: true,
+        timezone: true,
+        botEnabled: true,
+        lastWebhookAt: true,
         /**
          * เอา token ทุกชนิดของเพจมา แล้วค่อยเลือกตัวที่ "แย่ที่สุด" ทีหลัง
          *
@@ -177,21 +202,33 @@ export class PrismaWorkspaceQueries {
         },
       },
     });
+    if (rows.length === 0) return [];
 
-    const followers = await this.followersByPage(rows.map((r) => r.id));
+    const [workspaces, followers] = await Promise.all([
+      this.prisma.workspace.findMany({
+        where: { id: { in: rows.map((r) => r.workspaceId) } },
+        select: { id: true, clientName: true, plan: true },
+      }),
+      this.followersByPage(rows.map((r) => r.id)),
+    ]);
+    const wsOf = new Map(workspaces.map((w) => [w.id, w]));
 
-    return rows.map((r) => ({
-      id: r.id,
-      fbPageId: r.fbPageId,
-      name: r.name,
-      timeZone: r.timezone,
-      botEnabled: r.botEnabled,
-      lastWebhookAtMs: ms(r.lastWebhookAt),
-      clientName: r.workspace.clientName,
-      plan: r.workspace.plan,
-      followers: followers.get(r.id) ?? null,
-      token: worstToken(r.tokens),
-    }));
+    return rows.map((r) => {
+      const ws = wsOf.get(r.workspaceId);
+      return {
+        id: r.id,
+        fbPageId: r.fbPageId,
+        name: r.name,
+        timeZone: r.timezone,
+        botEnabled: r.botEnabled,
+        lastWebhookAtMs: ms(r.lastWebhookAt),
+        // workspace หายระหว่างทาง = กำลังถูกลบอยู่ — แสดงชื่อเพจไปก่อน
+        clientName: ws?.clientName ?? r.name,
+        plan: ws?.plan ?? "STARTER",
+        followers: followers.get(r.id) ?? null,
+        token: worstToken(r.tokens),
+      };
+    });
   }
 
   /**
@@ -229,8 +266,32 @@ export class PrismaWorkspaceQueries {
        * ต้องไปอยู่ท้ายแถว ไม่ใช่มาแย่งที่คนที่ยังรออยู่ตอนโดนเพดานตัด
        */
       orderBy: { awaitingSince: { sort: "asc", nulls: "last" } },
-      include: {
-        contact: { select: { name: true } },
+      /**
+       * ⚠️ **ห้าม `include: { contact: … }`**
+       *
+       * ความสัมพันธ์นี้ประกาศเป็น required ใน schema — Prisma จึงโยน
+       * `Inconsistent query result: Field contact is required` ทันทีที่อ่านเจอ
+       * บทสนทนาที่ผู้ติดต่อของมันเพิ่งถูกลบไปพร้อมกัน (cascade กำลังทำงานอยู่)
+       * แล้ว **query ทั้งก้อนพัง** ไม่ใช่แค่แถวนั้นหาย
+       *
+       * เกิดขึ้นจริงตอนรันเทสต์ขนานกัน และเกิดได้บนของจริงเหมือนกันเมื่อมีคน
+       * กดลบผู้ติดต่อพอดีกับที่หน้าจอกำลังโหลด — หน้าแรกทั้งหน้าจะขึ้น
+       * "อ่านข้อมูลไม่ได้" เพราะบทสนทนาใบเดียวที่กำลังจะหายอยู่แล้ว
+       *
+       * ดึงแยกสองรอบแล้วต่อกันใน JS จึงทนกว่า: ผู้ติดต่อที่หายไปกลายเป็น
+       * "ไม่ทราบชื่อ" ซึ่งเป็นสิ่งที่ชั้นแปลงรองรับอยู่แล้ว
+       *
+       * (เขียนเทสต์จำลองสถานะนี้ตรงๆ ไม่ได้ เพราะ foreign key เป็น cascade —
+       * ลบผู้ติดต่อแล้วบทสนทนาหายตามทันที สถานะ "บทสนทนาที่ไม่มีผู้ติดต่อ"
+       * มีอยู่ชั่วขณะระหว่าง cascade เท่านั้น ซึ่งเป็นตอนที่คนอ่านพร้อมกันพอดี)
+       */
+      select: {
+        id: true,
+        pageId: true,
+        contactId: true,
+        awaitingSince: true,
+        unread: true,
+        botPausedUntil: true,
         /** ข้อความล่าสุดใบเดียวพอ — เอาไว้โชว์เป็นตัวอย่างในคิว */
         messages: {
           orderBy: { createdAt: "desc" },
@@ -239,11 +300,18 @@ export class PrismaWorkspaceQueries {
         },
       },
     });
+    if (rows.length === 0) return [];
+
+    const contacts = await this.prisma.contact.findMany({
+      where: { id: { in: rows.map((r) => r.contactId) } },
+      select: { id: true, name: true },
+    });
+    const nameOf = new Map(contacts.map((c) => [c.id, c.name]));
 
     return rows.map((r) => ({
       id: r.id,
       pageId: r.pageId,
-      contactName: r.contact.name,
+      contactName: nameOf.get(r.contactId) ?? null,
       preview: r.messages[0]?.body ?? null,
       awaitingSinceMs: ms(r.awaitingSince),
       unread: r.unread,
@@ -323,11 +391,12 @@ export class PrismaWorkspaceQueries {
     const byFbId = new Map(pages.map((p) => [p.fbPageId, p.id]));
 
     const [failed, rateLimited, moderated] = await Promise.all([
+      // `postId` แทนการ include `post` — ดูกฎเรื่องความสัมพันธ์แบบ required
       this.prisma.postTarget.findMany({
         where: { pageId: { in: pageIds }, status: "failed" },
         take: WORKSPACE_CAPS.incidents,
         orderBy: { attempts: "desc" },
-        select: { id: true, pageId: true, error: true, post: { select: { updatedAt: true } } },
+        select: { id: true, pageId: true, error: true, postId: true },
       }),
       this.prisma.metaCallLog.findMany({
         where: {
@@ -351,12 +420,22 @@ export class PrismaWorkspaceQueries {
       }),
     ]);
 
+    const posts =
+      failed.length === 0
+        ? []
+        : await this.prisma.post.findMany({
+            where: { id: { in: failed.map((f) => f.postId) } },
+            select: { id: true, updatedAt: true },
+          });
+    const postUpdatedAt = new Map(posts.map((p) => [p.id, p.updatedAt]));
+
     const out: WorkspaceIncidentRow[] = [
       ...failed.map((f) => ({
         id: `pub-${f.id}`,
         pageId: f.pageId,
         kind: "publish_failed" as const,
-        atMs: f.post.updatedAt.getTime(),
+        // โพสต์หายไปแล้ว → ใช้เวลาปัจจุบันแทน ดีกว่าทำทั้ง query พัง
+        atMs: postUpdatedAt.get(f.postId)?.getTime() ?? nowMs,
         th: f.error ?? "โพสต์ไม่สำเร็จ แต่ระบบไม่ได้บันทึกสาเหตุไว้",
       })),
       ...rateLimited.flatMap((r) => {
