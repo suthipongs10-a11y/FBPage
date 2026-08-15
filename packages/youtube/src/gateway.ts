@@ -65,6 +65,13 @@ export interface YouTubeCallOptions {
   endpoint: QuotaEndpoint;
   params: Record<string, string | number | undefined>;
   /**
+   * `GET` เมื่อไม่ระบุ — งานเขียน (ซ่อน/ลบคอมเมนต์) ต้องบอกให้ชัด
+   *
+   * งานเขียนของ YouTube ส่งค่าทาง **query string** ไม่ใช่ body (ต่างจาก REST
+   * ทั่วไป) ตรงนี้จึงประกอบ URL เหมือนกันทุก method — ที่ต่างมีแค่คำกริยา
+   */
+  method?: "GET" | "POST" | "DELETE";
+  /**
    * โทเคน OAuth ของช่องเรา — ใส่เมื่อต้องอ่านของที่ไม่สาธารณะ
    * หรือเขียน (ซ่อน/ลบคอมเมนต์) ไม่ใส่ = ใช้ API key อ่านของสาธารณะ
    */
@@ -85,6 +92,22 @@ export interface YouTubeResponse<T> {
 
 /** ชื่อพารามิเตอร์ที่ห้ามหลุดลง log เด็ดขาด (กฎข้อ 3) */
 const SECRET_PARAMS = new Set(["key", "access_token"]);
+
+/**
+ * แปลงชื่อ endpoint เป็น path
+ *
+ * ส่วนใหญ่เป็น `<ทรัพยากร>.list` → `/<ทรัพยากร>` แต่งานเขียนบางตัวมีชื่อ action
+ * ต่อท้ายที่ต้องอยู่ใน path ด้วย เช่น `comments.setModerationStatus` →
+ * `/comments/setModerationStatus` — ถ้าตัดทิ้งจะกลายเป็นยิงไป `/comments`
+ * ด้วย method POST ซึ่งคือ "สร้างคอมเมนต์ใหม่" ไม่ใช่ "เปลี่ยนสถานะ"
+ */
+function pathOf(endpoint: QuotaEndpoint): string {
+  const [resource, action] = endpoint.split(".");
+  if (action === undefined || action === "list" || action === "delete") {
+    return resource ?? endpoint;
+  }
+  return `${resource}/${action}`;
+}
 
 export class YouTubeGateway {
   private readonly cfg: Required<Omit<YouTubeGatewayConfig, "apiBase">> & {
@@ -118,6 +141,24 @@ export class YouTubeGateway {
   async call<T = unknown>(opts: YouTubeCallOptions): Promise<YouTubeResponse<T>> {
     const cost = QUOTA_COST[opts.endpoint];
     const background = opts.background ?? true;
+
+    /**
+     * งานเขียนต้องมี OAuth เสมอ — API key เขียนอะไรไม่ได้เลย
+     *
+     * ดักที่นี่เพราะถ้าปล่อยไป Google จะตอบ 401 ซึ่ง**กินโควตา 50 หน่วยไปแล้ว**
+     * ต่อหนึ่งครั้งที่พยายาม (ราคาของ `comments.setModerationStatus`)
+     * ลองผิดสัก 20 ครั้งก็หายไป 1,000 หน่วยโดยไม่ได้อะไรกลับมา
+     */
+    const isWrite = (opts.method ?? "GET") !== "GET";
+    const hasToken = opts.accessToken !== undefined && opts.accessToken !== "";
+    if (isWrite && !hasToken) {
+      throw new YouTubeApiError({
+        message: `write without oauth: ${opts.endpoint}`,
+        reason: "authError",
+        path: opts.endpoint,
+        channelId: opts.channelId,
+      });
+    }
 
     /**
      * เช็คโควตา**ก่อน**ยิง ไม่ใช่รอให้ Google ปฏิเสธ
@@ -175,7 +216,7 @@ export class YouTubeGateway {
     cost: number,
     attempt: number,
   ): Promise<YouTubeResponse<T>> {
-    const url = new URL(`${this.cfg.apiBase}/${opts.endpoint.split(".")[0]}`);
+    const url = new URL(`${this.cfg.apiBase}/${pathOf(opts.endpoint)}`);
     for (const [k, v] of Object.entries(opts.params)) {
       if (v !== undefined) url.searchParams.set(k, String(v));
     }
@@ -187,6 +228,8 @@ export class YouTubeGateway {
       url.searchParams.set("key", this.cfg.apiKey);
     }
 
+    const method = opts.method ?? "GET";
+
     /**
      * จดว่าใช้โควตาไปแล้ว**ก่อน**รู้ผล — เพราะ Google หักโควตาตั้งแต่รับคำขอ
      * ไม่ว่าจะตอบสำเร็จหรือ error การจดหลังจากรู้ผลจะทำให้เรานับต่ำกว่าจริง
@@ -196,7 +239,7 @@ export class YouTubeGateway {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(url, { method: "GET", headers });
+      res = await this.fetchImpl(url, { method, headers });
     } catch (err) {
       throw new YouTubeApiError({
         message: err instanceof Error ? err.message : String(err),

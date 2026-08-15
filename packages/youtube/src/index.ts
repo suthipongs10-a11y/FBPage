@@ -25,3 +25,21 @@ export {
   type YouTubeGatewayDeps,
   type YouTubeResponse,
 } from "./gateway.js";
+
+export {
+  MODERATION_BATCH,
+  YouTubeCommentActions,
+  type ModerationChannel,
+  type ModerationResult,
+  type ModerationStatus,
+  type YouTubeModerationDeps,
+} from "./moderation.js";
+
+export {
+  GOOGLE_TOKEN_URL,
+  GoogleOAuth,
+  googleOAuthFromEnv,
+  REFRESH_MARGIN_MS,
+  type GoogleOAuthConfig,
+  type GoogleOAuthDeps,
+} from "./oauth.js";

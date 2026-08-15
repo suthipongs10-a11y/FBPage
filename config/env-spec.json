@@ -104,6 +104,30 @@
     "defaultValue": "10000"
   },
   {
+    "key": "YOUTUBE_OAUTH_CLIENT_ID",
+    "need": "optional",
+    "group": "YouTube",
+    "labelTh": "OAuth client ID (สำหรับซ่อน/ลบคอมเมนต์)",
+    "whereTh": "console.cloud.google.com → Credentials → Create credentials → OAuth client ID → เลือก \"Desktop app\" — ใส่ครบสามค่าถึงจะซ่อน/ลบคอมเมนต์บนช่องของเราได้ (อ่านอย่างเดียวใช้แค่ API key)",
+    "secret": true
+  },
+  {
+    "key": "YOUTUBE_OAUTH_CLIENT_SECRET",
+    "need": "optional",
+    "group": "YouTube",
+    "labelTh": "OAuth client secret",
+    "whereTh": "ได้มาพร้อมกับ client ID จากหน้าเดียวกัน",
+    "secret": true
+  },
+  {
+    "key": "YOUTUBE_OAUTH_REFRESH_TOKEN",
+    "need": "optional",
+    "group": "YouTube",
+    "labelTh": "OAuth refresh token ของเจ้าของช่อง",
+    "whereTh": "ทำ consent หนึ่งครั้งด้วยสิทธิ์ https://www.googleapis.com/auth/youtube.force-ssl (ไม่ใช่ youtube.readonly) โดยใส่ access_type=offline แล้วจะได้ refresh token กลับมา — ค่านี้อยู่ได้จนกว่าจะเพิกถอน ⚠️ เป็นกุญแจที่แก้ไขช่องได้ ห้ามแชร์",
+    "secret": true
+  },
+  {
     "key": "LINE_CHANNEL_ACCESS_TOKEN",
     "need": "optional",
     "group": "แจ้งเตือน (ยังไม่ได้ต่อ)",
