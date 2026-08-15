@@ -65,7 +65,14 @@ function scheduledPost(
 }
 
 function snapshot(over: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot {
-  return { pages: [], conversations: [], scheduled: [], incidents: [], ...over };
+  return {
+    pages: [],
+    conversations: [],
+    scheduled: [],
+    incidents: [],
+    followerSeries: [],
+    ...over,
+  };
 }
 
 describe("แปลงสถานะ token เป็นสถานะการเชื่อมต่อ", () => {
@@ -348,6 +355,7 @@ describe("เวิร์กสเปซว่าง", () => {
       conversations: [],
       scheduled: [],
       incidents: [],
+      followerSeries: [],
     });
   });
 });

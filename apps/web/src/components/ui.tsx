@@ -160,11 +160,17 @@ export function StatTile({
   value,
   sub,
   tone = "gray",
+  trend,
+  delta,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: Tone;
+  /** ค่าย้อนหลังไว้วาดเส้นแนวโน้มเล็กๆ — ไม่ส่งมาก็ได้ */
+  trend?: readonly number[];
+  /** ส่วนต่างเทียบกับช่วงก่อนหน้า พร้อมชื่อช่วงที่เทียบ */
+  delta?: { text: string; good: boolean | null };
 }) {
   const c = TONE_VAR[tone];
   const quiet = tone === "gray";
@@ -190,15 +196,47 @@ export function StatTile({
       >
         {label}
       </div>
-      <div
-        className="tabular mt-1.5 text-[2rem] leading-none font-semibold tracking-tight"
-        style={{ color: quiet ? "var(--text)" : c.fg }}
-      >
-        {value}
+
+      <div className="mt-1.5">
+        {/*
+          ⚠️ ตัวเลขก้อนใหญ่ **ห้ามใช้ `tabular`**
+          `tabular-nums` บังคับให้ทุกหลักกว้างเท่าเลข 0 ซึ่งช่วยตอนเรียงเป็น
+          คอลัมน์ แต่พอเอามาใช้กับตัวเลขเดี่ยวขนาดใหญ่ เลขอย่าง "121" จะดูโหว่
+          เป็นช่องๆ — เก็บ `tabular` ไว้ใช้ในตารางที่หลักต้องตรงกันเท่านั้น
+        */}
+        <div
+          className="text-[2rem] leading-none font-semibold tracking-tight"
+          style={{ color: quiet ? "var(--text)" : c.fg }}
+        >
+          {value}
+        </div>
       </div>
+
+      {/*
+        เส้นแนวโน้มอยู่**ใต้**ตัวเลข เต็มความกว้างของกล่อง ไม่ใช่เบียดอยู่ข้างๆ
+        ตอนวางไว้ข้างตัวเลขมันกว้างแค่ 96px ซึ่งแคบเกินกว่าจะเห็นรูปร่าง —
+        ออกมาเป็นขีดทแยงที่ดูเหมือนวาดพลาด มากกว่าจะดูเหมือนกราฟ
+      */}
+      {trend !== undefined && trend.length >= 2 && (
+        <div className="mt-2.5">
+          <Sparkline
+            values={trend}
+            tone={tone === "red" ? "danger" : tone === "green" ? "ok" : "accent"}
+            width={220}
+            height={30}
+          />
+        </div>
+      )}
+
+      {delta !== undefined && (
+        <div className="mt-2 text-xs font-medium" style={{ color: deltaColor(delta.good) }}>
+          {delta.text}
+        </div>
+      )}
+
       {sub && (
         <div
-          className="mt-2 text-xs leading-snug"
+          className={`text-xs leading-snug ${delta === undefined ? "mt-2" : "mt-1"}`}
           style={{ color: "var(--text-muted)" }}
         >
           {sub}
@@ -206,6 +244,19 @@ export function StatTile({
       )}
     </div>
   );
+}
+
+/**
+ * สีของส่วนต่าง — **ทิศทาง × ขึ้นแล้วดีหรือเปล่า**
+ *
+ * ขึ้นไม่ได้แปลว่าดีเสมอ: ผู้ติดตามเพิ่มคือดี แต่ "เรื่องที่พัง" เพิ่มคือแย่
+ * ตัวเรียกจึงเป็นคนบอกว่าดีหรือไม่ดี ไม่ใช่ให้ที่นี่เดาจากเครื่องหมายบวกลบ
+ *
+ * `null` = ไม่ตัดสิน (เช่น ยังไม่มีข้อมูลพอ) → ใช้สีข้อความปกติ
+ */
+function deltaColor(good: boolean | null): string {
+  if (good === null) return "var(--text-muted)";
+  return good ? "var(--ok)" : "var(--danger)";
 }
 
 /**
@@ -366,5 +417,86 @@ export function PlatformTag({ platform }: { platform: "FACEBOOK" | "YOUTUBE" }) 
     >
       {yt ? "YouTube" : "Facebook"}
     </span>
+  );
+}
+
+/**
+ * เส้นแนวโน้มขนาดจิ๋วในกล่องตัวเลข (sparkline)
+ *
+ * ─── กฎที่ทำตามจากคู่มือทำกราฟ ───
+ *
+ * - เส้นหนา **2px** ปลายและข้อต่อมน (`round`) — บางกว่านี้หายไปบนพื้นมืด
+ * - จุดปลาย **รัศมี ≥ 4px** พร้อม**วงแหวนสีพื้น 2px** ให้ยังเห็นชัดเมื่อทับเส้น
+ * - ช่วงที่ผ่านมาใช้สี**จาง** ส่วนจุดปัจจุบันใช้สีเน้น — สายตาจึงไปหยุดที่
+ *   "ตอนนี้เท่าไร" ก่อน แล้วค่อยไล่ย้อนดูว่ามาจากไหน
+ * - **ไม่มีแกน ไม่มีเส้นตาราง ไม่มีตัวเลขกำกับทุกจุด** — หน้าที่ของมันคือบอก
+ *   ทิศทาง ไม่ใช่ให้อ่านค่า ตัวเลขจริงอยู่ตัวใหญ่ข้างบนอยู่แล้ว
+ *
+ * ─── ทำไมไม่ใช้กราฟแท่ง ───
+ *
+ * ค่าผู้ติดตามเป็นหลักหมื่นและขยับวันละไม่กี่สิบ ถ้าวาดแท่งจากศูนย์จะได้แท่ง
+ * สูงเท่ากันหมดจนดูไม่ออก — เส้นที่ปรับสเกลตามช่วงของข้อมูลเองเท่านั้นที่เห็น
+ * การเปลี่ยนแปลง (และนั่นคือเหตุผลที่มันต้องอยู่คู่กับตัวเลขจริงเสมอ
+ * เส้นที่ไม่มีแกนบอกได้แค่ "ขึ้นหรือลง" ไม่ได้บอกว่า "ขึ้นเท่าไร")
+ */
+export function Sparkline({
+  values,
+  tone = "accent",
+  width = 96,
+  height = 28,
+}: {
+  values: readonly number[];
+  tone?: "accent" | "ok" | "danger";
+  width?: number;
+  height?: number;
+}) {
+  // จุดเดียวลากเส้นไม่ได้ และไม่มีอะไรให้ดู — ไม่ต้องวาดเลยดีกว่าวาดของเปล่า
+  if (values.length < 2) return null;
+
+  const color =
+    tone === "ok" ? "var(--ok)" : tone === "danger" ? "var(--danger)" : "var(--accent)";
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  /**
+   * ค่าเท่ากันหมดทั้งช่วง (ยังไม่ขยับเลย) → วาดเป็นเส้นตรงกลางกรอบ
+   * ถ้าไม่ดัก จะหารด้วยศูนย์แล้วได้ `NaN` ซึ่งทำให้ทั้ง path หายไปเงียบๆ
+   */
+  const span = max - min;
+  const pad = 3;
+  const usableH = height - pad * 2;
+
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * (width - pad * 2) + pad;
+    const y = span === 0 ? height / 2 : pad + usableH - ((v - min) / span) * usableH;
+    return [x, y] as const;
+  });
+
+  const d = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const last = pts[pts.length - 1] as readonly [number, number];
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      aria-hidden
+      /*
+       * ยืดเต็มความกว้างแบบ**คงสัดส่วน** (ไม่ใช่ `preserveAspectRatio="none"`)
+       * — ถ้าบีบเฉพาะแกนใดแกนหนึ่ง จุดปลายวงกลมจะกลายเป็นวงรี และเส้นจะหนา
+       *   ไม่เท่ากันสองด้าน ซึ่งเห็นชัดมากในที่เล็กๆ แบบนี้
+       */
+      className="block w-full overflow-visible"
+    >
+      <path
+        d={d}
+        fill="none"
+        stroke="var(--border-strong)"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* วงแหวนสีพื้นก่อน แล้วค่อยจุดจริงทับ — จุดจึงไม่จมหายไปในเส้น */}
+      <circle cx={last[0]} cy={last[1]} r={4.5} fill="var(--surface)" />
+      <circle cx={last[0]} cy={last[1]} r={3} fill={color} />
+    </svg>
   );
 }

@@ -115,6 +115,13 @@ export interface Workspace {
   conversations: ConversationRow[];
   scheduled: ScheduledPostRow[];
   incidents: IncidentRow[];
+  /**
+   * ผู้ติดตามรวมรายวัน เรียงเก่า→ใหม่ — ว่างได้เมื่อยังไม่เคย sync
+   *
+   * มีค่าเริ่มต้นเป็น `[]` ในทุกที่ที่ประกอบ `Workspace` เพื่อให้หน้าจอเก่า
+   * ที่ยังไม่รู้จักฟิลด์นี้ไม่พังตอนคอมไพล์
+   */
+  followerSeries: Array<{ dateKey: string; followers: number }>;
 }
 
 export interface WorkspaceSource {

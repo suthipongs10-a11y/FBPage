@@ -47,6 +47,16 @@ export interface CommentRow {
   pageName: string;
   /** หน้าจอต้องรู้ เพราะข้อความอย่าง "เปิดโพสต์บน Facebook" จะโกหกทันทีถ้าเป็น YouTube */
   platform: TrackedPlatform;
+  /** ช่องนี้เป็นของเราไหม — ตัดสินว่าปุ่มซ่อน/ลบใช้ได้หรือเปล่า */
+  kind: TrackedKind;
+  /** รหัสคอมเมนต์บนแพลตฟอร์มนั้น — ต้องใช้ตอนสั่งซ่อน/ลบ */
+  commentExternalId: string;
+  /**
+   * สถานะที่ **เราสั่งไป** ไม่ใช่สถานะจริงบนแพลตฟอร์ม ณ ตอนนี้
+   * (เจ้าของช่องเปลี่ยนเองได้ตลอด และการไปถามกินโควตาทุกครั้ง)
+   */
+  moderatedStatus: string | null;
+  moderatedAtMs: number | null;
   postPermalink: string | null;
   externalId: string;
 }
@@ -199,7 +209,9 @@ export class PrismaListeningQueries {
             select: {
               externalId: true,
               permalink: true,
-              trackedPage: { select: { id: true, name: true, platform: true } },
+              trackedPage: {
+                select: { id: true, name: true, platform: true, kind: true },
+              },
             },
           },
         },
@@ -218,6 +230,10 @@ export class PrismaListeningQueries {
         trackedPageId: r.trackedPost.trackedPage.id,
         pageName: r.trackedPost.trackedPage.name,
         platform: r.trackedPost.trackedPage.platform as TrackedPlatform,
+        kind: r.trackedPost.trackedPage.kind as TrackedKind,
+        commentExternalId: r.externalId,
+        moderatedStatus: r.moderatedStatus,
+        moderatedAtMs: r.moderatedAt?.getTime() ?? null,
         postPermalink: r.trackedPost.permalink,
         externalId: r.trackedPost.externalId,
       })),
@@ -329,6 +345,110 @@ export class PrismaListeningQueries {
   /** เอาเพจออกจากรายการเฝ้าดู — โพสต์กับคอมเมนต์ที่เก็บไว้หายตามไปด้วย (cascade) */
   async removePage(id: string): Promise<void> {
     await this.prisma.trackedPage.delete({ where: { id } });
+  }
+
+  /**
+   * แปลง id ภายในของคอมเมนต์ → รหัสบนแพลตฟอร์ม พร้อมข้อมูลช่องที่มันอยู่
+   *
+   * ─── ทำไมต้องผ่านขั้นนี้ ไม่ให้หน้าจอส่งรหัสแพลตฟอร์มมาตรงๆ ───
+   *
+   * รหัสที่มาจากฟอร์มคือสิ่งที่ผู้ใช้ส่งมา ถ้าเชื่อแล้วยิงต่อทันที คนที่แก้ค่าใน
+   * ฟอร์มจะสั่งซ่อน/ลบคอมเมนต์อะไรก็ได้บนช่องที่เราเป็นเจ้าของ — ตรงนี้จึงอ่าน
+   * จากฐานข้อมูลเราเองเสมอ id ที่ไม่มีอยู่จริงก็จะหายไปเองโดยไม่ต้องดักเพิ่ม
+   *
+   * จัดกลุ่มตามช่องด้วย เพราะการสั่งซ่อนหนึ่งครั้งทำได้ทีละช่อง
+   * (สิทธิ์ผูกกับช่อง และ `owned` ของแต่ละช่องไม่เหมือนกัน)
+   */
+  async resolveCommentsForModeration(args: {
+    workspaceId?: string;
+    commentIds: readonly string[];
+  }): Promise<
+    Array<{
+      trackedPageId: string;
+      channelExternalId: string;
+      channelName: string;
+      platform: TrackedPlatform;
+      owned: boolean;
+      comments: Array<{ id: string; externalId: string }>;
+    }>
+  > {
+    if (args.commentIds.length === 0) return [];
+
+    const rows = await this.prisma.trackedComment.findMany({
+      where: {
+        id: { in: [...args.commentIds] },
+        ...(args.workspaceId !== undefined
+          ? { trackedPost: { trackedPage: { workspaceId: args.workspaceId } } }
+          : {}),
+      },
+      select: {
+        id: true,
+        externalId: true,
+        trackedPost: {
+          select: {
+            trackedPage: {
+              select: {
+                id: true,
+                externalId: true,
+                name: true,
+                platform: true,
+                kind: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const byChannel = new Map<
+      string,
+      {
+        trackedPageId: string;
+        channelExternalId: string;
+        channelName: string;
+        platform: TrackedPlatform;
+        owned: boolean;
+        comments: Array<{ id: string; externalId: string }>;
+      }
+    >();
+
+    for (const r of rows) {
+      const page = r.trackedPost.trackedPage;
+      let group = byChannel.get(page.id);
+      if (group === undefined) {
+        group = {
+          trackedPageId: page.id,
+          channelExternalId: page.externalId,
+          channelName: page.name,
+          platform: page.platform as TrackedPlatform,
+          owned: page.kind === "OWNED",
+          comments: [],
+        };
+        byChannel.set(page.id, group);
+      }
+      group.comments.push({ id: r.id, externalId: r.externalId });
+    }
+
+    return [...byChannel.values()];
+  }
+
+  /**
+   * จดว่าเราสั่งอะไรไปกับคอมเมนต์ชุดนี้
+   *
+   * จดเฉพาะตัวที่**สำเร็จจริง** — ถ้าจดทุกตัวที่สั่งไป หน้าจอจะบอกว่า "ซ่อนแล้ว"
+   * ทั้งที่บางตัวยังอยู่ คนจะเลิกเชื่อหน้าจอตั้งแต่ครั้งแรกที่จับได้
+   */
+  async recordModeration(args: {
+    commentIds: readonly string[];
+    status: string;
+    atMs: number;
+  }): Promise<number> {
+    if (args.commentIds.length === 0) return 0;
+    const res = await this.prisma.trackedComment.updateMany({
+      where: { id: { in: [...args.commentIds] } },
+      data: { moderatedStatus: args.status, moderatedAt: new Date(args.atMs) },
+    });
+    return res.count;
   }
 
   async findByFbPageId(args: {

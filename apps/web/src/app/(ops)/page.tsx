@@ -8,7 +8,7 @@ import { StatTile } from "@/components/ui";
 import { dateTimeTh, numTh } from "@/lib/format";
 import { WorkspaceNotice } from "@/components/workspace-notice";
 import { loadWorkspace } from "@/lib/server/workspace";
-import { buildTodayView } from "@/lib/today";
+import { buildTodayView, describeFollowerDelta, followerTrend } from "@/lib/today";
 import { totalsOf } from "@/lib/workspace";
 
 /** ข้อมูลเปลี่ยนตลอดเวลา — ห้าม cache ไม่งั้นเปิดหน้าตอนบ่ายเห็นสถานะเมื่อเช้า */
@@ -22,6 +22,8 @@ export default async function TodayPage() {
   const tz = ws.pages[0]?.timeZone ?? "Asia/Bangkok";
 
   const critical = today.problems.filter((p) => p.severity === "critical").length;
+  const followers = followerTrend(ws);
+  const followerDelta = describeFollowerDelta(followers);
 
   return (
     <div className="flex flex-col gap-5">
@@ -48,13 +50,27 @@ export default async function TodayPage() {
           {today.headlineTh}
         </h1>
         <p className="mt-1.5 text-sm" style={{ color: "var(--text-muted)" }}>
-          ดูแล {totals.pages} เพจของ {totals.clients} ลูกค้า ·{" "}
-          {numTh(totals.followers)} ผู้ติดตามรวม · ตั้งเวลาไว้{" "}
+          ดูแล {totals.pages} เพจของ {totals.clients} ลูกค้า · ตั้งเวลาไว้{" "}
           {totals.scheduledThisWeek} โพสต์ในอีก 7 วัน
         </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+      {/*
+        ห้าช่องบนจอกว้าง ไม่ใช่สี่ — ยอดผู้ติดตามย้ายขึ้นมาเป็นกล่องเต็มตัว
+        พร้อมเส้นแนวโน้ม แทนที่จะเป็นตัวเลขลอยอยู่ในประโยคใต้หัวข้อ
+
+        เหตุผล: มันเป็นตัวเลขเดียวในหน้านี้ที่**มีประวัติ** และ "ขึ้นหรือลง"
+        คือสิ่งที่คนดูแลเพจอยากรู้ก่อนเปิดหน้าอื่น — ฝังไว้ในประโยคทำให้มัน
+        อ่านเหมือนข้อมูลประกอบ ทั้งที่จริงเป็นตัวชี้วัดหลัก
+      */}
+      <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-3 xl:grid-cols-5">
+        <StatTile
+          label="ผู้ติดตามรวม"
+          value={numTh(followers.latest ?? totals.followers)}
+          trend={followers.series}
+          {...(followerDelta !== null ? { delta: followerDelta } : {})}
+          sub={`${totals.pages} เพจของ ${totals.clients} ลูกค้า`}
+        />
         <StatTile
           label="รอตอบ"
           value={numTh(today.inbox.summary.total)}
@@ -115,7 +131,13 @@ export default async function TodayPage() {
       <div className="grid items-start gap-5 xl:grid-cols-[1.5fr_1fr]">
         <div className="flex flex-col gap-5">
           <ProblemList problems={today.problems} />
-          <InboxQueue tasks={today.inbox.tasks} />
+          {/*
+            หกแถวพอสำหรับหน้าสรุป ไม่ใช่แปด
+            คิวเต็มอยู่ที่หน้ากล่องข้อความอยู่แล้ว และการ์ดนี้ก็บอกท้ายรายการว่า
+            เหลืออีกกี่บทสนทนา — แปดแถวทำให้คอลัมน์ซ้ายยาวเกินขวาราว 240px
+            เหลือเป็นช่องว่างมุมขวาล่างที่ไม่มีอะไรอยู่เลย
+          */}
+          <InboxQueue tasks={today.inbox.tasks} limit={6} />
         </div>
         <div className="flex flex-col gap-5">
           <ApprovalList approvals={today.approvals} timeZone={tz} />

@@ -364,12 +364,29 @@ export function buildDemoWorkspace(nowMs: number): Workspace {
     followers: seed.followers,
   }));
 
+  /**
+   * ผู้ติดตามรวมย้อนหลัง 14 วัน — ไต่ขึ้นช้าๆ แบบของจริง ไม่ใช่เส้นตรง
+   *
+   * ใส่ความไม่สม่ำเสมอเล็กน้อยด้วยฟังก์ชันที่คำนวณจากลำดับวัน (ไม่ใช่สุ่ม)
+   * เพื่อให้ภาพหน้าจอออกมาเหมือนเดิมทุกครั้งที่เปิด
+   */
+  const total = pages.reduce((sum, p) => sum + p.followers, 0);
+  const followerSeries = Array.from({ length: 14 }, (_, i) => {
+    const back = 13 - i;
+    const drift = back * 46 - Math.round(Math.sin(i * 1.7) * 18);
+    return {
+      dateKey: new Date(nowMs - back * 86_400_000).toISOString().slice(0, 10),
+      followers: total - drift,
+    };
+  });
+
   return {
     nowMs,
     pages,
     conversations: buildConversations(nowMs),
     scheduled: buildScheduled(nowMs),
     incidents: buildIncidents(nowMs),
+    followerSeries,
   };
 }
 

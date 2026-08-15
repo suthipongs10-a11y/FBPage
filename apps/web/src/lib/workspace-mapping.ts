@@ -59,7 +59,14 @@ export function describeDbError(err: unknown): string {
 }
 
 export function emptyWorkspace(nowMs: number): Workspace {
-  return { nowMs, pages: [], conversations: [], scheduled: [], incidents: [] };
+  return {
+    nowMs,
+    pages: [],
+    conversations: [],
+    scheduled: [],
+    incidents: [],
+    followerSeries: [],
+  };
 }
 
 /**
@@ -215,5 +222,12 @@ export function assembleWorkspace(
     th: i.th,
   }));
 
-  return { nowMs, pages, conversations, scheduled, incidents };
+  return {
+    nowMs,
+    pages,
+    conversations,
+    scheduled,
+    incidents,
+    followerSeries: snapshot.followerSeries,
+  };
 }

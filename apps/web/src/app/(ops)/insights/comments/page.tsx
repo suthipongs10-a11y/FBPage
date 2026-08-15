@@ -1,8 +1,12 @@
 import type { Route } from "next";
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
+import { CommentModeration } from "@/components/comment-moderation";
 import { Badge, Card, EmptyState, PlatformTag, SectionHeader } from "@/components/ui";
 import { compactTh, dateTimeTh, numTh, truncate } from "@/lib/format";
 import { COMMENTS_PAGE_SIZE, loadComments } from "@/lib/server/comments";
+import { parseAction } from "@/lib/moderation-guard";
+import { moderateComments } from "@/lib/server/moderate-comments";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +37,39 @@ export default async function CommentsPage({
     keyword: one("q"),
     page: Number(one("n") ?? "1") || 1,
   });
+
+  /**
+   * สั่งซ่อน/ปล่อย/ลบ — ตรวจสิทธิ์จริงที่ฝั่งเซิร์ฟเวอร์เสมอ
+   *
+   * checkbox ที่ปิดไว้ในหน้าเว็บกันคนกดผิดได้ แต่กันคนที่ยิงคำขอเองไม่ได้
+   * ด่านจริงอยู่ใน `moderateComments()` ซึ่งอ่านเจ้าของช่องจากฐานข้อมูลเราเอง
+   */
+  async function moderate(formData: FormData) {
+    "use server";
+    const result = await moderateComments({
+      commentIds: formData.getAll("ids").map(String),
+      action: parseAction(formData.get("action")),
+      nowMs: Date.now(),
+    });
+    if (result.ok) revalidatePath("/insights/comments");
+    return { ok: result.ok, th: result.th };
+  }
+
+  /**
+   * สั่งได้เฉพาะคอมเมนต์บนช่อง YouTube ของเราเอง
+   * — Facebook ยังไม่ได้ต่อเข้าหน้านี้ และช่องคนอื่นเราไม่มีสิทธิ์
+   */
+  const moderatable = view.rows.map((r) => ({
+    id: r.id,
+    platform: r.platform,
+    canModerate: r.platform === "YOUTUBE" && r.kind === "OWNED",
+    authorName: r.authorName,
+    pageName: r.pageName,
+    createdAtMs: r.createdAtMs,
+    message: r.message,
+    postPermalink: r.postPermalink,
+    moderatedStatus: r.moderatedStatus,
+  }));
 
   /**
    * สร้างลิงก์โดยคงตัวกรองอื่นไว้ — เปลี่ยนทีละอย่างเท่านั้น
@@ -247,48 +284,11 @@ export default async function CommentsPage({
                   : `ไม่เจอคอมเมนต์ที่มีคำว่า “${view.keyword}”`}
               </EmptyState>
             ) : (
-              <ul className="flex flex-col gap-2.5">
-                {view.rows.map((r) => (
-                  <li
-                    key={r.id}
-                    className="rounded-[var(--radius-card)] px-4 py-3"
-                    style={{ background: "var(--bg-sunken)" }}
-                  >
-                    <div
-                      className="flex flex-wrap items-baseline gap-x-2 text-xs"
-                      style={{ color: "var(--text-faint)" }}
-                    >
-                      <b style={{ color: "var(--text-muted)" }}>
-                        {r.authorName ?? "ไม่ทราบชื่อ"}
-                      </b>
-                      <span>
-                        · ใต้{r.platform === "YOUTUBE" ? "วิดีโอ" : "โพสต์"}ของ {r.pageName}
-                      </span>
-                      <span>· {dateTimeTh(r.createdAtMs, TZ)}</span>
-                    </div>
-                    <p className="mt-1.5 text-sm leading-relaxed">
-                      {r.message === null || r.message.trim() === "" ? (
-                        <i style={{ color: "var(--text-faint)" }}>(ไม่มีข้อความ — อาจเป็นรูปหรือสติกเกอร์)</i>
-                      ) : (
-                        truncate(r.message, 500)
-                      )}
-                    </p>
-                    {r.postPermalink !== null && (
-                      <a
-                        href={r.postPermalink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-1.5 inline-block text-xs underline underline-offset-2"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        {r.platform === "YOUTUBE"
-                          ? "เปิดวิดีโอบน YouTube ↗"
-                          : "เปิดโพสต์บน Facebook ↗"}
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <CommentModeration
+                comments={moderatable}
+                action={moderate}
+                timeZone={TZ}
+              />
             )}
 
             {lastPage > 1 && (

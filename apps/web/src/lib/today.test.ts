@@ -7,6 +7,8 @@ import {
   buildTodayView,
   collectProblems,
   describeGap,
+  describeFollowerDelta,
+  followerTrend,
 } from "./today.js";
 import type {
   ClientPage,
@@ -65,6 +67,7 @@ function post(over: Partial<ScheduledPostRow> = {}): ScheduledPostRow {
 function ws(over: Partial<Workspace> = {}): Workspace {
   return {
     nowMs: NOW,
+    followerSeries: [],
     pages: [page()],
     conversations: [],
     scheduled: [],
@@ -404,5 +407,76 @@ describe("describeGap", () => {
 
   it("ค่าติดลบใช้ขนาดของมัน ไม่ใช่เครื่องหมาย", () => {
     expect(describeGap(-30 * MIN)).toBe("30 นาที");
+  });
+});
+
+/**
+ * ─── ทำไมเทียบกับ "จุดแรกที่มีข้อมูล" ไม่ใช่ "7 วันที่แล้ว" ตายตัว ───
+ *
+ * เพจที่เพิ่งเชื่อมเมื่อวานมีข้อมูลแค่ 2 วัน ถ้าไปหาค่าของ 7 วันที่แล้วจะไม่เจอ
+ * แล้วต้องเดา — เทียบกับจุดแรกที่มีจริงแล้วบอกตรงๆ ว่ากี่วัน ถูกต้องเสมอ
+ */
+describe("แนวโน้มผู้ติดตาม", () => {
+  const series = (...v: number[]) =>
+    v.map((followers, i) => ({ dateKey: `2026-08-${10 + i}`, followers }));
+
+  it("เอายอดล่าสุดกับส่วนต่างจากจุดแรก", () => {
+    const t = followerTrend(ws({ followerSeries: series(100, 120, 150) }));
+    expect(t.latest).toBe(150);
+    expect(t.changeFromStart).toBe(50);
+    // 3 จุด = ห่างกัน 2 วัน ไม่ใช่ 3
+    expect(t.spanDays).toBe(2);
+  });
+
+  it("ยังไม่เคย sync เลย → ไม่มีอะไรให้วาดและไม่เดาตัวเลข", () => {
+    const t = followerTrend(ws({ followerSeries: [] }));
+    expect(t.latest).toBeNull();
+    expect(t.changeFromStart).toBeNull();
+    expect(t.series).toEqual([]);
+  });
+
+  it("มีข้อมูลวันเดียว → บอกยอดได้ แต่บอกส่วนต่างไม่ได้", () => {
+    const t = followerTrend(ws({ followerSeries: series(2_000) }));
+    expect(t.latest).toBe(2_000);
+    expect(t.changeFromStart).toBeNull();
+  });
+
+  it("ลดลงก็รายงานตามจริง ไม่ปัดเป็นศูนย์", () => {
+    const t = followerTrend(ws({ followerSeries: series(500, 460) }));
+    expect(t.changeFromStart).toBe(-40);
+  });
+});
+
+describe("ข้อความส่วนต่างผู้ติดตาม", () => {
+  const trend = (change: number | null, spanDays = 13) => ({
+    latest: 100,
+    series: [1, 2],
+    changeFromStart: change,
+    spanDays,
+  });
+
+  /** ลูกศรทำให้ทิศทางอ่านออกโดยไม่ต้องพึ่งสีอย่างเดียว */
+  it("เพิ่มขึ้น → ลูกศรขึ้น และนับว่าเป็นเรื่องดี", () => {
+    const d = describeFollowerDelta(trend(1_338));
+    expect(d?.text).toContain("↑");
+    expect(d?.text).toContain("13 วัน");
+    expect(d?.good).toBe(true);
+  });
+
+  it("ลดลง → ลูกศรลง และนับว่าไม่ดี", () => {
+    const d = describeFollowerDelta(trend(-40));
+    expect(d?.text).toContain("↓");
+    expect(d?.good).toBe(false);
+  });
+
+  /** เท่าเดิมไม่ใช่ทั้งดีและแย่ — ระบายสีเขียวหรือแดงล้วนตีความผิด */
+  it("เท่าเดิม → ไม่ตัดสินว่าดีหรือแย่", () => {
+    const d = describeFollowerDelta(trend(0));
+    expect(d?.good).toBeNull();
+    expect(d?.text).toContain("เท่าเดิม");
+  });
+
+  it("ไม่มีข้อมูลพอ → ไม่แสดงอะไรเลย", () => {
+    expect(describeFollowerDelta(trend(null))).toBeNull();
   });
 });

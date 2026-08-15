@@ -269,3 +269,58 @@ function headline(n: {
   }
   return "ไม่มีอะไรค้าง ทุกเพจเรียบร้อย";
 }
+
+/**
+ * แนวโน้มผู้ติดตามรวม — ตัวเลขปัจจุบัน + ส่วนต่างเทียบต้นช่วง + เส้นสำหรับวาด
+ *
+ * ─── ทำไมเทียบกับ "ต้นช่วงที่มีข้อมูล" ไม่ใช่ "7 วันที่แล้ว" ตายตัว ───
+ *
+ * เพจที่เพิ่งเชื่อมเข้าระบบเมื่อวานมีข้อมูลแค่ 2 วัน ถ้าไปหาค่าของ 7 วันที่แล้ว
+ * จะไม่เจอแล้วต้องเดา — เทียบกับจุดแรกที่มีจริงแล้วบอกไปตรงๆ ว่ากี่วัน
+ * ได้ความหมายที่ถูกต้องเสมอโดยไม่ต้องมีข้อยกเว้น
+ */
+export interface FollowerTrend {
+  /** ยอดล่าสุด — `null` เมื่อยังไม่เคย sync เลย */
+  latest: number | null;
+  /** ค่าไว้วาดเส้น เรียงเก่า→ใหม่ (สั้นกว่า 2 จุด = วาดไม่ได้) */
+  series: number[];
+  /** ส่วนต่างจากจุดแรกในช่วง — `null` เมื่อมีข้อมูลจุดเดียว */
+  changeFromStart: number | null;
+  /** ช่วงที่เทียบยาวกี่วัน — เอาไปเขียนว่า "ใน 14 วัน" */
+  spanDays: number;
+}
+
+export function followerTrend(ws: Workspace): FollowerTrend {
+  const series = ws.followerSeries.map((p) => p.followers);
+  const first = series[0];
+  const last = series[series.length - 1];
+
+  if (last === undefined || first === undefined) {
+    return { latest: null, series: [], changeFromStart: null, spanDays: 0 };
+  }
+
+  return {
+    latest: last,
+    series,
+    changeFromStart: series.length < 2 ? null : last - first,
+    // จุดแรกกับจุดสุดท้ายห่างกัน n-1 วัน ไม่ใช่ n
+    spanDays: Math.max(0, series.length - 1),
+  };
+}
+
+/** ข้อความส่วนต่างพร้อมลูกศร — ลูกศรทำให้ทิศทางไม่ต้องพึ่งสีอย่างเดียว */
+export function describeFollowerDelta(t: FollowerTrend): {
+  text: string;
+  good: boolean | null;
+} | null {
+  if (t.changeFromStart === null) return null;
+  if (t.changeFromStart === 0) {
+    return { text: `เท่าเดิมใน ${t.spanDays} วัน`, good: null };
+  }
+  const up = t.changeFromStart > 0;
+  const n = Math.abs(t.changeFromStart).toLocaleString("th-TH");
+  return {
+    text: `${up ? "↑" : "↓"} ${n} คนใน ${t.spanDays} วัน`,
+    good: up,
+  };
+}

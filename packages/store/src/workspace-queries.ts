@@ -112,7 +112,12 @@ export interface WorkspaceSnapshot {
   conversations: WorkspaceConversationRow[];
   scheduled: WorkspaceScheduledRow[];
   incidents: WorkspaceIncidentRow[];
+  /** ผู้ติดตามรวมรายวัน เรียงเก่า→ใหม่ — ว่างได้ถ้ายังไม่เคย sync */
+  followerSeries: Array<{ dateKey: string; followers: number }>;
 }
+
+/** ย้อนหลังกี่วันในเส้นแนวโน้มผู้ติดตาม — 14 จุดพอเห็นทิศทางโดยไม่รกในที่แคบ */
+export const FOLLOWER_SERIES_DAYS = 14;
 
 /**
  * เพดานของแต่ละชุด
@@ -160,17 +165,24 @@ export class PrismaWorkspaceQueries {
     const pages = await this.pages();
     if (pages.length === 0) {
       // ยังไม่ได้เชื่อมเพจเลย — ไม่ต้องยิง query ที่เหลือให้เปลืองรอบ
-      return { pages: [], conversations: [], scheduled: [], incidents: [] };
+      return {
+        pages: [],
+        conversations: [],
+        scheduled: [],
+        incidents: [],
+        followerSeries: [],
+      };
     }
 
     const pageIds = pages.map((p) => p.id);
-    const [conversations, scheduled, incidents] = await Promise.all([
+    const [conversations, scheduled, incidents, followerSeries] = await Promise.all([
       this.conversations(pageIds),
       this.scheduled(pageIds, nowMs),
       this.incidents(pages, nowMs),
+      this.followerSeries(pageIds, FOLLOWER_SERIES_DAYS),
     ]);
 
-    return { pages, conversations, scheduled, incidents };
+    return { pages, conversations, scheduled, incidents, followerSeries };
   }
 
   private async pages(): Promise<WorkspacePageRow[]> {
@@ -254,6 +266,57 @@ export class PrismaWorkspaceQueries {
       if (!latest.has(r.pageId)) latest.set(r.pageId, Math.round(r.value));
     }
     return latest;
+  }
+
+  /**
+   * ผู้ติดตามรวมของทุกเพจ ย้อนหลังรายวัน — เอาไปวาดเส้นเล็กๆ ในตัวเลขสรุป
+   *
+   * ─── จุดที่ผิดง่ายและเงียบ ───
+   *
+   * เพจที่ยังไม่มีข้อมูลของวันนั้นต้องใช้**ค่าล่าสุดก่อนหน้า** ไม่ใช่ 0
+   * ถ้าใช้ 0 กราฟจะดิ่งลงทุกครั้งที่เพจใดเพจหนึ่ง sync ไม่ทัน ทั้งที่จำนวน
+   * ผู้ติดตามจริงไม่ได้ลดลงเลย — คนดูจะตกใจกับเรื่องที่ไม่ได้เกิดขึ้น
+   *
+   * วันที่**ยังไม่มีเพจไหนมีข้อมูลเลย** ถูกข้ามไป ไม่ใช่เติมศูนย์ ด้วยเหตุผลเดียวกัน
+   */
+  private async followerSeries(
+    pageIds: string[],
+    days: number,
+  ): Promise<Array<{ dateKey: string; followers: number }>> {
+    if (pageIds.length === 0 || days <= 0) return [];
+
+    const rows = await this.prisma.insightsDaily.findMany({
+      where: { pageId: { in: pageIds }, metricKey: { in: FOLLOWER_METRICS } },
+      orderBy: { date: "asc" },
+      select: { pageId: true, value: true, date: true },
+      take: pageIds.length * days * 2,
+    });
+
+    /** ค่าล่าสุดของแต่ละเพจ ณ วันที่กำลังไล่ถึง */
+    const carried = new Map<string, number>();
+    const byDay = new Map<string, Map<string, number>>();
+
+    for (const r of rows) {
+      const key = r.date.toISOString().slice(0, 10);
+      let day = byDay.get(key);
+      if (day === undefined) {
+        day = new Map();
+        byDay.set(key, day);
+      }
+      day.set(r.pageId, r.value);
+    }
+
+    const out: Array<{ dateKey: string; followers: number }> = [];
+    for (const dateKey of [...byDay.keys()].sort()) {
+      for (const [pageId, value] of byDay.get(dateKey) ?? []) {
+        carried.set(pageId, value);
+      }
+      let total = 0;
+      for (const v of carried.values()) total += v;
+      out.push({ dateKey, followers: Math.round(total) });
+    }
+
+    return out.slice(-days);
   }
 
   private async conversations(pageIds: string[]): Promise<WorkspaceConversationRow[]> {

@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "node scripts/ensure-prisma.mjs && tsc -b --force && tsc -p tsconfig.test.json && node scripts/typecheck-web.mjs",
-    "check": "pnpm run typecheck && pnpm run test"
+    "check": "pnpm run typecheck && pnpm run test",
+    "demo-data": "node packages/db/demo-data.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
