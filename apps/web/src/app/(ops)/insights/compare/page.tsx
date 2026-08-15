@@ -1,5 +1,6 @@
+import type { Route } from "next";
 import Link from "next/link";
-import { Badge, Card, EmptyState, SectionHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, PlatformTag, SectionHeader } from "@/components/ui";
 import { VoiceBar } from "@/components/voice-bar";
 import { compactTh, numTh } from "@/lib/format";
 import { gapBetween, loadInsights, type PageInsight } from "@/lib/server/insights";
@@ -45,7 +46,7 @@ export default async function ComparePage({
         <Header />
         <Card>
           <EmptyState>
-            ต้องมีอย่างน้อย 2 เพจถึงจะเทียบได้ — เพิ่มเพจที่หน้าฟังเสียงก่อน
+            ต้องมีอย่างน้อย 2 เพจ/ช่องถึงจะเทียบได้ — เพิ่มที่หน้าฟังเสียงก่อน
           </EmptyState>
         </Card>
       </div>
@@ -57,11 +58,37 @@ export default async function ComparePage({
     view.pages.find((p) => p.kind === "OWNED") ?? (view.pages[0] as PageInsight);
   const ours = view.pages.find((p) => p.id === pick("ours")) ?? defaultOurs;
 
-  const rivals = view.pages.filter((p) => p.id !== ours.id);
+  /**
+   * คู่เทียบต้องอยู่**แพลตฟอร์มเดียวกัน**เท่านั้น
+   *
+   * `engagement` = รีแอ็กชัน + แชร์ + คอมเมนต์ แต่ YouTube ไม่มีตัวเลขการแชร์เลย
+   * ส่วน Facebook ไม่มียอดวิว — ตัวเลขสองฝั่งประกอบขึ้นจากคนละอย่าง เอามาลบกัน
+   * แล้วไม่มีความหมาย จึงไม่ให้เลือกตั้งแต่ต้น ดีกว่าคำนวณให้แล้วเติมคำเตือน
+   * (คนอ่านจะจำตัวเลขไปมากกว่าจำคำเตือน)
+   */
+  const rivals = view.pages.filter(
+    (p) => p.id !== ours.id && p.platform === ours.platform,
+  );
+
+  if (rivals.length === 0) {
+    return (
+      <div className="flex flex-col gap-6">
+        <Header />
+        <Card>
+          <EmptyState>
+            ยังไม่มีอะไรให้เทียบกับ “{ours.name}” — ต้องมีอย่างน้อยอีกหนึ่ง
+            {ours.platform === "YOUTUBE" ? "ช่อง YouTube" : "เพจ Facebook"}
+            ในรายการ เพราะตัวเลขข้ามแพลตฟอร์มเทียบกันไม่ได้ (YouTube ไม่มียอดแชร์
+            ส่วน Facebook ไม่มียอดวิว)
+          </EmptyState>
+        </Card>
+      </div>
+    );
+  }
+
   const defaultTheirs = [...rivals].sort((a, b) => b.engagement - a.engagement)[0];
   const theirs =
-    view.pages.find((p) => p.id === pick("theirs") && p.id !== ours.id) ??
-    (defaultTheirs as PageInsight);
+    rivals.find((p) => p.id === pick("theirs")) ?? (defaultTheirs as PageInsight);
 
   const gap = gapBetween({ pages: view.pages, ourId: ours.id, theirId: theirs.id });
 
@@ -79,7 +106,7 @@ export default async function ComparePage({
         <SectionHeader title="เลือกเพจที่จะเทียบ" hint="กดเพื่อเปลี่ยน" />
         <div className="flex flex-col gap-3">
           <PickerRow
-            label="เพจของเรา"
+            label="ฝั่งของเรา"
             pages={view.pages}
             selectedId={ours.id}
             /**
@@ -90,14 +117,14 @@ export default async function ComparePage({
              * โดยไม่รู้ว่าทำไม
              */
             hrefFor={(id) =>
-              `/insights/compare?ours=${id}&theirs=${id === theirs.id ? ours.id : theirs.id}`
+              `/insights/compare?ours=${id}&theirs=${id === theirs.id ? ours.id : theirs.id}` as Route
             }
           />
           <PickerRow
-            label="เทียบกับ"
+            label={`เทียบกับ (เฉพาะ ${ours.platform === "YOUTUBE" ? "YouTube" : "Facebook"})`}
             pages={rivals}
             selectedId={theirs.id}
-            hrefFor={(id) => `/insights/compare?ours=${ours.id}&theirs=${id}`}
+            hrefFor={(id) => `/insights/compare?ours=${ours.id}&theirs=${id}` as Route}
           />
         </div>
       </Card>
@@ -274,7 +301,8 @@ function PickerRow({
   label: string;
   pages: PageInsight[];
   selectedId: string;
-  hrefFor: (id: string) => string;
+  /** `Route` ไม่ใช่ `string` เพราะเปิด typedRoutes ไว้ (ดู next.config.ts) */
+  hrefFor: (id: string) => Route;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -294,7 +322,10 @@ function PickerRow({
               fontWeight: on ? 600 : 400,
             }}
           >
-            {p.name}
+            <span className="inline-flex items-center gap-1.5">
+              {p.name}
+              <PlatformTag platform={p.platform} />
+            </span>
           </Link>
         );
       })}

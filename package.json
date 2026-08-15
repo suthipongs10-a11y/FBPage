@@ -19,7 +19,7 @@
     "clean": "node scripts/clean.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "node scripts/ensure-prisma.mjs && tsc -b --force && tsc -p tsconfig.test.json",
+    "typecheck": "node scripts/ensure-prisma.mjs && tsc -b --force && tsc -p tsconfig.test.json && node scripts/typecheck-web.mjs",
     "check": "pnpm run typecheck && pnpm run test"
   },
   "devDependencies": {

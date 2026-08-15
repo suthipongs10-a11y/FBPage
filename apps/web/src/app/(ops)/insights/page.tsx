@@ -1,10 +1,21 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { Badge, Card, EmptyState, SectionHeader, StatTile } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  PlatformTag,
+  SectionHeader,
+  StatTile,
+} from "@/components/ui";
 import { TrackPageForm } from "@/components/track-page-form";
 import { VoiceBar } from "@/components/voice-bar";
 import { compactTh, numTh, relativeTh } from "@/lib/format";
-import { gapAgainstStrongest, loadInsights } from "@/lib/server/insights";
+import {
+  gapAgainstStrongest,
+  hasMixedPlatforms,
+  loadInsights,
+} from "@/lib/server/insights";
 import { addTrackedPage, removeTrackedPage } from "@/lib/server/tracked-pages";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +31,10 @@ export default async function InsightsPage() {
   async function add(_prev: unknown, formData: FormData) {
     "use server";
     const result = await addTrackedPage({
-      fbPageId: String(formData.get("fbPageId") ?? ""),
+      externalId: String(formData.get("externalId") ?? ""),
       name: String(formData.get("name") ?? ""),
       kind: formData.get("kind") === "OWNED" ? "OWNED" : "COMPETITOR",
+      platform: formData.get("platform") === "YOUTUBE" ? "YOUTUBE" : "FACEBOOK",
     });
     if (result.ok) revalidatePath("/insights");
     return result;
@@ -59,6 +71,7 @@ export default async function InsightsPage() {
 
   const leader = view.voice.leader;
   const owned = view.pages.filter((p) => p.kind === "OWNED").length;
+  const mixed = hasMixedPlatforms(view.pages);
 
   return (
     <div className="flex flex-col gap-6">
@@ -107,22 +120,41 @@ export default async function InsightsPage() {
 
       {/* ── ส่วนแบ่งเสียง ─────────────────────────────────────────────── */}
       <Card>
-        <SectionHeader title={`ส่วนแบ่งเสียง ${WINDOW_DAYS} วันล่าสุด`} />
+        <SectionHeader
+          title={`ส่วนแบ่งเสียง ${WINDOW_DAYS} วันล่าสุด`}
+          hint={mixed ? "รวมทั้ง Facebook และ YouTube" : undefined}
+        />
         {view.voice.totalEngagement === 0 ? (
           <EmptyState>
             ยังไม่มี engagement ในช่วงนี้ — รอรอบดึงข้อมูลถัดไป หรือเช็คว่าเพจที่เพิ่มไว้ดึงได้จริงไหม
           </EmptyState>
         ) : (
-          <VoiceBar
-            segments={view.voice.shares.map((s) => {
-              const page = view.pages.find((p) => p.id === s.pageId);
-              return {
-                label: s.pageName,
-                sharePct: s.sharePct,
-                colorIndex: page?.colorIndex ?? 0,
-              };
-            })}
-          />
+          <>
+            <VoiceBar
+              segments={view.voice.shares.map((s) => {
+                const page = view.pages.find((p) => p.id === s.pageId);
+                return {
+                  label: s.pageName,
+                  sharePct: s.sharePct,
+                  colorIndex: page?.colorIndex ?? 0,
+                };
+              })}
+            />
+            {/*
+              เตือนเมื่อรวมสองแพลตฟอร์มไว้ในแถบเดียว — engagement ของสองฝั่ง
+              ประกอบขึ้นจากคนละอย่าง (YouTube ไม่มีการแชร์, Facebook ไม่มียอดวิว)
+              แถบนี้ยังมีประโยชน์ในฐานะ "อะไรได้ความสนใจมากที่สุดในสิ่งที่เราดูอยู่"
+              แต่ต้องไม่ถูกอ่านว่า "ช่องนี้สู้เพจนี้ไม่ได้"
+            */}
+            {mixed && (
+              <p className="mt-3 text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+                ⚠️ แถบนี้รวมเพจ Facebook กับช่อง YouTube ไว้ด้วยกัน —
+                อ่านได้ว่า “อะไรได้ความสนใจมากที่สุดในบรรดาที่เราเฝ้าดู”
+                แต่<b>เอามาตัดสินว่าฝั่งไหนทำได้ดีกว่าไม่ได้</b> เพราะ YouTube
+                ไม่มีตัวเลขการแชร์ ส่วน Facebook ไม่มียอดวิว
+              </p>
+            )}
+          </>
         )}
       </Card>
 
@@ -130,7 +162,12 @@ export default async function InsightsPage() {
       <Card>
         <SectionHeader
           title="ช่องว่างเทียบคู่แข่งที่แรงที่สุด"
-          hint={ours === null ? undefined : `เพจของเรา: ${ours.name}`}
+          hint={
+            ours === null
+              ? undefined
+              : `${ours.platform === "YOUTUBE" ? "ช่อง" : "เพจ"}ของเรา: ${ours.name}` +
+                (mixed ? " · เทียบเฉพาะในแพลตฟอร์มเดียวกัน" : "")
+          }
         />
         {!gap.ok ? (
           <EmptyState>{gap.reasonTh}</EmptyState>
@@ -170,7 +207,7 @@ export default async function InsightsPage() {
       {/* ── ตารางเพจ ──────────────────────────────────────────────────── */}
       <Card>
         <SectionHeader
-          title="เพจที่คุณเฝ้าดู"
+          title="เพจและช่องที่คุณเฝ้าดู"
           count={view.pages.length}
           hint="ตัวเลขทั้งหมดนับจากโพสต์ที่เผยแพร่ในช่วงที่เลือก"
         />
@@ -181,7 +218,7 @@ export default async function InsightsPage() {
             <table className="w-full min-w-[46rem] text-sm">
               <thead>
                 <tr className="text-xs" style={{ color: "var(--text-faint)" }}>
-                  <th className="px-1 pb-2 text-left font-medium">เพจ</th>
+                  <th className="px-1 pb-2 text-left font-medium">เพจ / ช่อง</th>
                   <th className="px-1 pb-2 text-right font-medium">ผู้ติดตาม</th>
                   <th className="px-1 pb-2 text-right font-medium">โพสต์</th>
                   <th className="px-1 pb-2 text-right font-medium">ENGAGEMENT</th>
@@ -201,7 +238,8 @@ export default async function InsightsPage() {
                           style={{ ["--client-color" as string]: `var(--client-${p.colorIndex})` }}
                         />
                         <span className="font-medium">{p.name}</span>
-                        {p.kind === "OWNED" && <Badge tone="green">เพจของเรา</Badge>}
+                        <PlatformTag platform={p.platform} />
+                        {p.kind === "OWNED" && <Badge tone="green">ของเรา</Badge>}
                       </div>
                     </td>
                     <td className="tabular px-1 py-2.5 text-right">
@@ -268,8 +306,8 @@ export default async function InsightsPage() {
       {/* ── เพิ่มเพจ ──────────────────────────────────────────────────── */}
       <Card>
         <SectionHeader
-          title="เพิ่มเพจที่จะเฝ้าดู"
-          hint="เพจของเราต้องเชื่อม token ที่หน้าตั้งค่าก่อน"
+          title="เพิ่มเพจ / ช่องที่จะเฝ้าดู"
+          hint="เลือกแพลตฟอร์มก่อน — เงื่อนไขของสองฝั่งไม่เหมือนกัน"
         />
         <TrackPageForm action={add} />
       </Card>

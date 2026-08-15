@@ -1,5 +1,6 @@
+import type { Route } from "next";
 import Link from "next/link";
-import { Badge, Card, EmptyState, SectionHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, PlatformTag, SectionHeader } from "@/components/ui";
 import { compactTh, dateTimeTh, numTh, truncate } from "@/lib/format";
 import { COMMENTS_PAGE_SIZE, loadComments } from "@/lib/server/comments";
 
@@ -33,8 +34,14 @@ export default async function CommentsPage({
     page: Number(one("n") ?? "1") || 1,
   });
 
-  /** สร้างลิงก์โดยคงตัวกรองอื่นไว้ — เปลี่ยนทีละอย่างเท่านั้น */
-  const linkTo = (over: Record<string, string | undefined>): string => {
+  /**
+   * สร้างลิงก์โดยคงตัวกรองอื่นไว้ — เปลี่ยนทีละอย่างเท่านั้น
+   *
+   * คืน `Route` ไม่ใช่ `string` เพราะเปิด `typedRoutes` ไว้ใน next.config
+   * — Next ตรวจว่าเส้นทางที่ส่งให้ `<Link>` มีอยู่จริง ซึ่งจับลิงก์ตายได้
+   * ตั้งแต่ตอน build แต่แลกมาด้วยว่าสตริงที่ประกอบเองต้องบอกชนิดให้ชัด
+   */
+  const linkTo = (over: Record<string, string | undefined>): Route => {
     const next = new URLSearchParams();
     const current: Record<string, string | undefined> = {
       page: view.selectedPageId ?? undefined,
@@ -46,7 +53,7 @@ export default async function CommentsPage({
       if (v !== undefined && v !== "") next.set(k, v);
     }
     const qs = next.toString();
-    return qs === "" ? "/insights/comments" : `/insights/comments?${qs}`;
+    return (qs === "" ? "/insights/comments" : `/insights/comments?${qs}`) as Route;
   };
 
   const lastPage = Math.max(1, Math.ceil(view.total / COMMENTS_PAGE_SIZE));
@@ -97,7 +104,7 @@ export default async function CommentsPage({
                       view.selectedPageId === null ? "var(--accent-bg)" : "transparent",
                   }}
                 >
-                  ทุกเพจ
+                  ทุกเพจ / ช่อง
                 </Link>
                 {view.pages.map((p) => {
                   const on = p.id === view.selectedPageId;
@@ -112,7 +119,10 @@ export default async function CommentsPage({
                         fontWeight: on ? 600 : 400,
                       }}
                     >
-                      {p.name}
+                      <span className="inline-flex items-center gap-1.5">
+                        {p.name}
+                        <PlatformTag platform={p.platform} />
+                      </span>
                     </Link>
                   );
                 })}
@@ -251,7 +261,9 @@ export default async function CommentsPage({
                       <b style={{ color: "var(--text-muted)" }}>
                         {r.authorName ?? "ไม่ทราบชื่อ"}
                       </b>
-                      <span>· ใต้โพสต์ของ {r.pageName}</span>
+                      <span>
+                        · ใต้{r.platform === "YOUTUBE" ? "วิดีโอ" : "โพสต์"}ของ {r.pageName}
+                      </span>
                       <span>· {dateTimeTh(r.createdAtMs, TZ)}</span>
                     </div>
                     <p className="mt-1.5 text-sm leading-relaxed">
@@ -269,7 +281,9 @@ export default async function CommentsPage({
                         className="mt-1.5 inline-block text-xs underline underline-offset-2"
                         style={{ color: "var(--accent)" }}
                       >
-                        เปิดโพสต์บน Facebook ↗
+                        {r.platform === "YOUTUBE"
+                          ? "เปิดวิดีโอบน YouTube ↗"
+                          : "เปิดโพสต์บน Facebook ↗"}
                       </a>
                     )}
                   </li>

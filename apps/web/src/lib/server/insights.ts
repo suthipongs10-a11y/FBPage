@@ -7,14 +7,11 @@ import "server-only";
  * มาป้อนแล้วจัดรูปให้หน้าจอใช้ — ไม่มีสูตรคำนวณของตัวเองแม้แต่บรรทัดเดียว
  */
 import {
-  compareGap,
-  compareWithStrongest,
   shareOfVoice,
   summarizeWindow,
-  type GapResult,
-  type GapSide,
   type ShareOfVoice,
   type TrackedKind,
+  type TrackedPlatform,
 } from "@page-os/listening";
 import { PrismaListeningQueries } from "@page-os/store";
 import { prisma } from "@/lib/server/deps";
@@ -22,6 +19,7 @@ import { prisma } from "@/lib/server/deps";
 export interface PageInsight {
   id: string;
   externalId: string;
+  platform: TrackedPlatform;
   name: string;
   kind: TrackedKind;
   followers: number | null;
@@ -94,6 +92,7 @@ export async function loadInsights(args: {
     return {
       id: r.id,
       externalId: r.externalId,
+      platform: r.platform,
       name: r.name,
       kind: r.kind,
       followers: r.followers,
@@ -122,61 +121,15 @@ export async function loadInsights(args: {
   };
 }
 
-/** แปลง `PageInsight` เป็นรูปที่ตัวเทียบช่องว่างรับ */
-export function toGapSide(p: PageInsight): GapSide {
-  return {
-    pageId: p.id,
-    pageName: p.name,
-    posts: p.posts,
-    followers: p.followers ?? 0,
-    engagement: p.engagement,
-  };
-}
-
 /**
- * เทียบเพจของเรากับคู่แข่งที่แรงที่สุด
+ * ตัวเทียบทั้งหมดอยู่ใน `@/lib/insights-compare` ซึ่งเป็นฟังก์ชันบริสุทธิ์
  *
- * "เพจของเรา" = เพจที่ `kind === "OWNED"` ตัวแรก ถ้าไม่ได้ระบุมา — คนที่ยังไม่เคย
- * ตั้งค่าอะไรเลยจะได้เห็นของที่มีความหมายทันทีโดยไม่ต้องเลือกก่อน
+ * แยกไว้เพราะไฟล์นี้มี `import "server-only"` — อะไรที่อยู่ในนี้จะ import
+ * เข้ามาในเทสต์ไม่ได้เลย ส่งต่อไว้ตรงนี้เพื่อให้ฝั่งหน้าจอ import ที่เดียวได้เหมือนเดิม
  */
-export function gapAgainstStrongest(args: {
-  pages: PageInsight[];
-  ourPageId?: string | undefined;
-}): { ours: PageInsight | null; result: GapResult } {
-  const ours =
-    args.pages.find((p) => p.id === args.ourPageId) ??
-    args.pages.find((p) => p.kind === "OWNED") ??
-    null;
-
-  if (ours === null) {
-    return {
-      ours: null,
-      result: {
-        ok: false,
-        reasonTh: 'ยังไม่ได้บอกว่าเพจไหนเป็นของเรา — เพิ่มเพจแบบ "เพจของเรา" ก่อน',
-      },
-    };
-  }
-
-  return {
-    ours,
-    result: compareWithStrongest({
-      ours: toGapSide(ours),
-      others: args.pages.map(toGapSide),
-    }),
-  };
-}
-
-/** เทียบสองเพจที่เลือกมาเอง */
-export function gapBetween(args: {
-  pages: PageInsight[];
-  ourId: string;
-  theirId: string;
-}): GapResult {
-  const ours = args.pages.find((p) => p.id === args.ourId);
-  const theirs = args.pages.find((p) => p.id === args.theirId);
-  if (ours === undefined || theirs === undefined) {
-    return { ok: false, reasonTh: "ไม่พบเพจที่เลือก — อาจถูกเอาออกจากระบบไปแล้ว" };
-  }
-  return compareGap({ ours: toGapSide(ours), theirs: toGapSide(theirs) });
-}
+export {
+  gapAgainstStrongest,
+  gapBetween,
+  hasMixedPlatforms,
+  toGapSide,
+} from "@/lib/insights-compare";

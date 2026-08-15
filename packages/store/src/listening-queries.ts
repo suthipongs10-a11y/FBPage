@@ -11,12 +11,18 @@
  * ก็ราวสองพันแถว ซึ่งเล็กกว่าที่ Postgres จะสนใจ ถ้าวันหนึ่งโตกว่านี้มากค่อยย้าย
  * ไปทำใน SQL พร้อมย้ายเทสต์ตามไปด้วย
  */
-import type { PostStat, TrackedKind, TrackedSource } from "@page-os/listening";
+import type {
+  PostStat,
+  TrackedKind,
+  TrackedPlatform,
+  TrackedSource,
+} from "@page-os/listening";
 import type { PrismaClient } from "./client.js";
 
 export interface TrackedPageRow {
   id: string;
   externalId: string;
+  platform: TrackedPlatform;
   name: string;
   kind: TrackedKind;
   source: TrackedSource;
@@ -39,6 +45,8 @@ export interface CommentRow {
   createdAtMs: number;
   trackedPageId: string;
   pageName: string;
+  /** หน้าจอต้องรู้ เพราะข้อความอย่าง "เปิดโพสต์บน Facebook" จะโกหกทันทีถ้าเป็น YouTube */
+  platform: TrackedPlatform;
   postPermalink: string | null;
   externalId: string;
 }
@@ -191,7 +199,7 @@ export class PrismaListeningQueries {
             select: {
               externalId: true,
               permalink: true,
-              trackedPage: { select: { id: true, name: true } },
+              trackedPage: { select: { id: true, name: true, platform: true } },
             },
           },
         },
@@ -209,6 +217,7 @@ export class PrismaListeningQueries {
         createdAtMs: r.createdAt.getTime(),
         trackedPageId: r.trackedPost.trackedPage.id,
         pageName: r.trackedPost.trackedPage.name,
+        platform: r.trackedPost.trackedPage.platform as TrackedPlatform,
         postPermalink: r.trackedPost.permalink,
         externalId: r.trackedPost.externalId,
       })),
@@ -293,6 +302,8 @@ export class PrismaListeningQueries {
   async addPage(args: {
     workspaceId: string;
     externalId: string;
+    /** ไม่ส่งมา = Facebook — ค่าเริ่มต้นเดียวกับคอลัมน์ใน schema */
+    platform?: TrackedPlatform;
     name: string;
     kind: TrackedKind;
     source: TrackedSource;
@@ -304,6 +315,7 @@ export class PrismaListeningQueries {
       data: {
         workspaceId: args.workspaceId,
         externalId: args.externalId,
+        ...(args.platform !== undefined ? { platform: args.platform } : {}),
         name: args.name,
         kind: args.kind,
         source: args.source,
@@ -338,6 +350,7 @@ export class PrismaListeningQueries {
 interface RawTrackedPage {
   id: string;
   externalId: string;
+  platform: string;
   name: string;
   kind: string;
   source: string;
@@ -349,6 +362,7 @@ function toRow(r: RawTrackedPage): TrackedPageRow {
   return {
     id: r.id,
     externalId: r.externalId,
+    platform: r.platform as TrackedPlatform,
     name: r.name,
     kind: r.kind as TrackedKind,
     source: r.source as TrackedSource,

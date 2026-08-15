@@ -342,3 +342,29 @@ export function Meter({
     </div>
   );
 }
+
+/**
+ * ป้ายบอกแพลตฟอร์ม
+ *
+ * จำเป็นตั้งแต่วินาทีที่ระบบเก็บได้ทั้งเพจ Facebook และช่อง YouTube —
+ * ตัวเลขของสองฝั่งเทียบกันตรงๆ ไม่ได้ (YouTube ไม่มียอดแชร์เลย ส่วน Facebook
+ * ไม่มียอดวิว) ถ้าไม่มีป้ายกำกับ คนจะอ่านตารางเดียวกันแล้วสรุปผิด
+ *
+ * ใช้สีประจำแบรนด์แทนที่จะเป็นสีตามสถานะ เพราะนี่คือ "มันคืออะไร"
+ * ไม่ใช่ "มันเป็นยังไง" — สีเขียว/แดงในระบบนี้สงวนไว้บอกสถานะเท่านั้น
+ */
+export function PlatformTag({ platform }: { platform: "FACEBOOK" | "YOUTUBE" }) {
+  const yt = platform === "YOUTUBE";
+  return (
+    <span
+      title={yt ? "ช่อง YouTube" : "เพจ Facebook"}
+      className="inline-flex shrink-0 items-center rounded-[var(--radius-pill)] px-1.5 py-0.5 text-[0.625rem] font-semibold whitespace-nowrap"
+      style={{
+        background: yt ? "#ff000018" : "#0866ff18",
+        color: yt ? "#d90000" : "#0866ff",
+      }}
+    >
+      {yt ? "YouTube" : "Facebook"}
+    </span>
+  );
+}
