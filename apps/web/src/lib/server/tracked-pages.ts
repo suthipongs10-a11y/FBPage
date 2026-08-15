@@ -38,18 +38,18 @@ async function defaultWorkspaceId(): Promise<string> {
 }
 
 export async function addTrackedPage(args: {
-  fbPageId: string;
+  externalId: string;
   name: string;
   kind: TrackedKind;
 }): Promise<TrackResult> {
-  const fbPageId = args.fbPageId.trim();
+  const externalId = args.externalId.trim();
   const name = args.name.trim();
 
-  if (fbPageId === "") {
+  if (externalId === "") {
     return { ok: false, th: "ยังไม่ได้ใส่รหัสเพจ" };
   }
   // รหัสเพจของ Facebook เป็นตัวเลขล้วนเสมอ — ดักคนที่วาง URL มาทั้งเส้น
-  if (!/^\d+$/.test(fbPageId)) {
+  if (!/^\d+$/.test(externalId)) {
     return {
       ok: false,
       th: "รหัสเพจต้องเป็นตัวเลขล้วน — ถ้าก๊อป URL มา ให้เอาเฉพาะตัวเลข " +
@@ -67,18 +67,20 @@ export async function addTrackedPage(args: {
    * เพจของเราเองต้องเชื่อม token ไว้แล้ว ไม่งั้นดึงข้อมูลไม่ได้อยู่ดี
    * บอกตั้งแต่ตอนเพิ่ม ดีกว่าปล่อยให้เพิ่มสำเร็จแล้วไปเงียบอยู่หนึ่งชั่วโมง
    */
-  const owned = await db.page.findUnique({ where: { fbPageId } });
+  // ตาราง `pages` (เพจที่เราดูแล) ยังใช้ชื่อ `fbPageId` เพราะเป็น Facebook แท้ๆ
+  // ต่างจาก `tracked_pages` ที่ตอนนี้เก็บได้ทั้งเพจ FB และช่อง YouTube
+  const owned = await db.page.findUnique({ where: { fbPageId: externalId } });
   if (args.kind === "OWNED" && owned === null) {
     return {
       ok: false,
-      th: `ยังไม่ได้เชื่อมเพจรหัส ${fbPageId} เข้าระบบ — ไปที่หน้าตั้งค่าแล้ววาง ` +
+      th: `ยังไม่ได้เชื่อมเพจรหัส ${externalId} เข้าระบบ — ไปที่หน้าตั้งค่าแล้ววาง ` +
         "Page Access Token ของเพจนี้ก่อน แล้วค่อยกลับมาเพิ่ม",
     };
   }
 
   const workspaceId = owned?.workspaceId ?? (await defaultWorkspaceId());
 
-  const already = await queries.findByFbPageId({ workspaceId, fbPageId });
+  const already = await queries.findByFbPageId({ workspaceId, externalId });
   if (already !== null) {
     return { ok: false, th: `เฝ้าดูเพจ "${already.name}" อยู่แล้ว` };
   }
@@ -88,7 +90,7 @@ export async function addTrackedPage(args: {
 
   await queries.addPage({
     workspaceId,
-    fbPageId,
+    externalId,
     name,
     kind: args.kind,
     source,

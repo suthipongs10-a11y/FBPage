@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@page-os/core": "workspace:*",
-    "@page-os/meta": "workspace:*"
+    "@page-os/meta": "workspace:*",
+    "@page-os/youtube": "workspace:*"
   }
 }

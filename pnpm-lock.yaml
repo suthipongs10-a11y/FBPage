@@ -138,6 +138,9 @@ importers:
       '@page-os/store':
         specifier: workspace:*
         version: link:../../packages/store
+      '@page-os/youtube':
+        specifier: workspace:*
+        version: link:../../packages/youtube
       bullmq:
         specifier: ^6.0.9
         version: 6.0.9(ioredis@5.11.1)
@@ -201,6 +204,9 @@ importers:
       '@page-os/meta':
         specifier: workspace:*
         version: link:../meta
+      '@page-os/youtube':
+        specifier: workspace:*
+        version: link:../youtube
 
   packages/meta:
     dependencies:

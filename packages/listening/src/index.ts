@@ -35,8 +35,17 @@ export {
   type PageSyncResult,
   type TrackedKind,
   type TrackedPageRef,
+  type TrackedPlatform,
   type TrackedSource,
 } from "./ingest.js";
+
+export {
+  DEFAULT_YT_LOOKBACK_DAYS,
+  DEFAULT_YT_MAX_COMMENTS,
+  DEFAULT_YT_MAX_VIDEOS,
+  YouTubeListeningSync,
+  type YouTubeSyncOptions,
+} from "./youtube-ingest.js";
 
 export {
   QUESTION_MARKERS,

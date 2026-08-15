@@ -10,6 +10,7 @@ import type {
   ListeningRepository,
   TrackedKind,
   TrackedPageRef,
+  TrackedPlatform,
   TrackedSource,
 } from "@page-os/listening";
 import type { PrismaClient } from "./client.js";
@@ -29,11 +30,15 @@ export class PrismaListeningRepository implements ListeningRepository {
     nowMs: number;
     staleAfterMs: number;
     limit: number;
+    platform: TrackedPlatform;
   }): Promise<TrackedPageRef[]> {
     const cutoff = new Date(args.nowMs - args.staleAfterMs);
 
     const rows = await this.prisma.trackedPage.findMany({
       where: {
+        // กรองแพลตฟอร์มที่ชั้น DB ไม่ใช่มากรองทีหลัง — ไม่งั้น `take: 20`
+        // อาจได้เพจ Facebook มาครบ 20 แล้วช่อง YouTube ไม่ถูกดึงเลยสักช่อง
+        platform: args.platform,
         OR: [{ lastFetchedAt: null }, { lastFetchedAt: { lt: cutoff } }],
       },
       orderBy: { lastFetchedAt: { sort: "asc", nulls: "first" } },
@@ -42,7 +47,8 @@ export class PrismaListeningRepository implements ListeningRepository {
 
     return rows.map((r) => ({
       id: r.id,
-      fbPageId: r.fbPageId,
+      externalId: r.externalId,
+      platform: r.platform as TrackedPlatform,
       name: r.name,
       kind: r.kind as TrackedKind,
       source: r.source as TrackedSource,
@@ -99,14 +105,14 @@ export class PrismaListeningRepository implements ListeningRepository {
       args.posts.map((p) =>
         this.prisma.trackedPost.upsert({
           where: {
-            trackedPageId_fbPostId: {
+            trackedPageId_externalId: {
               trackedPageId: args.trackedPageId,
-              fbPostId: p.fbPostId,
+              externalId: p.externalId,
             },
           },
           create: {
             trackedPageId: args.trackedPageId,
-            fbPostId: p.fbPostId,
+            externalId: p.externalId,
             publishedAt: new Date(p.publishedAtMs),
             message: p.message,
             permalink: p.permalink,
@@ -142,16 +148,16 @@ export class PrismaListeningRepository implements ListeningRepository {
    */
   async saveComments(args: {
     trackedPageId: string;
-    fbPostId: string;
+    externalId: string;
     comments: FetchedComment[];
   }): Promise<number> {
     if (args.comments.length === 0) return 0;
 
     const post = await this.prisma.trackedPost.findUnique({
       where: {
-        trackedPageId_fbPostId: {
+        trackedPageId_externalId: {
           trackedPageId: args.trackedPageId,
-          fbPostId: args.fbPostId,
+          externalId: args.externalId,
         },
       },
       select: { id: true },
@@ -163,7 +169,7 @@ export class PrismaListeningRepository implements ListeningRepository {
     const written = await this.prisma.trackedComment.createMany({
       data: args.comments.map((c) => ({
         trackedPostId: post.id,
-        fbCommentId: c.fbCommentId,
+        externalId: c.externalId,
         authorId: c.authorId,
         authorName: c.authorName,
         message: c.message,

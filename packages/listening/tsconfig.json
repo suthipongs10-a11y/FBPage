@@ -16,6 +16,9 @@
     },
     {
       "path": "../meta"
+    },
+    {
+      "path": "../youtube"
     }
   ]
 }

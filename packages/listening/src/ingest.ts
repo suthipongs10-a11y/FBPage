@@ -23,12 +23,15 @@ import { nullLogger, systemClock, type Clock, type Logger } from "@page-os/core"
 import { MetaApiError, type MetaGateway } from "@page-os/meta";
 
 export type TrackedKind = "OWNED" | "COMPETITOR" | "GROUP";
-export type TrackedSource = "META_API" | "EXTERNAL" | "MANUAL";
+export type TrackedSource = "META_API" | "EXTERNAL" | "MANUAL" | "YOUTUBE_API";
+export type TrackedPlatform = "FACEBOOK" | "YOUTUBE";
 
 export interface TrackedPageRef {
-  /** id ภายในของเรา (uuid) — ไม่ใช่รหัสเพจของ Facebook */
+  /** id ภายในของเรา (uuid) — ไม่ใช่รหัสบนแพลตฟอร์ม */
   id: string;
-  fbPageId: string;
+  /** รหัสบนแพลตฟอร์มนั้น — เพจ Facebook หรือช่อง YouTube */
+  externalId: string;
+  platform: TrackedPlatform;
   name: string;
   kind: TrackedKind;
   source: TrackedSource;
@@ -37,7 +40,7 @@ export interface TrackedPageRef {
 }
 
 export interface FetchedPost {
-  fbPostId: string;
+  externalId: string;
   publishedAtMs: number;
   message: string | null;
   permalink: string | null;
@@ -47,7 +50,7 @@ export interface FetchedPost {
 }
 
 export interface FetchedComment {
-  fbCommentId: string;
+  externalId: string;
   authorId: string | null;
   authorName: string | null;
   message: string | null;
@@ -55,11 +58,20 @@ export interface FetchedComment {
 }
 
 export interface ListeningRepository {
-  /** เพจที่ถึงเวลาดึงใหม่ — เรียงตัวที่ค้างนานสุดขึ้นก่อน */
+  /**
+   * เพจที่ถึงเวลาดึงใหม่ — เรียงตัวที่ค้างนานสุดขึ้นก่อน
+   *
+   * `platform` **บังคับใส่** ไม่ใช่ตัวเลือก เพราะตัวดึงของแต่ละแพลตฟอร์มคุยกับ
+   * API คนละเจ้า ถ้าตัวดึงฝั่ง Facebook หยิบช่อง YouTube ไปด้วย มันจะยิง
+   * `/{channelId}/posts` เข้า Graph API แล้วโดนปฏิเสธ**ทุกชั่วโมงตลอดไป**
+   * — เปลือง rate limit ของงานที่มีคนรอ โดยไม่มีอะไรในหน้าจอบอกว่าเกิดอะไรขึ้น
+   * (ตรงกันข้ามก็เช่นกัน: เพจ FB ที่หลุดเข้าตัวดึง YouTube จะเผาโควตาวันละ 10,000)
+   */
   duePages(args: {
     nowMs: number;
     staleAfterMs: number;
     limit: number;
+    platform: TrackedPlatform;
   }): Promise<TrackedPageRef[]>;
 
   /** จดจำนวนผู้ติดตามของวันนี้ — รันซ้ำวันเดิมต้องทับของเดิม ไม่ใช่เพิ่มแถว */
@@ -84,7 +96,7 @@ export interface ListeningRepository {
   /** เขียนคอมเมนต์แบบไม่ซ้ำ — คืนจำนวนที่เพิ่มเข้ามาใหม่จริงๆ */
   saveComments(args: {
     trackedPageId: string;
-    fbPostId: string;
+    externalId: string;
     comments: FetchedComment[];
   }): Promise<number>;
 
@@ -142,13 +154,21 @@ const PAGE_SIZE = 100;
 
 export interface PageSyncResult {
   trackedPageId: string;
-  fbPageId: string;
+  /** รหัสบนแพลตฟอร์มนั้น — เพจ Facebook หรือช่อง YouTube */
+  externalId: string;
   postsWritten: number;
   commentsWritten: number;
   followers: number | null;
   /** ข้อความไทยสรุปว่าเกิดอะไรขึ้น ใช้ขึ้น log และหน้าจอ */
   th: string;
   errors: string[];
+  /**
+   * หยุดกลางคันเพราะโควตารายวันหมด (YouTube เท่านั้น — Meta คิดเป็นรายชั่วโมง)
+   *
+   * ตัวเรียกต้อง**เลิกทั้งรอบ**เมื่อเจอค่านี้ ไม่ใช่ไล่ต่อช่องถัดไป เพราะ call
+   * ที่โดนปฏิเสธเพราะโควตาหมดยังกินโควตาอยู่ดี
+   */
+  quotaExhausted?: boolean;
 }
 
 /**
@@ -185,7 +205,7 @@ export class ListeningSync {
   async syncPage(page: TrackedPageRef): Promise<PageSyncResult> {
     const result: PageSyncResult = {
       trackedPageId: page.id,
-      fbPageId: page.fbPageId,
+      externalId: page.externalId,
       postsWritten: 0,
       commentsWritten: 0,
       followers: page.followers,
@@ -193,11 +213,23 @@ export class ListeningSync {
       errors: [],
     };
 
+    /**
+     * ดักไว้ก่อน `source` เพราะข้อความต้องบอกสาเหตุที่ถูก — ช่อง YouTube ที่หลุด
+     * มาถึงนี่ไม่ใช่ "ข้อมูลมาจากแหล่งภายนอก" แต่คือ **เรียกผิดตัวดึง**
+     * ซึ่งเป็นบั๊กของฝั่งที่เรียก ไม่ใช่การตั้งค่าของผู้ใช้
+     */
+    if (page.platform !== "FACEBOOK") {
+      result.th =
+        `ข้าม "${page.name}" — เป็นช่อง ${page.platform} ไม่ใช่เพจ Facebook ` +
+        `ต้องให้ตัวดึงของแพลตฟอร์มนั้นทำ`;
+      return await this.skip(page, result);
+    }
+
     if (page.source !== "META_API") {
       result.th =
         `ข้ามเพจ "${page.name}" — ตั้งไว้ว่าข้อมูลมาจากแหล่งภายนอก ` +
         `ไม่ได้ดึงผ่าน Graph API`;
-      return result;
+      return await this.skip(page, result);
     }
 
     /**
@@ -205,13 +237,13 @@ export class ListeningSync {
      * เพจใดเพจหนึ่งบวกสิทธิ์ PPCA — ตรงนี้ส่ง `pageId` ของเพจเป้าหมายไปก่อน
      * ถ้าไม่มี token ให้ gateway จะโยน error ที่บอกชัดว่าขาดอะไร
      */
-    const tokenPageId = page.fbPageId;
+    const tokenPageId = page.externalId;
 
     // ── 1. ข้อมูลเพจ (ผู้ติดตาม) ────────────────────────────────────────
     try {
       const info = await this.gateway.call<RawPageInfo>({
         pageId: tokenPageId,
-        path: `/${page.fbPageId}`,
+        path: `/${page.externalId}`,
         params: { fields: "id,name,followers_count,fan_count" },
         priority: "low",
       });
@@ -237,7 +269,7 @@ export class ListeningSync {
     const sinceMs = this.clock.now() - this.lookbackDays * 86_400_000;
     let posts: FetchedPost[] = [];
     try {
-      posts = await this.fetchPosts(page.fbPageId, tokenPageId, sinceMs);
+      posts = await this.fetchPosts(page.externalId, tokenPageId, sinceMs);
       result.postsWritten = await this.repo.savePosts({
         trackedPageId: page.id,
         posts,
@@ -252,10 +284,10 @@ export class ListeningSync {
       // โพสต์ที่ไม่มีคอมเมนต์เลย ไม่ต้องเสีย call ไปถาม
       if (post.commentCount === 0) continue;
       try {
-        const comments = await this.fetchComments(post.fbPostId, tokenPageId);
+        const comments = await this.fetchComments(post.externalId, tokenPageId);
         result.commentsWritten += await this.repo.saveComments({
           trackedPageId: page.id,
-          fbPostId: post.fbPostId,
+          externalId: post.externalId,
           comments,
         });
       } catch (err) {
@@ -279,6 +311,30 @@ export class ListeningSync {
     return result;
   }
 
+  /**
+   * ข้ามเพจนี้ **แต่ยังจดว่าดูแล้ว**
+   *
+   * ─── ข้อนี้เคยทำให้ระบบไม่ดึงอะไรเลยทั้งระบบ ───
+   *
+   * คิวเรียงจาก `lastFetchedAt` เก่าสุดขึ้นก่อน และตัวที่ยังไม่เคยดึง
+   * (`null`) มาก่อนเพื่อน — เพจคู่แข่งถูกตั้งเป็น `EXTERNAL` โดยอัตโนมัติ
+   * (ดึงผ่าน Graph API ไม่ได้จนกว่าจะได้สิทธิ์ PPCA) ถ้าข้ามแล้วไม่จด
+   * `lastFetchedAt` จะเป็น `null` ตลอดไป → มันจะยึดหัวคิวไว้ทุกรอบ
+   *
+   * มีคู่แข่งครบ 10 เพจเมื่อไหร่ (เท่ากับ `limit` ของรอบ) **เพจของเราเอง
+   * จะไม่ถูกดึงเลยแม้แต่ครั้งเดียว** และไม่มี error ขึ้นที่ไหนทั้งสิ้น
+   * มีแต่หน้าจอที่ว่างเปล่าโดยไม่มีคำอธิบาย
+   *
+   * "ดูแล้วพบว่าไม่ต้องทำอะไร" ก็คือดูแล้ว — ต้องจดเหมือนกัน
+   */
+  private async skip(
+    page: TrackedPageRef,
+    result: PageSyncResult,
+  ): Promise<PageSyncResult> {
+    await this.repo.markFetched({ trackedPageId: page.id, atMs: this.clock.now() });
+    return result;
+  }
+
   /** ดึงเพจที่ถึงเวลาแล้วทั้งชุด */
   async syncDue(args: {
     staleAfterMs: number;
@@ -288,6 +344,7 @@ export class ListeningSync {
       nowMs: this.clock.now(),
       staleAfterMs: args.staleAfterMs,
       limit: args.limit,
+      platform: "FACEBOOK",
     });
 
     const out: PageSyncResult[] = [];
@@ -323,12 +380,13 @@ export class ListeningSync {
       });
 
       const batch = res.data.data ?? [];
+      const before = out.length;
       for (const raw of batch) {
         const publishedAtMs = parseTimeMs(raw.created_time);
         // ไม่มีรหัสหรือไม่มีเวลา = แถวที่เอาไปใช้ต่อไม่ได้ ทิ้งดีกว่าเก็บของเสีย
         if (raw.id === undefined || publishedAtMs === null) continue;
         out.push({
-          fbPostId: raw.id,
+          externalId: raw.id,
           publishedAtMs,
           message: raw.message ?? null,
           permalink: raw.permalink_url ?? null,
@@ -339,15 +397,22 @@ export class ListeningSync {
       }
 
       after = res.data.paging?.cursors?.after;
-      // ไม่มีหน้าถัดไป หรือหน้านี้ว่าง = จบ (เช็คสองอย่างกันวนไม่รู้จบ)
-      if (after === undefined || batch.length === 0) break;
+      /**
+       * ไม่มีหน้าถัดไป หรือหน้านี้**ใช้อะไรไม่ได้เลย** = จบ
+       *
+       * เช็ค `batch.length === 0` อย่างเดียวไม่พอ — Graph API ที่ตอบมา 100
+       * รายการที่ไม่มี `id`/`created_time` เลยพร้อม cursor ถัดไป จะทำให้
+       * `out.length` ไม่ขยับ **ตัวนับเพดานจึงไม่มีวันถึง** แล้ววนยิงไปเรื่อยๆ
+       * จนกิน rate limit ของงานที่ลูกค้ารออยู่จริงจนหมด
+       */
+      if (after === undefined || out.length === before) break;
     }
 
     return out;
   }
 
   private async fetchComments(
-    fbPostId: string,
+    externalId: string,
     tokenPageId: string,
   ): Promise<FetchedComment[]> {
     const out: FetchedComment[] = [];
@@ -356,7 +421,7 @@ export class ListeningSync {
     while (out.length < this.maxComments) {
       const res = await this.gateway.call<Paged<RawComment>>({
         pageId: tokenPageId,
-        path: `/${fbPostId}/comments`,
+        path: `/${externalId}/comments`,
         params: {
           fields: "id,message,created_time,from",
           // stream = เอาคอมเมนต์ย่อยมาด้วย ไม่ใช่แค่ระดับบนสุด
@@ -368,11 +433,12 @@ export class ListeningSync {
       });
 
       const batch = res.data.data ?? [];
+      const before = out.length;
       for (const raw of batch) {
         const createdAtMs = parseTimeMs(raw.created_time);
         if (raw.id === undefined || createdAtMs === null) continue;
         out.push({
-          fbCommentId: raw.id,
+          externalId: raw.id,
           /**
            * `from` มักไม่มีมาให้เมื่อคนคอมเมนต์ไม่ได้ให้สิทธิ์แอปเรา —
            * เป็นเรื่องปกติ ไม่ใช่ error เก็บคอมเมนต์ไว้แบบไม่รู้ว่าใครพูดยังมีค่า
@@ -386,7 +452,8 @@ export class ListeningSync {
       }
 
       after = res.data.paging?.cursors?.after;
-      if (after === undefined || batch.length === 0) break;
+      // หน้าที่ใช้อะไรไม่ได้เลย = จบ — เหตุผลเดียวกับใน `fetchPosts()`
+      if (after === undefined || out.length === before) break;
     }
 
     return out;

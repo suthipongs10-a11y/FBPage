@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nullLogger } from "@page-os/core";
-import type { ListeningSync } from "@page-os/listening";
+import type { ListeningSync, YouTubeListeningSync } from "@page-os/listening";
 import type { AlertCenter, Problem } from "@page-os/ops";
 import type { PublishScheduler } from "@page-os/publish";
 import { CRON_JOBS, encodeSweepJob, JobPayloadError } from "@page-os/queue";
@@ -11,6 +11,7 @@ import {
   listeningSyncHandler,
   notWiredHandler,
   publishTickHandler,
+  youtubeSyncHandler,
 } from "./cron.js";
 
 const ctx: JobContext = {
@@ -101,6 +102,66 @@ describe("alerts-tick", () => {
   });
 });
 
+describe("youtube-sync", () => {
+  const fakeSync = (results: unknown[]): YouTubeListeningSync =>
+    ({ syncDue: async () => results }) as unknown as YouTubeListeningSync;
+
+  const channelResult = (over: Record<string, unknown> = {}) => ({
+    trackedPageId: "tp-1",
+    externalId: "UCa",
+    postsWritten: 2,
+    commentsWritten: 7,
+    followers: 100,
+    th: "",
+    errors: [],
+    ...over,
+  });
+
+  it("รายงานจำนวนช่อง/วิดีโอ/คอมเมนต์", async () => {
+    const out = await youtubeSyncHandler({
+      sync: fakeSync([channelResult(), channelResult({ trackedPageId: "tp-2" })]),
+      staleAfterMs: 1,
+      limit: 5,
+    }).run(sweep, ctx);
+
+    expect(out.details).toMatchObject({ channels: 2, videos: 4, comments: 14, failed: 0 });
+  });
+
+  it("ยังไม่มีช่องถึงเวลา → บอกให้ชัด ไม่ใช่รายงานเลข 0 เฉยๆ", async () => {
+    const out = await youtubeSyncHandler({
+      sync: fakeSync([]),
+      staleAfterMs: 1,
+      limit: 5,
+    }).run(sweep, ctx);
+
+    expect(out.th).toContain("ยังไม่มี");
+  });
+
+  /**
+   * โควตาหมดต้องขึ้นให้เห็นชัด เพราะแปลว่ารอบถัดๆ ไป **ของทั้งวัน** จะไม่ได้
+   * อะไรกลับมาเลย ต่างจากฝั่ง Meta ที่รอชั่วโมงเดียวก็หาย
+   */
+  it("โควตาหมด → ขึ้นในข้อความสรุป ไม่ใช่ซ่อนไว้ใน details", async () => {
+    const out = await youtubeSyncHandler({
+      sync: fakeSync([channelResult({ quotaExhausted: true, errors: ["โควตาหมด"] })]),
+      staleAfterMs: 1,
+      limit: 5,
+    }).run(sweep, ctx);
+
+    expect(out.th).toContain("โควตา");
+    expect(out.details).toMatchObject({ quotaOut: true, failed: 1 });
+  });
+
+  it("payload รูปร่างผิด → ล้ม ไม่ใช่ทำงานต่อไปเงียบๆ", async () => {
+    await expect(
+      youtubeSyncHandler({ sync: fakeSync([]), staleAfterMs: 1, limit: 5 }).run(
+        { v: 99 },
+        ctx,
+      ),
+    ).rejects.toThrow(JobPayloadError);
+  });
+});
+
 describe("รอบที่ยังไม่ได้ต่อของจริง", () => {
   /**
    * ต้อง **ลงทะเบียนไว้** แล้วโยน error ไม่ใช่ปล่อยว่าง — งานที่ไม่มีคนรับ
@@ -137,6 +198,11 @@ describe("ทุกตารางงานต้องมีตัวจัด�
       publishTickHandler(scheduler),
       alertsTickHandler({ center, collect: async () => [] }),
       listeningSyncHandler({ sync, staleAfterMs: 1, limit: 1 }),
+      youtubeSyncHandler({
+        sync: sync as unknown as YouTubeListeningSync,
+        staleAfterMs: 1,
+        limit: 1,
+      }),
       notWiredHandler("token-health", "x"),
       notWiredHandler("analytics-sync", "x"),
       notWiredHandler("morning-digest", "x"),

@@ -46,16 +46,18 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
   });
 
   const addPage = async (over: {
-    fbPageId: string;
+    externalId: string;
     name?: string;
     lastFetchedAt?: Date | null;
-    source?: "META_API" | "EXTERNAL" | "MANUAL";
+    source?: "META_API" | "EXTERNAL" | "MANUAL" | "YOUTUBE_API";
+    platform?: "FACEBOOK" | "YOUTUBE";
   }) => {
     const page = await prisma.trackedPage.create({
       data: {
         workspaceId,
-        fbPageId: over.fbPageId,
-        name: over.name ?? over.fbPageId,
+        externalId: over.externalId,
+        platform: over.platform ?? "FACEBOOK",
+        name: over.name ?? over.externalId,
         kind: "COMPETITOR",
         source: over.source ?? "META_API",
         lastFetchedAt: over.lastFetchedAt ?? null,
@@ -80,8 +82,17 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
    * (ตัวกรองไม่ทำให้เทสต์อ่อนลง เพราะสิ่งที่ตรวจคือ "ลำดับ" ซึ่งการกรอง
    * รักษาลำดับสัมพัทธ์ไว้ครบ)
    */
-  const dueHere = async (args: { nowMs: number; staleAfterMs: number }) => {
-    const rows = await repo.duePages({ ...args, limit: 10_000 });
+  const dueHere = async (args: {
+    nowMs: number;
+    staleAfterMs: number;
+    platform?: "FACEBOOK" | "YOUTUBE";
+  }) => {
+    const rows = await repo.duePages({
+      nowMs: args.nowMs,
+      staleAfterMs: args.staleAfterMs,
+      limit: 10_000,
+      platform: args.platform ?? "FACEBOOK",
+    });
     return rows.filter((p) => mine.has(p.id));
   };
 
@@ -106,20 +117,20 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
      */
     it("เพจที่ยังไม่เคยดึงเลย มาก่อนเพจที่ดึงไปแล้ว", async () => {
       const now = Date.now();
-      await addPage({ fbPageId: "เก่ามาก", lastFetchedAt: new Date(now - 10 * 86_400_000) });
-      await addPage({ fbPageId: "ยังไม่เคยดึง", lastFetchedAt: null });
+      await addPage({ externalId: "เก่ามาก", lastFetchedAt: new Date(now - 10 * 86_400_000) });
+      await addPage({ externalId: "ยังไม่เคยดึง", lastFetchedAt: null });
 
       const due = await dueHere({ nowMs: now, staleAfterMs: 3_600_000 });
-      expect(due.map((p) => p.fbPageId)).toEqual(["ยังไม่เคยดึง", "เก่ามาก"]);
+      expect(due.map((p) => p.externalId)).toEqual(["ยังไม่เคยดึง", "เก่ามาก"]);
     });
 
     it("เพจที่เพิ่งดึงไปยังไม่ถึงเวลา ไม่ถูกหยิบมา", async () => {
       const now = Date.now();
-      await addPage({ fbPageId: "เพิ่งดึง", lastFetchedAt: new Date(now - 60_000) });
-      await addPage({ fbPageId: "ถึงเวลาแล้ว", lastFetchedAt: new Date(now - 7_200_000) });
+      await addPage({ externalId: "เพิ่งดึง", lastFetchedAt: new Date(now - 60_000) });
+      await addPage({ externalId: "ถึงเวลาแล้ว", lastFetchedAt: new Date(now - 7_200_000) });
 
       const due = await dueHere({ nowMs: now, staleAfterMs: 3_600_000 });
-      expect(due.map((p) => p.fbPageId)).toEqual(["ถึงเวลาแล้ว"]);
+      expect(due.map((p) => p.externalId)).toEqual(["ถึงเวลาแล้ว"]);
     });
 
     /**
@@ -128,21 +139,93 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
      * แถวที่ได้มาเป็นของ workspace ไหน
      */
     it("จำกัดจำนวนตามที่ขอ", async () => {
-      for (const id of ["a", "b", "c"]) await addPage({ fbPageId: id });
-      const due = await repo.duePages({ nowMs: Date.now(), staleAfterMs: 1, limit: 2 });
+      for (const id of ["a", "b", "c"]) await addPage({ externalId: id });
+      const due = await repo.duePages({
+        nowMs: Date.now(),
+        staleAfterMs: 1,
+        limit: 2,
+        platform: "FACEBOOK",
+      });
       expect(due).toHaveLength(2);
     });
 
     it("ส่ง kind/source กลับมาให้ตัวดึงตัดสินใจได้", async () => {
-      await addPage({ fbPageId: "ภายนอก", source: "EXTERNAL" });
+      await addPage({ externalId: "ภายนอก", source: "EXTERNAL" });
       const due = await dueHere({ nowMs: Date.now(), staleAfterMs: 1 });
       expect(due[0]).toMatchObject({ kind: "COMPETITOR", source: "EXTERNAL" });
+    });
+
+    /**
+     * ─── ข้อที่ผิดแล้วเจ็บที่สุดในไฟล์นี้ ───
+     *
+     * ตัวดึงของแต่ละแพลตฟอร์มคุยกับ API คนละเจ้า ถ้าคิวคืนของปนกันมา:
+     *   - เพจ Facebook หลุดเข้าตัวดึง YouTube → เผาโควตา 10,000/วัน ทิ้ง
+     *   - ช่อง YouTube หลุดเข้าตัวดึง Facebook → ยิง `/{channelId}/posts`
+     *     เข้า Graph API แล้วโดนปฏิเสธทุกชั่วโมงตลอดไป
+     *
+     * ทั้งสองแบบไม่มี error ให้เห็นในหน้าจอเลย มีแต่ "ทำไมไม่มีข้อมูล"
+     */
+    it("ขอเพจ Facebook ไม่ได้ช่อง YouTube ปนมา", async () => {
+      await addPage({ externalId: "เพจเฟซ" });
+      await addPage({
+        externalId: "UCช่องยูทูป",
+        platform: "YOUTUBE",
+        source: "YOUTUBE_API",
+      });
+
+      const due = await dueHere({ nowMs: Date.now(), staleAfterMs: 1 });
+      expect(due.map((p) => p.externalId)).toEqual(["เพจเฟซ"]);
+    });
+
+    it("ขอช่อง YouTube ไม่ได้เพจ Facebook ปนมา", async () => {
+      await addPage({ externalId: "เพจเฟซ" });
+      await addPage({
+        externalId: "UCช่องยูทูป",
+        platform: "YOUTUBE",
+        source: "YOUTUBE_API",
+      });
+
+      const due = await dueHere({
+        nowMs: Date.now(),
+        staleAfterMs: 1,
+        platform: "YOUTUBE",
+      });
+      expect(due.map((p) => p.externalId)).toEqual(["UCช่องยูทูป"]);
+      expect(due[0]).toMatchObject({ platform: "YOUTUBE", source: "YOUTUBE_API" });
+    });
+
+    /**
+     * กรองต้องเกิดที่ชั้น DB ไม่ใช่มากรองทีหลังในโค้ด — ไม่งั้น `take: 5`
+     * อาจได้เพจ Facebook มาครบ 5 แล้วช่อง YouTube ไม่ถูกดึงเลยสักช่อง
+     * ทั้งที่ค้างคิวมานานกว่า
+     */
+    it("เพดานจำนวนนับเฉพาะแพลตฟอร์มที่ขอ ไม่ถูกเพจอีกฝั่งกินโควตา", async () => {
+      const old = new Date(Date.now() - 10 * 86_400_000);
+      for (let i = 0; i < 5; i++) {
+        await addPage({ externalId: `เฟซ${i}`, lastFetchedAt: old });
+      }
+      await addPage({
+        externalId: "UCช่องเดียว",
+        platform: "YOUTUBE",
+        source: "YOUTUBE_API",
+        lastFetchedAt: null,
+      });
+
+      const due = await repo.duePages({
+        nowMs: Date.now(),
+        staleAfterMs: 1,
+        limit: 5,
+        platform: "YOUTUBE",
+      });
+      expect(due.filter((p) => mine.has(p.id)).map((p) => p.externalId)).toEqual([
+        "UCช่องเดียว",
+      ]);
     });
   });
 
   describe("จำนวนผู้ติดตาม", () => {
     it("จดของวันนี้ และอัปเดตค่าล่าสุดบนตัวเพจด้วย", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       await repo.saveFollowers({
         trackedPageId: page.id,
         followers: 18_420,
@@ -160,7 +243,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     });
 
     it("รันซ้ำวันเดิม → ทับของเดิม ไม่เพิ่มแถว", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       await repo.saveFollowers({ trackedPageId: page.id, followers: 100, dateKey: "2026-08-10" });
       await repo.saveFollowers({ trackedPageId: page.id, followers: 250, dateKey: "2026-08-10" });
 
@@ -173,8 +256,8 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
   });
 
   describe("โพสต์", () => {
-    const post = (over: Partial<{ fbPostId: string; reactions: number }> = {}) => ({
-      fbPostId: over.fbPostId ?? "p1",
+    const post = (over: Partial<{ externalId: string; reactions: number }> = {}) => ({
+      externalId: over.externalId ?? "p1",
       publishedAtMs: Date.UTC(2026, 7, 7, 8, 57),
       message: "ข้าวกล่อง",
       permalink: "https://facebook.com/p1",
@@ -188,7 +271,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
      * ค่าตอนดึงครั้งแรกตลอดกาล แล้วแดชบอร์ดจะนิ่งสนิทโดยไม่มี error ให้เห็นเลย
      */
     it("ดึงซ้ำแล้วยอดอัปเดตตาม ไม่ค้างของเดิม", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       const at = Date.now();
       await repo.savePosts({ trackedPageId: page.id, posts: [post({ reactions: 120 })], fetchedAtMs: at });
       await repo.savePosts({ trackedPageId: page.id, posts: [post({ reactions: 999 })], fetchedAtMs: at });
@@ -199,7 +282,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     });
 
     it("ไม่แตะวันที่เผยแพร่ตอนอัปเดต", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       await repo.savePosts({ trackedPageId: page.id, posts: [post()], fetchedAtMs: Date.now() });
       const before = await prisma.trackedPost.findFirst({ where: { trackedPageId: page.id } });
 
@@ -214,16 +297,16 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     });
 
     it("เพจคนละเพจใช้รหัสโพสต์ซ้ำกันได้", async () => {
-      const a = await addPage({ fbPageId: "a" });
-      const b = await addPage({ fbPageId: "b" });
-      await repo.savePosts({ trackedPageId: a.id, posts: [post({ fbPostId: "ซ้ำ" })], fetchedAtMs: Date.now() });
-      await repo.savePosts({ trackedPageId: b.id, posts: [post({ fbPostId: "ซ้ำ" })], fetchedAtMs: Date.now() });
+      const a = await addPage({ externalId: "a" });
+      const b = await addPage({ externalId: "b" });
+      await repo.savePosts({ trackedPageId: a.id, posts: [post({ externalId: "ซ้ำ" })], fetchedAtMs: Date.now() });
+      await repo.savePosts({ trackedPageId: b.id, posts: [post({ externalId: "ซ้ำ" })], fetchedAtMs: Date.now() });
 
-      expect(await prisma.trackedPost.count({ where: { fbPostId: "ซ้ำ" } })).toBe(2);
+      expect(await prisma.trackedPost.count({ where: { externalId: "ซ้ำ" } })).toBe(2);
     });
 
     it("ไม่มีโพสต์ให้เขียน → ไม่ยิงคำสั่งไปฐานข้อมูล", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       expect(await repo.savePosts({ trackedPageId: page.id, posts: [], fetchedAtMs: Date.now() })).toBe(0);
     });
   });
@@ -235,7 +318,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
         trackedPageId,
         posts: [
           {
-            fbPostId: "p1",
+            externalId: "p1",
             publishedAtMs: Date.UTC(2026, 7, 7),
             message: null,
             permalink: null,
@@ -248,7 +331,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     };
 
     const comment = (id: string) => ({
-      fbCommentId: id,
+      externalId: id,
       authorId: `u-${id}`,
       authorName: `คน ${id}`,
       message: "อร่อยมาก",
@@ -256,12 +339,12 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     });
 
     it("นับเฉพาะที่เพิ่มใหม่จริง ไม่นับของซ้ำ", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       await seedPost(page.id);
 
       const first = await repo.saveComments({
         trackedPageId: page.id,
-        fbPostId: "p1",
+        externalId: "p1",
         comments: [comment("c1"), comment("c2")],
       });
       expect(first).toBe(2);
@@ -269,7 +352,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
       // รอบสองมีของเก่าปนของใหม่ — ต้องนับแค่ตัวใหม่
       const second = await repo.saveComments({
         trackedPageId: page.id,
-        fbPostId: "p1",
+        externalId: "p1",
         comments: [comment("c1"), comment("c2"), comment("c3")],
       });
       expect(second).toBe(1);
@@ -281,10 +364,10 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
      * สร้างโพสต์เปล่าขึ้นมารองรับจะทำให้จำนวนโพสต์ในตารางเพี้ยน
      */
     it("โพสต์ไม่มีในระบบ → ทิ้งคอมเมนต์ชุดนั้น ไม่สร้างโพสต์เปล่า", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       const written = await repo.saveComments({
         trackedPageId: page.id,
-        fbPostId: "ไม่มีอยู่จริง",
+        externalId: "ไม่มีอยู่จริง",
         comments: [comment("c1")],
       });
 
@@ -293,11 +376,11 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
     });
 
     it("คอมเมนต์ที่ไม่รู้ว่าใครพูด เก็บได้", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       await seedPost(page.id);
       await repo.saveComments({
         trackedPageId: page.id,
-        fbPostId: "p1",
+        externalId: "p1",
         comments: [{ ...comment("c1"), authorId: null, authorName: null }],
       });
 
@@ -307,13 +390,13 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
 
     /** เขียนพร้อมกันหลายตัวต้องไม่มีใครล้มด้วย unique violation */
     it("เขียนชุดเดียวกันพร้อมกัน 8 ครั้ง → รวมกันได้ของครบชุดเดียว", async () => {
-      const page = await addPage({ fbPageId: "p" });
+      const page = await addPage({ externalId: "p" });
       await seedPost(page.id);
 
       const batch = [comment("c1"), comment("c2"), comment("c3")];
       const counts = await Promise.all(
         Array.from({ length: 8 }, () =>
-          repo.saveComments({ trackedPageId: page.id, fbPostId: "p1", comments: batch }),
+          repo.saveComments({ trackedPageId: page.id, externalId: "p1", comments: batch }),
         ),
       );
 
@@ -325,7 +408,7 @@ describe.skipIf(!HAS_DB)("ที่เก็บข้อมูลฟังเส
   describe("จดเวลาที่ดึงล่าสุด", () => {
     it("จดแล้วเพจนั้นหลุดออกจากคิวรอบถัดไป", async () => {
       const now = Date.now();
-      const page = await addPage({ fbPageId: "p", lastFetchedAt: null });
+      const page = await addPage({ externalId: "p", lastFetchedAt: null });
       expect(await dueHere({ nowMs: now, staleAfterMs: 3_600_000 })).toHaveLength(1);
 
       await repo.markFetched({ trackedPageId: page.id, atMs: now });

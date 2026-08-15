@@ -21,7 +21,7 @@ import { prisma } from "@/lib/server/deps";
 
 export interface PageInsight {
   id: string;
-  fbPageId: string;
+  externalId: string;
   name: string;
   kind: TrackedKind;
   followers: number | null;
@@ -50,9 +50,9 @@ export interface InsightsView {
 /** จำนวนสีที่หน้าจอมีให้ — ต้องตรงกับชุดสีใน globals.css */
 const COLOR_COUNT = 8;
 
-function colorIndexOf(fbPageId: string): number {
+function colorIndexOf(externalId: string): number {
   let h = 0;
-  for (let i = 0; i < fbPageId.length; i++) h = (h * 31 + fbPageId.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < externalId.length; i++) h = (h * 31 + externalId.charCodeAt(i)) >>> 0;
   return h % COLOR_COUNT;
 }
 
@@ -93,13 +93,13 @@ export async function loadInsights(args: {
     const stats = summarizeWindow(r.posts, { startMs: fromMs, endMs: toMs });
     return {
       id: r.id,
-      fbPageId: r.fbPageId,
+      externalId: r.externalId,
       name: r.name,
       kind: r.kind,
       followers: r.followers,
       lastFetchedAtMs: r.lastFetchedAtMs,
       uniqueCommenters: r.uniqueCommenters,
-      colorIndex: colorIndexOf(r.fbPageId),
+      colorIndex: colorIndexOf(r.externalId),
       ...stats,
     };
   });

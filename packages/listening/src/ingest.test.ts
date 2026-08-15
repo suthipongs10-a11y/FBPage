@@ -8,13 +8,15 @@ import {
   type FetchedPost,
   type ListeningRepository,
   type TrackedPageRef,
+  type TrackedPlatform,
 } from "./ingest.js";
 
 const NOW = Date.UTC(2026, 7, 10, 7, 15);
 
 const page = (over: Partial<TrackedPageRef> = {}): TrackedPageRef => ({
   id: "tp-1",
-  fbPageId: "1013",
+  externalId: "1013",
+  platform: "FACEBOOK",
   name: "ครัวคุณยาย",
   kind: "OWNED",
   source: "META_API",
@@ -28,11 +30,21 @@ class FakeRepo implements ListeningRepository {
   due: TrackedPageRef[] = [];
   followers: Array<{ trackedPageId: string; followers: number; dateKey: string }> = [];
   posts: FetchedPost[] = [];
-  comments: Array<{ fbPostId: string; comments: FetchedComment[] }> = [];
+  comments: Array<{ externalId: string; comments: FetchedComment[] }> = [];
   fetched: string[] = [];
-  lastDueArgs: { nowMs: number; staleAfterMs: number; limit: number } | null = null;
+  lastDueArgs: {
+    nowMs: number;
+    staleAfterMs: number;
+    limit: number;
+    platform: TrackedPlatform;
+  } | null = null;
 
-  async duePages(args: { nowMs: number; staleAfterMs: number; limit: number }) {
+  async duePages(args: {
+    nowMs: number;
+    staleAfterMs: number;
+    limit: number;
+    platform: TrackedPlatform;
+  }) {
     this.lastDueArgs = args;
     return this.due;
   }
@@ -45,8 +57,8 @@ class FakeRepo implements ListeningRepository {
     this.savePostsAt = args.fetchedAtMs;
     return args.posts.length;
   }
-  async saveComments(args: { fbPostId: string; comments: FetchedComment[] }) {
-    this.comments.push({ fbPostId: args.fbPostId, comments: args.comments });
+  async saveComments(args: { externalId: string; comments: FetchedComment[] }) {
+    this.comments.push({ externalId: args.externalId, comments: args.comments });
     return args.comments.length;
   }
   async markFetched(args: { trackedPageId: string }) {
@@ -124,14 +136,14 @@ describe("ดึงข้อมูลเพจเดียว", () => {
     expect(result.followers).toBe(18_420);
     expect(repo.followers[0]).toMatchObject({ followers: 18_420, dateKey: "2026-08-10" });
     expect(repo.posts[0]).toMatchObject({
-      fbPostId: "p1",
+      externalId: "p1",
       reactions: 120,
       shares: 4,
       commentCount: 2,
       publishedAtMs: Date.parse("2026-08-07T08:57:00+0000"),
     });
     expect(repo.comments[0]?.comments[0]).toMatchObject({
-      fbCommentId: "c1",
+      externalId: "c1",
       authorName: "สุณี ปะสาวะถา",
     });
     expect(repo.fetched).toEqual(["tp-1"]);
@@ -188,7 +200,7 @@ describe("ดึงข้อมูลเพจเดียว", () => {
     });
     await new ListeningSync({ gateway, repo, clock: new FakeClock(NOW) }).syncPage(page());
 
-    expect(repo.posts.map((p) => p.fbPostId)).toEqual(["ok"]);
+    expect(repo.posts.map((p) => p.externalId)).toEqual(["ok"]);
   });
 
   it("ฟิลด์ที่ Meta ไม่ส่งมา นับเป็น 0 ไม่ใช่ undefined", async () => {
@@ -217,7 +229,7 @@ describe("ดึงข้อมูลเพจเดียว", () => {
     await new ListeningSync({ gateway, repo, clock: new FakeClock(NOW) }).syncPage(page());
 
     expect(repo.comments[0]?.comments[0]).toMatchObject({
-      fbCommentId: "c1",
+      externalId: "c1",
       authorId: null,
       authorName: null,
       message: "แพงจัง",
@@ -299,6 +311,140 @@ describe("เพจที่ข้อมูลมาจากแหล่งอ�
   });
 });
 
+/**
+ * ─── บั๊กที่เคยทำให้ระบบไม่ดึงอะไรเลย ───
+ *
+ * คิวเรียงจาก `lastFetchedAt` เก่าสุดขึ้นก่อน และตัวที่ยังไม่เคยดึง (`null`)
+ * มาก่อนเพื่อน — เพจคู่แข่งถูกตั้งเป็น `EXTERNAL` ให้อัตโนมัติเพราะดึงผ่าน
+ * Graph API ไม่ได้จนกว่าจะได้สิทธิ์ PPCA
+ *
+ * ถ้าข้ามแล้วไม่จด `markFetched` เพจพวกนั้นจะยึดหัวคิวไว้ทุกรอบตลอดไป
+ * มีคู่แข่งครบเท่า `limit` เมื่อไหร่ **เพจของเราเองจะไม่ถูกดึงเลยสักครั้ง**
+ * โดยไม่มี error ขึ้นที่ไหน มีแต่หน้าจอว่างเปล่าที่อธิบายไม่ได้
+ */
+describe("เพจที่ข้าม ต้องไม่ยึดคิวไว้ตลอดกาล", () => {
+  it("เพจแหล่งข้อมูลภายนอก → ข้าม แต่ยังจดว่าดูแล้ว", async () => {
+    const repo = new FakeRepo();
+    const { gateway, calls } = fakeGateway({});
+
+    const result = await new ListeningSync({
+      gateway,
+      repo,
+      clock: new FakeClock(NOW),
+    }).syncPage(page({ source: "EXTERNAL" }));
+
+    expect(calls).toEqual([]);
+    expect(result.th).toContain("แหล่งภายนอก");
+    expect(repo.fetched).toEqual(["tp-1"]);
+  });
+
+  it("ช่อง YouTube ที่หลุดเข้ามา → ข้าม แต่ยังจดว่าดูแล้ว", async () => {
+    const repo = new FakeRepo();
+    const { gateway, calls } = fakeGateway({});
+
+    await new ListeningSync({ gateway, repo, clock: new FakeClock(NOW) }).syncPage(
+      page({ platform: "YOUTUBE", source: "META_API" }),
+    );
+
+    expect(calls).toEqual([]);
+    expect(repo.fetched).toEqual(["tp-1"]);
+  });
+
+  /**
+   * ข้อนี้คือของจริง: เลียนแบบคิวที่เรียงตาม `lastFetchedAt` แล้วดูว่า
+   * เพจของเราเองได้คิวไหมเมื่อมีคู่แข่งเต็มโควตารอบพอดี
+   */
+  it("คู่แข่งเต็มโควตารอบ → เพจของเราเองยังได้คิวในรอบถัดไป", async () => {
+    const db: TrackedPageRef[] = [
+      ...Array.from({ length: 3 }, (_, i) =>
+        page({ id: `ext${i}`, externalId: `${i}`, source: "EXTERNAL" }),
+      ),
+      page({ id: "own", externalId: "99", source: "META_API" }),
+    ];
+
+    const clock = new FakeClock(NOW);
+    const repo: ListeningRepository = {
+      async duePages({ limit }) {
+        return [...db]
+          .sort((a, b) => (a.lastFetchedAtMs ?? -1) - (b.lastFetchedAtMs ?? -1))
+          .slice(0, limit);
+      },
+      async saveFollowers() {},
+      async savePosts(a) {
+        return a.posts.length;
+      },
+      async saveComments(a) {
+        return a.comments.length;
+      },
+      async markFetched({ trackedPageId, atMs }) {
+        const row = db.find((p) => p.id === trackedPageId);
+        if (row !== undefined) row.lastFetchedAtMs = atMs;
+      },
+    };
+
+    const { gateway } = fakeGateway({
+      "/99": [{ id: "99", name: "เพจเรา", followers_count: 1 }],
+      "/99/posts": [{ data: [] }],
+    });
+    const sync = new ListeningSync({ gateway, repo, clock });
+
+    // รอบแรกเต็มไปด้วยคู่แข่ง — เพจเรายังไม่ได้คิว
+    const first = await sync.syncDue({ staleAfterMs: 1, limit: 3 });
+    expect(first.map((r) => r.trackedPageId)).toEqual(["ext0", "ext1", "ext2"]);
+
+    // รอบถัดไปคู่แข่งถอยไปท้ายแถวแล้ว เพจเราต้องขึ้นมา
+    const second = await sync.syncDue({ staleAfterMs: 1, limit: 3 });
+    expect(second.map((r) => r.trackedPageId)).toContain("own");
+  });
+});
+
+/**
+ * Graph API ที่ตอบมา 100 รายการที่ไม่มี `id`/`created_time` เลย พร้อม cursor
+ * ถัดไป จะทำให้ตัวนับเพดานไม่มีวันถึง แล้ววนยิงไปเรื่อยๆ จนกิน rate limit
+ * ของงานที่ลูกค้ารออยู่จริงจนหมด
+ */
+describe("หน้าที่ใช้อะไรไม่ได้เลย ต้องไม่วนไม่รู้จบ", () => {
+  const junkPage = (n: number) => ({
+    data: Array.from({ length: n }, () => ({ message: "ไม่มี id ไม่มีเวลา" })),
+    paging: { cursors: { after: "ยังมีอีกเรื่อยๆ" } },
+  });
+
+  it("โพสต์ที่ใช้ไม่ได้ทั้งหน้า + มี cursor ถัดไป → หยุด", async () => {
+    const repo = new FakeRepo();
+    const { gateway, calls } = fakeGateway({
+      "/1013": [{ id: "1013", name: "เพจ", followers_count: 1 }],
+      "/1013/posts": () => junkPage(100) as never,
+    });
+
+    await new ListeningSync({
+      gateway,
+      repo,
+      clock: new FakeClock(NOW),
+      maxPostsPerPage: 1_000,
+    }).syncPage(page());
+
+    expect(calls.filter((c) => c.path === "/1013/posts")).toHaveLength(1);
+  });
+
+  it("คอมเมนต์ที่ใช้ไม่ได้ทั้งหน้า → หยุดเช่นกัน", async () => {
+    const repo = new FakeRepo();
+    const { gateway, calls } = fakeGateway({
+      "/1013": [{ id: "1013", name: "เพจ", followers_count: 1 }],
+      "/1013/posts": [{ data: [rawPost()] }],
+      "/p1/comments": () => junkPage(100) as never,
+    });
+
+    await new ListeningSync({
+      gateway,
+      repo,
+      clock: new FakeClock(NOW),
+      maxCommentsPerPost: 1_000,
+    }).syncPage(page());
+
+    expect(calls.filter((c) => c.path === "/p1/comments")).toHaveLength(1);
+  });
+});
+
 describe("ดึงทั้งชุดที่ถึงเวลา", () => {
   it("ส่งเวลาปัจจุบันจาก clock ที่ inject เข้ามา ไม่ใช่เวลาจริงของเครื่อง", async () => {
     const repo = new FakeRepo();
@@ -308,12 +454,17 @@ describe("ดึงทั้งชุดที่ถึงเวลา", () => {
       limit: 5,
     });
 
-    expect(repo.lastDueArgs).toEqual({ nowMs: NOW, staleAfterMs: 3_600_000, limit: 5 });
+    expect(repo.lastDueArgs).toEqual({
+      nowMs: NOW,
+      staleAfterMs: 3_600_000,
+      limit: 5,
+      platform: "FACEBOOK",
+    });
   });
 
   it("ดึงทีละเพจตามลำดับ ไม่ขนานกัน", async () => {
     const repo = new FakeRepo();
-    repo.due = [page({ id: "a", fbPageId: "1" }), page({ id: "b", fbPageId: "2" })];
+    repo.due = [page({ id: "a", externalId: "1" }), page({ id: "b", externalId: "2" })];
     const { gateway } = fakeGateway({
       "/1": [{ followers_count: 1 }],
       "/1/posts": [{ data: [] }],

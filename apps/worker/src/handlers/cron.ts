@@ -4,7 +4,7 @@
  * ทุกตัวรับ payload เปล่า (ดูเหตุผลใน `packages/queue/src/payloads.ts`) และ
  * ต้องอ่านเวลาจาก `ctx.nowMs` ซึ่งมาจาก Clock ที่ฉีดเข้ามา ไม่ใช่ `Date.now()`
  */
-import type { ListeningSync } from "@page-os/listening";
+import type { ListeningSync, YouTubeListeningSync } from "@page-os/listening";
 import type { AlertCenter, Problem } from "@page-os/ops";
 import type { PublishScheduler } from "@page-os/publish";
 import { CRON_JOB_NAME_PREFIX, decodeSweepJob } from "@page-os/queue";
@@ -105,6 +105,52 @@ export function listeningSyncHandler(opts: ListeningSyncOptions): JobHandler {
             : `ดึง ${results.length} เพจ — ${posts} โพสต์ / ${comments} คอมเมนต์ใหม่` +
               (failed === 0 ? "" : ` (มี ${failed} เพจที่ดึงได้ไม่ครบ)`),
         details: { pages: results.length, posts, comments, failed },
+      };
+    },
+  };
+}
+
+export interface YouTubeSyncHandlerOptions {
+  sync: YouTubeListeningSync;
+  staleAfterMs: number;
+  /** ช่องสูงสุดต่อรอบ — ต่ำกว่าฝั่ง Facebook เพราะโควตาเป็นรายวัน ไม่ใช่รายชั่วโมง */
+  limit: number;
+}
+
+/**
+ * ดึงวิดีโอ + คอมเมนต์ของช่อง YouTube ที่เฝ้าดู
+ *
+ * แยกจาก `listening-sync` เป็นคนละรอบโดยตั้งใจ ไม่ใช่ยัดรวมกัน เพราะ:
+ *
+ * 1. **คาบต่างกัน** — Meta ทุกชั่วโมงได้สบาย แต่ YouTube มีโควตารายวัน
+ *    ที่รีเซ็ตแค่ครั้งเดียว ต้องเดินช้ากว่า (ทุก 3 ชม.)
+ * 2. **โควตาคนละก้อน** — YouTube หมดไม่ควรทำให้เพจ Facebook หยุดดึงไปด้วย
+ *    ถ้ารวมรอบกัน error ของฝั่งหนึ่งจะลากอีกฝั่งลงไปด้วยทันที
+ */
+export function youtubeSyncHandler(opts: YouTubeSyncHandlerOptions): JobHandler {
+  return {
+    name: cronJobName("youtube-sync"),
+    async run(data: unknown): Promise<JobOutcome> {
+      decodeSweepJob(data);
+      const results = await opts.sync.syncDue({
+        staleAfterMs: opts.staleAfterMs,
+        limit: opts.limit,
+      });
+
+      const videos = results.reduce((s, r) => s + r.postsWritten, 0);
+      const comments = results.reduce((s, r) => s + r.commentsWritten, 0);
+      const failed = results.filter((r) => r.errors.length > 0).length;
+      const quotaOut = results.some((r) => r.quotaExhausted === true);
+
+      return {
+        th:
+          results.length === 0
+            ? "ยังไม่มีช่อง YouTube ที่ถึงเวลาดึง"
+            : `ดึง ${results.length} ช่อง — ${videos} วิดีโอ / ${comments} คอมเมนต์ใหม่` +
+              (failed === 0 ? "" : ` (มี ${failed} ช่องที่ดึงได้ไม่ครบ)`) +
+              // ต้องขึ้นให้เห็นชัด เพราะแปลว่ารอบถัดๆ ไปของวันนี้จะไม่ได้อะไรเลย
+              (quotaOut ? " — หยุดกลางรอบเพราะโควตาวันนี้หมด" : ""),
+        details: { channels: results.length, videos, comments, failed, quotaOut },
       };
     },
   };

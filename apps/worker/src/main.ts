@@ -27,6 +27,7 @@ import {
   listeningSyncHandler,
   notWiredHandler,
   publishTickHandler,
+  youtubeSyncHandler,
 } from "./handlers/cron.js";
 import { inboxHandler } from "./handlers/inbox.js";
 import { publishHandler } from "./handlers/publish.js";
@@ -95,6 +96,37 @@ async function main(): Promise<void> {
       staleAfterMs: 50 * 60_000,
       limit: 10,
     }),
+    /**
+     * ยังไม่ใส่ `YOUTUBE_API_KEY` → ลงทะเบียนตัวที่บอกว่าขาดอะไร
+     *
+     * ไม่ปล่อยว่าง เพราะงานจะกองในคิวโดยแยกไม่ออกจาก "ยังไม่ถึงคิว"
+     * — แบบนี้มันจะไปกอง `failed` พร้อมข้อความบอกว่าต้องใส่อะไร
+     */
+    deps.youtubeSync === null
+      ? notWiredHandler(
+          "youtube-sync",
+          "ค่า YOUTUBE_API_KEY ในไฟล์ .env — เอามาจาก Google Cloud Console " +
+            "หลังเปิดใช้ YouTube Data API v3 (ถ้าไม่ได้ดูช่อง YouTube ก็ข้ามได้)",
+        )
+      : youtubeSyncHandler({
+          sync: deps.youtubeSync,
+          // ต่ำกว่าคาบ 3 ชม. เล็กน้อย ด้วยเหตุผลเดียวกับ listening-sync
+          staleAfterMs: 170 * 60_000,
+          /**
+           * ─── เลขนี้มาจากไหน ───
+           *
+           * ช่องหนึ่งกิน 1 (channels) + 1 (playlistItems) + 1 (videos)
+           * + n (คอมเมนต์ 1 call ต่อวิดีโอที่มีคอมเมนต์) ≈ 13 หน่วยตามปกติ
+           * และไม่เกิน ~53 หน่วยเมื่อชนเพดาน 50 วิดีโอ
+           *
+           * 10 ช่อง × 8 รอบ/วัน = 1,040 หน่วยตามปกติ / 4,240 กรณีแย่สุด
+           * — ยังห่างจากเพดานงานเบื้องหลัง 8,500 อยู่มาก
+           *
+           * ถ้าเฝ้าดู 20 ช่อง แต่ละช่องจะถูกดึงทุก 6 ชม. (คิวเรียงตัวที่ค้าง
+           * นานสุดขึ้นก่อน จึงวนครบทุกช่องเสมอ ไม่มีช่องไหนถูกลืม)
+           */
+          limit: 10,
+        }),
     ...NOT_WIRED.map((n) => notWiredHandler(n.cron, n.missingTh)),
   ]);
 

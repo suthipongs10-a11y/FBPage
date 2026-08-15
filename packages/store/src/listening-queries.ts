@@ -16,7 +16,7 @@ import type { PrismaClient } from "./client.js";
 
 export interface TrackedPageRow {
   id: string;
-  fbPageId: string;
+  externalId: string;
   name: string;
   kind: TrackedKind;
   source: TrackedSource;
@@ -40,7 +40,7 @@ export interface CommentRow {
   trackedPageId: string;
   pageName: string;
   postPermalink: string | null;
-  fbPostId: string;
+  externalId: string;
 }
 
 /**
@@ -189,7 +189,7 @@ export class PrismaListeningQueries {
         include: {
           trackedPost: {
             select: {
-              fbPostId: true,
+              externalId: true,
               permalink: true,
               trackedPage: { select: { id: true, name: true } },
             },
@@ -210,7 +210,7 @@ export class PrismaListeningQueries {
         trackedPageId: r.trackedPost.trackedPage.id,
         pageName: r.trackedPost.trackedPage.name,
         postPermalink: r.trackedPost.permalink,
-        fbPostId: r.trackedPost.fbPostId,
+        externalId: r.trackedPost.externalId,
       })),
     };
   }
@@ -292,7 +292,7 @@ export class PrismaListeningQueries {
   /** เพิ่มเพจเข้ารายการเฝ้าดู — เพจเดิมใน workspace เดิมเพิ่มซ้ำไม่ได้ */
   async addPage(args: {
     workspaceId: string;
-    fbPageId: string;
+    externalId: string;
     name: string;
     kind: TrackedKind;
     source: TrackedSource;
@@ -303,7 +303,7 @@ export class PrismaListeningQueries {
     const row = await this.prisma.trackedPage.create({
       data: {
         workspaceId: args.workspaceId,
-        fbPageId: args.fbPageId,
+        externalId: args.externalId,
         name: args.name,
         kind: args.kind,
         source: args.source,
@@ -321,13 +321,13 @@ export class PrismaListeningQueries {
 
   async findByFbPageId(args: {
     workspaceId: string;
-    fbPageId: string;
+    externalId: string;
   }): Promise<TrackedPageRow | null> {
     const row = await this.prisma.trackedPage.findUnique({
       where: {
-        workspaceId_fbPageId: {
+        workspaceId_externalId: {
           workspaceId: args.workspaceId,
-          fbPageId: args.fbPageId,
+          externalId: args.externalId,
         },
       },
     });
@@ -337,7 +337,7 @@ export class PrismaListeningQueries {
 
 interface RawTrackedPage {
   id: string;
-  fbPageId: string;
+  externalId: string;
   name: string;
   kind: string;
   source: string;
@@ -348,7 +348,7 @@ interface RawTrackedPage {
 function toRow(r: RawTrackedPage): TrackedPageRow {
   return {
     id: r.id,
-    fbPageId: r.fbPageId,
+    externalId: r.externalId,
     name: r.name,
     kind: r.kind as TrackedKind,
     source: r.source as TrackedSource,

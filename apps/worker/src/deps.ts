@@ -8,7 +8,7 @@
 import { createLogger, Keyring, systemClock, type Clock, type Logger } from "@page-os/core";
 import { EncryptedTokenStore } from "@page-os/db";
 import { WebhookProcessor } from "@page-os/inbox";
-import { ListeningSync } from "@page-os/listening";
+import { ListeningSync, YouTubeListeningSync } from "@page-os/listening";
 import { MetaGateway } from "@page-os/meta";
 import {
   AlertCenter,
@@ -44,6 +44,7 @@ import {
   PrismaPublishedPostLookup,
   type PrismaClient,
 } from "@page-os/store";
+import { YouTubeGateway } from "@page-os/youtube";
 import type { WorkerConfig } from "./config.js";
 
 export interface WorkerDeps {
@@ -65,6 +66,14 @@ export interface WorkerDeps {
   inboxStore: PrismaInboxStore;
   webhookProcessor: WebhookProcessor;
   listeningSync: ListeningSync;
+  /**
+   * `null` เมื่อยังไม่ได้ใส่ `YOUTUBE_API_KEY`
+   *
+   * ปล่อยเป็น null แทนที่จะล้มตอนเปิดเครื่อง เพราะคนที่ไม่ได้ดูช่อง YouTube
+   * ก็ต้องใช้ระบบส่วนที่เหลือได้ตามปกติ — ตัวลงทะเบียน cron จะข้ามรอบนี้ไป
+   * พร้อมข้อความบอกว่าต้องใส่อะไรถึงจะเปิดใช้ได้
+   */
+  youtubeSync: YouTubeListeningSync | null;
   collectProblemsNow: (nowMs: number) => Promise<ReturnType<typeof collectProblems>>;
 }
 
@@ -155,12 +164,33 @@ export function buildDeps(opts: BuildDepsOptions): WorkerDeps {
     quietHours: { fromHour: 22, toHour: 7, timeZone: config.timeZone },
   });
 
+  const listeningRepo = new PrismaListeningRepository(prisma);
+
   const listeningSync = new ListeningSync({
     gateway,
-    repo: new PrismaListeningRepository(prisma),
+    repo: listeningRepo,
     clock,
     logger,
   });
+
+  const youtubeApiKey = opts.env["YOUTUBE_API_KEY"]?.trim() ?? "";
+  // ขอโควตาเพิ่มจาก Google ได้ ถ้าได้มาแล้วค่อยตั้งค่านี้ให้ตรง
+  const youtubeQuota = positiveIntOr(opts.env["YOUTUBE_DAILY_QUOTA"]);
+  const youtubeSync =
+    youtubeApiKey === ""
+      ? null
+      : new YouTubeListeningSync({
+          gateway: new YouTubeGateway(
+            {
+              apiKey: youtubeApiKey,
+              ...(youtubeQuota !== undefined ? { dailyQuota: youtubeQuota } : {}),
+            },
+            { clock, logger },
+          ),
+          repo: listeningRepo,
+          clock,
+          logger,
+        });
 
   return {
     config,
@@ -179,6 +209,7 @@ export function buildDeps(opts: BuildDepsOptions): WorkerDeps {
     inboxStore,
     webhookProcessor,
     listeningSync,
+    youtubeSync,
     collectProblemsNow: (nowMs) => collectProblemsFromDb(prisma, nowMs),
   };
 }
@@ -243,6 +274,17 @@ async function collectProblemsFromDb(
 const COLOR_COUNT = 8;
 
 /** สีประจำเพจที่คงที่ตลอด ไม่ขึ้นกับว่าเพจนี้อยู่ลำดับที่เท่าไหร่ในผลลัพธ์ */
+/**
+ * อ่านจำนวนเต็มบวกจาก env — ค่าที่ใส่มาผิดรูปให้ตกไปที่ค่าเริ่มต้น
+ *
+ * ไม่ล้มทั้งโปรเซสเพราะค่านี้เป็นแค่ "ปรับจูน" ไม่ใช่ของจำเป็น และคนที่พิมพ์
+ * `YOUTUBE_DAILY_QUOTA=หมื่น` ไม่ควรทำให้ระบบทั้งตัวขึ้นไม่ได้
+ */
+function positiveIntOr(raw: string | undefined): number | undefined {
+  const n = Number((raw ?? "").trim());
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
 function colorIndexOf(fbPageId: string): number {
   let h = 0;
   for (const ch of fbPageId) h = (h * 31 + ch.charCodeAt(0)) % 100_000;

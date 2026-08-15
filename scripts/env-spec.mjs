@@ -76,6 +76,28 @@ const VALIDATORS = {
     ["debug", "info", "warn", "error"].includes(v.trim())
       ? null
       : "ต้องเป็น debug / info / warn / error อย่างใดอย่างหนึ่ง",
+
+  /**
+   * API key ของ Google ขึ้นต้นด้วย `AIza` เสมอ และยาว 39 ตัว
+   *
+   * ดักไว้เพราะคนมักหยิบผิดตัวจากหน้า Credentials ที่มีทั้ง API key,
+   * OAuth client ID (ลงท้าย `.apps.googleusercontent.com`) และ service
+   * account — สามอย่างนี้อยู่ในตารางเดียวกันและหน้าตาคล้ายกันมาก
+   * ใส่ผิดแล้วจะรู้ตัวตอนรอบ cron แรกเท่านั้น ซึ่งอีก 3 ชั่วโมงข้างหน้า
+   */
+  YOUTUBE_API_KEY: (v) =>
+    /^AIza[0-9A-Za-z_-]{35}$/.test(v.trim())
+      ? null
+      : v.trim().endsWith(".apps.googleusercontent.com")
+        ? "นี่คือ OAuth client ID ไม่ใช่ API key — กลับไปที่ Credentials " +
+          'แล้วกด "Create credentials → API key" ค่าที่ได้จะขึ้นต้นด้วย AIza'
+        : "API key ของ Google ขึ้นต้นด้วย AIza และยาว 39 ตัว — ที่ใส่มายาว " +
+          `${v.trim().length} ตัว เช็คว่าก๊อปมาครบไหม`,
+
+  YOUTUBE_DAILY_QUOTA: (v) =>
+    /^\d+$/.test(v.trim()) && Number(v) > 0
+      ? null
+      : "ต้องเป็นจำนวนเต็มบวก — ค่าเริ่มต้นที่ Google ให้คือ 10000",
 };
 
 function urlOf(v, protocols, exampleTh) {

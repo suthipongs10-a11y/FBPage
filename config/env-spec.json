@@ -88,6 +88,22 @@
     "defaultValue": "info"
   },
   {
+    "key": "YOUTUBE_API_KEY",
+    "need": "optional",
+    "group": "YouTube",
+    "labelTh": "API key ของ YouTube Data API v3",
+    "whereTh": "console.cloud.google.com → สร้างโปรเจ็ค → APIs & Services → Library → เปิดใช้ \"YouTube Data API v3\" → Credentials → Create credentials → API key — ใส่แล้วจะเฝ้าดูช่อง YouTube ได้ (อ่านคอมเมนต์ของช่องไหนก็ได้ ไม่ต้องขออนุมัติเหมือน Facebook) ไม่ใส่ก็ใช้ส่วนอื่นได้ตามปกติ",
+    "secret": true
+  },
+  {
+    "key": "YOUTUBE_DAILY_QUOTA",
+    "need": "optional",
+    "group": "YouTube",
+    "labelTh": "เพดานโควตา YouTube ต่อวัน (หน่วย)",
+    "whereTh": "ปกติไม่ต้องแก้ — Google ให้ทุกโปรเจ็ค 10,000 หน่วยต่อวัน แก้ค่านี้เฉพาะเมื่อยื่นขอเพิ่มแล้วได้มาจริง (รีเซ็ตเที่ยงคืนเวลาแปซิฟิก ราวบ่าย 2–3 โมงบ้านเรา)",
+    "defaultValue": "10000"
+  },
+  {
     "key": "LINE_CHANNEL_ACCESS_TOKEN",
     "need": "optional",
     "group": "แจ้งเตือน (ยังไม่ได้ต่อ)",

@@ -21,6 +21,7 @@
     "@page-os/publish": "workspace:*",
     "@page-os/queue": "workspace:*",
     "@page-os/store": "workspace:*",
+    "@page-os/youtube": "workspace:*",
     "bullmq": "^6.0.9"
   }
 }

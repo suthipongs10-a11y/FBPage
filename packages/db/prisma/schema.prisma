@@ -524,16 +524,43 @@ enum TrackedKind {
 enum TrackedSource {
   /// ดึงผ่าน MetaGateway ด้วย token ของเพจเราเอง
   META_API
+  /// ดึงผ่าน YouTubeGateway — ของสาธารณะใช้ API key เฉยๆ ไม่ต้องมี token ของช่อง
+  YOUTUBE_API
   /// มาจากผู้ให้บริการข้อมูลภายนอก (ใช้ตอนยังไม่ผ่าน App Review ของ Meta)
   EXTERNAL
   /// คนกรอกเอง
   MANUAL
 }
 
+/// แพลตฟอร์มของสิ่งที่เฝ้าดู
+///
+/// ─── ทำไมรวมตารางเดียวกัน ไม่แยก TrackedChannel ออกไป ───
+///
+/// เพราะสิ่งที่เราทำกับมันเหมือนกันทุกอย่าง: นับ engagement, จัดหมวดคอมเมนต์
+/// ภาษาไทย, หาแฟนตัวยง, สแกนบัญชีน่าสงสัย, ส่งออก CSV — โมดูลพวกนี้ใน
+/// `packages/listening` เป็นฟังก์ชันบริสุทธิ์ที่รับ "ข้อความ + คนเขียน + เวลา"
+/// ไม่เคยรู้จักว่ามาจากไหน
+///
+/// แยกตารางจะได้โค้ดสองชุดที่ต้องแก้พร้อมกันตลอดไป และหน้า "อ่านคอมเมนต์"
+/// จะรวมสองแพลตฟอร์มในหน้าเดียวไม่ได้
+enum TrackedPlatform {
+  FACEBOOK
+  YOUTUBE
+}
+
 model TrackedPage {
   id          String        @id @default(uuid())
   workspaceId String        @map("workspace_id")
-  fbPageId    String        @map("fb_page_id")
+  /// เฟซบุ๊กหรือยูทูบ — ตัวชี้ว่าจะดึงข้อมูลผ่าน gateway ตัวไหน
+  platform    TrackedPlatform @default(FACEBOOK)
+  /// รหัสของสิ่งที่เฝ้าดูบนแพลตฟอร์มนั้น
+  ///
+  /// FACEBOOK = รหัสเพจ · YOUTUBE = รหัสช่อง (ขึ้นต้นด้วย UC)
+  ///
+  /// ⚠️ คอลัมน์ในฐานข้อมูลยังชื่อ `fb_page_id` เพราะเปลี่ยนชื่อคอลัมน์จริง
+  /// ต้องย้ายข้อมูล ซึ่งเสี่ยงกว่าประโยชน์ที่ได้ — ชื่อฟิลด์ฝั่งโค้ดสำคัญกว่า
+  /// เพราะเป็นตัวที่คนอ่านทุกวัน (บทเรียนจาก "pageId สองความหมาย")
+  externalId  String        @map("fb_page_id")
   name        String
   kind        TrackedKind
   source      TrackedSource @default(META_API)
@@ -553,7 +580,7 @@ model TrackedPage {
   snapshots TrackedPageSnapshot[]
 
   /// เพจเดียวกันเฝ้าซ้ำใน workspace เดิมไม่ได้ แต่คนละ workspace เฝ้าเพจเดียวกันได้
-  @@unique([workspaceId, fbPageId])
+  @@unique([workspaceId, externalId])
   @@index([workspaceId, kind])
   @@map("tracked_pages")
 }
@@ -561,7 +588,9 @@ model TrackedPage {
 model TrackedPost {
   id            String   @id @default(uuid())
   trackedPageId String   @map("tracked_page_id")
-  fbPostId      String   @map("fb_post_id")
+  /// รหัสโพสต์/วิดีโอบนแพลตฟอร์มนั้น — คอลัมน์ยังชื่อ `fb_post_id` ตามเดิม
+  /// ด้วยเหตุผลเดียวกับ `TrackedPage.externalId`
+  externalId    String   @map("fb_post_id")
   publishedAt   DateTime @map("published_at") @db.Timestamptz(6)
   message       String?
   permalink     String?
@@ -575,7 +604,7 @@ model TrackedPost {
   trackedPage TrackedPage      @relation(fields: [trackedPageId], references: [id], onDelete: Cascade)
   comments    TrackedComment[]
 
-  @@unique([trackedPageId, fbPostId])
+  @@unique([trackedPageId, externalId])
   /// ดัชนีหลักของทั้งระบบ — ทุกหน้าจอถามว่า "เพจนี้ ช่วงนี้ มีโพสต์อะไรบ้าง"
   @@index([trackedPageId, publishedAt])
   @@map("tracked_posts")
@@ -584,9 +613,15 @@ model TrackedPost {
 model TrackedComment {
   id            String   @id @default(uuid())
   trackedPostId String   @map("tracked_post_id")
-  fbCommentId   String   @map("fb_comment_id")
-  /// id ของคนคอมเมนต์ — Meta ให้มาเป็น scoped id ต่างกันในแต่ละเพจ
-  /// จึงเอามาจับว่า "คนเดียวกัน" ข้ามเพจไม่ได้ ต้องอาศัยชื่อซึ่งไม่แม่นเสมอ
+  /// รหัสคอมเมนต์บนแพลตฟอร์มนั้น — คอลัมน์ยังชื่อ `fb_comment_id` ตามเดิม
+  externalId    String   @map("fb_comment_id")
+  /// id ของคนคอมเมนต์
+  ///
+  /// Facebook ให้มาเป็น scoped id ต่างกันในแต่ละเพจ จึงเอามาจับว่า
+  /// "คนเดียวกัน" ข้ามเพจไม่ได้ ต้องอาศัยชื่อซึ่งไม่แม่นเสมอ
+  ///
+  /// YouTube ให้ channel id ของคนคอมเมนต์ซึ่ง**เหมือนกันทุกที่** —
+  /// ฝั่ง YouTube จึงจับคนข้ามช่องได้แม่นกว่า Facebook มาก
   authorId      String?  @map("author_id")
   authorName    String?  @map("author_name")
   message       String?
@@ -595,7 +630,7 @@ model TrackedComment {
 
   trackedPost TrackedPost @relation(fields: [trackedPostId], references: [id], onDelete: Cascade)
 
-  @@unique([trackedPostId, fbCommentId])
+  @@unique([trackedPostId, externalId])
   @@index([trackedPostId, createdAt])
   /// หา "ใครคอมเมนต์บ่อยสุด" โดยไม่ต้องอ่านทั้งตาราง
   @@index([authorName])
