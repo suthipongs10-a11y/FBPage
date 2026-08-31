@@ -86,7 +86,7 @@ async function fetchAllPages(userToken) {
   do {
     const json = await graph('me/accounts', {
       token: userToken,
-      params: { fields: 'id,name,category,access_token', limit: 100, ...(after && { after }) },
+      params: { fields: 'id,name,category,tasks,access_token', limit: 100, ...(after && { after }) },
     });
     pages.push(...json.data);
     after = json.paging?.next ? json.paging.cursors?.after : undefined;
@@ -248,7 +248,7 @@ async function cmdCheck() {
   try {
     const pages = await fetchAllPages(env.USER_TOKEN);
     console.log(`✔ มองเห็น ${pages.length} เพจ — รัน sync เพื่อบันทึกลง pages.json`);
-    for (const p of pages) console.log(`  ${p.id}  ${p.name}  [${p.category}]`);
+    for (const p of pages) console.log(`  ${p.id}  ${p.name}  [${p.category}]  สิทธิ์บนเพจ: ${(p.tasks || []).join(',') || '—'}`);
   } catch (e) {
     console.log(`  ⚠ ดึงรายชื่อเพจไม่ได้: ${e.message}`);
   }
