@@ -225,7 +225,7 @@ async function cmdCheck() {
     const { data } = await graph('me/permissions', { token: env.USER_TOKEN });
     const granted = data.filter(p => p.status === 'granted').map(p => p.permission);
     const missing = NEEDED_SCOPES.filter(s => !granted.includes(s));
-    console.log(`  สิทธิ์ที่ได้: ${granted.length} รายการ`);
+    console.log(`  สิทธิ์ที่ได้: ${granted.length} รายการ — ${granted.sort().join(', ')}`);
     if (missing.length) console.log(`  ⚠ ขาดสิทธิ์ที่จำเป็น: ${missing.join(', ')}`);
     else console.log('  ✔ สิทธิ์ครบตามที่ทูลต้องใช้');
   } catch (e) {
