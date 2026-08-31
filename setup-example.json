@@ -1,0 +1,16 @@
+{
+  "about": "ร้านค้าสินค้าแท้ 100% ส่งไวทั่วไทย สอบถาม/สั่งซื้อทางแชทได้เลย",
+  "description": "รายละเอียดธุรกิจแบบยาว: ขายอะไร จุดเด่น การจัดส่ง การรับประกัน ช่องทางติดต่อ ฯลฯ",
+  "phone": "+66812345678",
+  "website": "https://example.com",
+  "emails": ["contact@example.com"],
+  "price_range": "$$",
+  "hours": {
+    "mon_1_open": "09:00", "mon_1_close": "18:00",
+    "tue_1_open": "09:00", "tue_1_close": "18:00",
+    "wed_1_open": "09:00", "wed_1_close": "18:00",
+    "thu_1_open": "09:00", "thu_1_close": "18:00",
+    "fri_1_open": "09:00", "fri_1_close": "18:00",
+    "sat_1_open": "09:00", "sat_1_close": "16:00"
+  }
+}
