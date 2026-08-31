@@ -9,8 +9,16 @@
 - `setup/<page-id>.json` — ไฟล์ข้อมูลที่จะอัปเดตต่อเพจ (ดูรูปแบบใน `setup-example.json`)
 - `.env` (ถ้ามี) — เก็บ USER_TOKEN **ห้ามเปิดอ่าน**
 
+## ข้อกำหนดของ environment
+- token อ่านจาก env `USER_TOKEN` หรือ `FB_USER_TOKEN` (ชื่อไหนก็ได้) หรือไฟล์ `.env`
+- Graph version ตั้งผ่าน `API_VERSION` หรือ `GRAPH_VERSION` (ไม่ใส่ = v26.0)
+- **ต้องเพิ่ม `graph.facebook.com` ใน network egress allowlist ของ environment** ไม่งั้นทุกคำสั่งจะได้ HTTP 403 จาก proxy
+- env var ถูก inject ตอน container เริ่ม → เพิ่มตัวแปรใหม่แล้วต้องเปิด session ใหม่ถึงจะเห็น
+- สิทธิ์ที่ token ต้องมี: `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`
+
 ## คำสั่ง
 ```
+node fb-pages.mjs check                             ตรวจว่าเจอ token ไหม + ใช้งานได้ไหม + เห็นกี่เพจ
 node fb-pages.mjs sync                              ดึงเพจทั้งหมด → pages.json (รันเมื่อมีลูกค้าใหม่)
 node fb-pages.mjs audit                             ตรวจทุกเพจว่าขาดข้อมูลอะไร (% ครบ)
 node fb-pages.mjs show <page-id>                    ดูข้อมูลปัจจุบันของเพจ
