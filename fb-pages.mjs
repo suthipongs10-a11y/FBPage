@@ -20,7 +20,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -51,14 +51,22 @@ const env = {
 const API = `https://graph.facebook.com/${env.API_VERSION || 'v26.0'}`;
 
 // ---------- Graph API ----------
-async function graph(path, { token, method = 'GET', params = {} } = {}) {
+async function graph(path, { token, method = 'GET', params = {}, files } = {}) {
   const body = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) body.set(k, typeof v === 'string' ? v : JSON.stringify(v));
   body.set('access_token', token);
   const url = `${API}/${path}`;
   let res;
   try {
-    res = method === 'GET' ? await fetch(`${url}?${body}`) : await fetch(url, { method, body });
+    if (files) {
+      // อัปโหลดไฟล์ต้องใช้ multipart — ค่าอื่นๆ (รวม access_token) ยกมาจาก body ชุดเดิม
+      const form = new FormData();
+      for (const [k, v] of body) form.set(k, v);
+      for (const [k, f] of Object.entries(files)) form.set(k, new Blob([readFileSync(f)]), basename(f));
+      res = await fetch(url, { method, body: form });
+    } else {
+      res = method === 'GET' ? await fetch(`${url}?${body}`) : await fetch(url, { method, body });
+    }
   } catch (e) {
     throw new Error(`ต่อ graph.facebook.com ไม่ได้: ${e.cause?.message || e.message}`);
   }
@@ -199,6 +207,64 @@ async function cmdApply(id, file, dry) {
   console.log(res.success ? '✔ อัปเดตสำเร็จ — รัน audit ซ้ำเพื่อยืนยัน' : JSON.stringify(res));
 }
 
+// ---------- post: โพสต์ลงเพจ (ข้อความ / ลิงก์ / รูปหลายใบ / ตั้งเวลา) ----------
+const isUrl = v => /^https?:\/\//.test(v);
+
+function readPostFile(file) {
+  const post = JSON.parse(readFileSync(resolve(file), 'utf8'));
+  const photos = post.photos || [];
+  if (!Array.isArray(photos)) die('photos ต้องเป็น array');
+  if (!post.message && !post.link && !photos.length) die('ต้องมีอย่างน้อย message, link หรือ photos');
+  if (photos.length > 10) die('แนบรูปได้สูงสุด 10 ใบต่อโพสต์');
+  for (const ph of photos) {
+    if (!isUrl(ph) && !existsSync(resolve(ph))) die(`ไม่พบไฟล์รูป: ${ph}`);
+  }
+  let schedule;
+  if (post.scheduled_publish_time) {
+    const ms = new Date(post.scheduled_publish_time).getTime();
+    if (!Number.isFinite(ms)) die('scheduled_publish_time อ่านไม่ได้ — ใช้รูปแบบ 2026-09-05T10:00:00+07:00');
+    const mins = (ms - Date.now()) / 60000;
+    if (mins < 10) die('ตั้งเวลาโพสต์ต้องล่วงหน้าอย่างน้อย 10 นาที');
+    if (mins > 75 * 24 * 60) die('ตั้งเวลาโพสต์ล่วงหน้าได้ไม่เกิน 75 วัน');
+    schedule = Math.floor(ms / 1000);
+  }
+  if (post.link && photos.length) console.log('⚠ มีทั้ง link และ photos — Facebook จะแสดงรูปและไม่แสดงการ์ดลิงก์');
+  return { post, photos, schedule };
+}
+
+async function cmdPost(id, file, dry) {
+  if (!id || !file) die('ใช้: node fb-pages.mjs post <page-id> <post.json> [--dry]');
+  const p = await findPage(id);
+  const { post, photos, schedule } = readPostFile(file);
+
+  console.log(`เพจ: ${p.name} (${p.id})`);
+  console.log(`รูปแนบ: ${photos.length ? photos.join(', ') : 'ไม่มี'}`);
+  console.log(`เวลาโพสต์: ${schedule ? new Date(schedule * 1000).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) + ' (เวลาไทย)' : 'ทันที'}`);
+  if (post.link) console.log(`ลิงก์: ${post.link}`);
+  if (post.message) console.log(`\n--- ข้อความ (${[...post.message].length} ตัวอักษร) ---\n${post.message}\n---`);
+  if (dry) { console.log('(dry run — ยังไม่โพสต์จริง)'); return; }
+
+  const media = [];
+  for (const [i, ph] of photos.entries()) {
+    process.stdout.write(`อัปโหลดรูป ${i + 1}/${photos.length} ... `);
+    const r = isUrl(ph)
+      ? await graph(`${p.id}/photos`, { token: p.access_token, method: 'POST', params: { url: ph, published: false } })
+      : await graph(`${p.id}/photos`, { token: p.access_token, method: 'POST', params: { published: false }, files: { source: resolve(ph) } });
+    media.push(r.id);
+    console.log('✔');
+  }
+
+  const params = {};
+  if (post.message) params.message = post.message;
+  if (post.link && !media.length) params.link = post.link;
+  media.forEach((fbid, i) => { params[`attached_media[${i}]`] = { media_fbid: fbid }; });
+  if (schedule) { params.published = false; params.scheduled_publish_time = schedule; }
+
+  const res = await graph(`${p.id}/feed`, { token: p.access_token, method: 'POST', params });
+  if (!res.id) die(`โพสต์ไม่สำเร็จ: ${JSON.stringify(res)}`);
+  console.log(schedule ? `✔ ตั้งเวลาโพสต์แล้ว — post id ${res.id}` : `✔ โพสต์แล้ว — https://www.facebook.com/${res.id}`);
+}
+
 // ---------- check: ตรวจว่า token เจอไหม + ใช้งานได้ไหม (ไม่แสดงค่า token) ----------
 const NEEDED_SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata'];
 
@@ -264,6 +330,7 @@ const run = {
   audit: cmdAudit,
   show: () => cmdShow(pos[0]),
   apply: () => cmdApply(pos[0], pos[1], dry),
+  post: () => cmdPost(pos[0], pos[1], dry),
 }[cmd];
-if (!run) die('คำสั่ง: check | sync | audit | show <page-id> | apply <page-id> <setup.json> [--dry]');
+if (!run) die('คำสั่ง: check | sync | audit | show <page-id> | apply <page-id> <setup.json> [--dry] | post <page-id> <post.json> [--dry]');
 run().catch(e => die(e.message));

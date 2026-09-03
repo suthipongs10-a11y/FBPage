@@ -24,6 +24,8 @@ node fb-pages.mjs audit                             ตรวจทุกเพ�
 node fb-pages.mjs show <page-id>                    ดูข้อมูลปัจจุบันของเพจ
 node fb-pages.mjs apply <page-id> setup/<page-id>.json --dry   ดู payload ก่อน
 node fb-pages.mjs apply <page-id> setup/<page-id>.json         อัปเดตจริง
+node fb-pages.mjs post <page-id> post/<file>.json --dry        ดูข้อความ+รูปก่อนโพสต์
+node fb-pages.mjs post <page-id> post/<file>.json              โพสต์จริง
 ```
 อ้างเพจด้วย page-id (เลข) หรือชื่อเพจตรงตัวก็ได้
 
@@ -40,7 +42,8 @@ node fb-pages.mjs apply <page-id> setup/<page-id>.json         อัปเด�
 - **ห้าม** print, echo, log หรือแสดง token ในทุกรูปแบบ — ทั้ง USER_TOKEN และ access_token ในผลลัพธ์ใดๆ
 - **ห้าม** `cat`/อ่าน `.env` หรือ `pages.json` โดยตรง ใช้เฉพาะคำสั่งของสคริปต์
 - **ห้าม** ยิง Graph API เองด้วย curl/fetch พร้อม token ใน command line — ใช้สคริปต์เท่านั้น
-- **ห้าม** `apply` จริงโดยไม่ผ่าน `--dry` และการยืนยันจากผู้ใช้ก่อน
+- **ห้าม** `apply` หรือ `post` จริงโดยไม่ผ่าน `--dry` และการยืนยันจากผู้ใช้ก่อน
+- **ห้าม** โพสต์เนื้อหา/รูปที่คัดลอกมาจากเพจอื่นโดยไม่ได้รับอนุญาต
 - **ห้าม** commit `.env`, `pages.json`, `.claude/settings.local.json`
 - ถ้าเจอ error เกี่ยวกับ token หมดอายุ/ไม่มีสิทธิ์ → บอกผู้ใช้ให้ generate + extend token ใหม่แล้วอัปเดต USER_TOKEN ห้ามพยายามแก้เอง
 
@@ -51,4 +54,14 @@ node fb-pages.mjs apply <page-id> setup/<page-id>.json         อัปเด�
 - `emails` เป็น array เช่น `["a@b.com"]`
 - `price_range` ใช้ได้เฉพาะ `"$"`, `"$$"`, `"$$$"`, `"$$$$"`
 - `hours` ใช้คีย์ `<day>_<n>_open` / `<day>_<n>_close` (day = mon..sun, n = 1 หรือ 2) เวลา `HH:MM` 24 ชม. วันที่ปิดไม่ต้องใส่
-- ฟิลด์เสริม: `general_info`, `company_overview`, `mission`, `products`, `founded`
+- ฟิลด์เสริม: `founded`
+- **`products`, `general_info` ใช้ไม่ได้แล้ว** — Graph API ตอบ error (code 100 / code 1) ให้ยัดเนื้อหาไว้ใน `description` แทน
+- **ห้ามใส่ emoji ใน `description`** — Facebook แปลงเป็น `\uFFFD` ใช้ `[ หัวข้อ ]` กับ `•` แทน (emoji ในโพสต์ใช้ได้ปกติ)
+
+## รูปแบบข้อมูลใน post json
+- `message` — ข้อความโพสต์ ใส่ emoji ได้
+- `link` — ลิงก์แนบ (ถ้ามี photos ด้วย Facebook จะไม่แสดงการ์ดลิงก์)
+- `photos` — array ของ path ไฟล์ในเครื่อง หรือ URL รูป สูงสุด 10 ใบ
+- `scheduled_publish_time` — เช่น `"2026-09-05T10:00:00+07:00"` ต้องล่วงหน้า 10 นาที–75 วัน
+- ต้องมีอย่างน้อย 1 อย่างใน `message` / `link` / `photos`
+- ต้องมีสิทธิ์ `CREATE_CONTENT` บนเพจนั้น (ดูจาก `check`)
