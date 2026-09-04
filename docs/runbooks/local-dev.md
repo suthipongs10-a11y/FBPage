@@ -51,3 +51,6 @@ redis-server --daemonize yes
 - ค่า metric ที่ Graph ปฏิเสธต้องเก็บเป็น `null` ไม่ใช่ `0`
 - `description` ของเพจห้ามมี emoji
 - โค้ดชุดเดิม (`fb-pages.mjs`, `server.mjs`) ยังใช้ทำงานลูกค้าได้ระหว่างระบบใหม่ยังไม่ครบ
+
+## เริ่มรับงานลูกค้า
+ดู [first-client.md](first-client.md) — ขั้นตอนครบลูปตั้งแต่สร้างลูกค้าจนส่งรายงาน
