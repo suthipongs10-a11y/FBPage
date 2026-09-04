@@ -60,6 +60,30 @@ check('content agent fills draft', gen.json?.items?.[0]?.status === 'DRAFT' && g
 ai.state.replies.push({ text: JSON.stringify({ result: 'PASS', summary: 'ok', issues: [] }) });
 const sub = await api('POST', `/workspaces/${ws}/content/${plan.json.items[0].id}/submit`, {});
 check('reviewer PASS → READY_FOR_APPROVAL', sub.json?.status === 'READY_FOR_APPROVAL' && sub.json.reviewResult?.result === 'PASS');
+
+// Phase 7: รายงาน + การ์ดภาพ
+for (const p of ['/reports']) { const r = await fetch(`${WEB}${p}`); check(`web ${p} → 200`, r.status === 200); }
+ai.state.replies.push({ text: JSON.stringify({ executiveSummary: 'สรุปทดสอบ', whatHappened: ['a'], whyItHappened: [], repeat: [], stop: [], experiments: [], nextMonthFocus: ['b'] }) });
+const rep = await api('POST', `/workspaces/${ws}/pages/${pageId}/reports`, { month: new Date().toISOString().slice(0, 7), withAi: true });
+check('report generated with AI summary + text', rep.status === 200 && rep.json.data.summary?.executiveSummary === 'สรุปทดสอบ' && rep.json.data.text.includes('รายงานเพจ'), rep.text.slice(0, 120));
+check('report lists limitations honestly', rep.json?.data?.dataLimitations?.some(x => x.includes('อ่านไม่ได้')));
+const caps = await api('GET', `/workspaces/${ws}/media/capabilities`);
+check('media capabilities', caps.status === 200 && caps.json.templates.includes('quote'), `chromium=${caps.json?.chromium}`);
+if (caps.json?.chromium) {
+  const draft = await api('POST', `/workspaces/${ws}/content`, { pageId, title: 'การ์ด', caption: 'โพสต์มีภาพ' });
+  const cardR = await api('POST', `/workspaces/${ws}/content/${draft.json.id}/media/card`, { template: 'quote', data: { theme: 'gold', kicker: 'ทดสอบ', quote: 'การ์ดจาก *ระบบใหม่*', brand: 'smoke' } });
+  check('render card → png attached', cardR.status === 200 && cardR.json.mimeType === 'image/png', `${cardR.json?.bytes} bytes`);
+  const file = await fetch(`${WEB}/api/workspaces/${ws}/media/${cardR.json?.id}/file`, { headers: { cookie } });
+  check('serve card file via proxy', file.status === 200 && file.headers.get('content-type') === 'image/png');
+  ai.state.replies.push({ text: JSON.stringify({ template: 'tips', data: { title: 'สามข้อ', items: [{ title: 'หนึ่ง' }, { title: 'สอง' }, { title: 'สาม' }], theme: 'ocean' } }) });
+  const aiCard = await api('POST', `/workspaces/${ws}/content/${draft.json.id}/media/card/ai`, {});
+  check('AI card design → rendered + attached', aiCard.status === 200 && aiCard.json.design.template === 'tips', aiCard.text.slice(0, 100));
+  await api('POST', `/workspaces/${ws}/content/${draft.json.id}/submit`, {}); // reviewer: mock ตอบ echo → ข้ามการตรวจ
+  await api('POST', `/workspaces/${ws}/content/${draft.json.id}/approve`, {});
+  const b4 = graph.state.published.length;
+  const pubImg = await api('POST', `/workspaces/${ws}/content/${draft.json.id}/publish`, {});
+  check('publish with 2 images → photos uploaded then attached', pubImg.json?.outcome?.status === 'PUBLISHED' && graph.state.published.length === b4 + 3, JSON.stringify(pubImg.json?.outcome));
+}
 graph.server.close(); ai.server.close();
-console.log(fail ? `\n${fail} check(s) failed` : '\nPhase 6 smoke: all checks passed');
+console.log(fail ? `\n${fail} check(s) failed` : '\nPhase 6–7 smoke: all checks passed');
 process.exit(fail ? 1 : 0);

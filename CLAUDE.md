@@ -15,7 +15,8 @@
 > ทำแล้ว: Phase 1 ฐานระบบ · Phase 2 Auth + Workspace/tenant + RBAC + Client/Brand/Knowledge + audit · Phase 3–4 เชื่อมเพจ (วาง token หรือ OAuth) + ซิงก์โพสต์/metric (`packages/facebook-core`, `apps/api/src/facebook`)
 > Phase 5 AI Gateway (`packages/ai-core`, `apps/api/src/ai`): BYOK key, บทบาท→โมเดล, งบ, AiTaskLog, tool registry, Analyst, Command Center
 > Phase 6 Content loop (`apps/api/src/content`, `packages/facebook-core/publisher.ts`, `workers/scheduler`): state machine, approval, schedule (BullMQ), publish กันซ้ำ, Strategist/Content/Reviewer agents — §100 ครบ
-> ถัดไปตาม §73: comments/leads → reports → webhooks → media service
+> Phase 7 Reports (`apps/api/src/reports`) + Media service (`apps/api/src/media` — การ์ดภาพ Chromium, MEDIA_DIR) + Overview §36
+> ถัดไปตาม §73: comments/leads (ต้องได้สิทธิ์ pages_read_user_content ก่อน) → webhooks → notifications
 > node test/phase5-smoke.mjs                        # AI gateway ผ่าน proxy กับ mock AI (ไม่ใช้ key จริง)
 > META_GRAPH_BASE_URL=http://127.0.0.1:4998 pnpm dev:api  แล้ว  node test/phase6-smoke.mjs   # content loop กับ mock Graph (ไม่แตะเพจจริง)
 > worker ต้องมี AUTH_SECRET เดียวกับ API (ถอดรหัส page token) — `pnpm dev:worker`

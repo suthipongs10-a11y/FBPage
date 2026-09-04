@@ -1,9 +1,9 @@
 'use client';
 import { useState, type FormEvent } from 'react';
-import { api, type ContentItem, type ContentRevisionRow, type PublishOutcome } from '@/lib/api';
+import { api, type ContentItem, type ContentRevisionRow, type MediaAsset, type MediaCapabilities, type PublishOutcome } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
-import { Button, ErrorBox, Field, Input, Pill, Textarea } from '@/components/ui';
+import { Button, ErrorBox, Field, Input, Pill, Select, Textarea } from '@/components/ui';
 
 export const statusTone = (s: string): 'ok' | 'warn' | 'bad' | 'muted' => (['PUBLISHED', 'ANALYZED', 'APPROVED', 'SCHEDULED'].includes(s) ? 'ok' : ['NEEDS_REVISION', 'READY_FOR_APPROVAL', 'PUBLISHING', 'AI_REVIEW'].includes(s) ? 'warn' : ['REJECTED', 'PUBLISH_FAILED'].includes(s) ? 'bad' : 'muted');
 const fmt = (d: string | null | undefined, tz?: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short', ...(tz && { timeZone: tz }) }) : '—');
@@ -16,6 +16,8 @@ export function ContentCard({ item, onChange }: { item: ContentItem; onChange: (
   const [f, setF] = useState({ title: item.title ?? '', caption: item.caption ?? '', cta: item.cta ?? '', hashtags: item.hashtags.join(' '), mediaBrief: item.mediaBrief ?? '', mediaPaths: item.mediaPaths.join('\n'), reason: '' });
   const [comment, setComment] = useState(''); const [when, setWhen] = useState(defaultLocal());
   const [revs, setRevs] = useState<ContentRevisionRow[] | null>(null);
+  const [assets, setAssets] = useState<MediaAsset[] | null>(null); const [caps, setCaps] = useState<MediaCapabilities | null>(null);
+  const [card, setCard] = useState({ template: 'quote', theme: 'default', hint: '', kicker: '', title: '', quote: '', sub: '', items: '' });
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
   const base = `/workspaces/${ws.id}/content/${item.id}`;
   const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await onChange(); } catch (e) { setError(e); } finally { setBusy(''); } };
@@ -24,6 +26,16 @@ export function ContentCard({ item, onChange }: { item: ContentItem; onChange: (
   const publish = () => { if (!confirm(t('content.confirmPublish'))) return; void run('publish', async () => { const r = await api<{ outcome: PublishOutcome }>(`${base}/publish`, { method: 'POST', body: {} }); setNotice(r.outcome.status === 'PUBLISHED' ? `${t('content.published')} ${r.outcome.permalink ?? ''}` : `${r.outcome.status}: ${r.outcome.reason ?? r.outcome.error ?? ''}`); }); };
   const cancel = () => { if (confirm(t('content.confirmCancel'))) void run('cancel', async () => { await api(base, { method: 'DELETE' }); }); };
   const loadRevs = () => api<ContentRevisionRow[]>(`${base}/revisions`).then(setRevs).catch(setError);
+  const loadMedia = () => Promise.all([api<MediaAsset[]>(`/workspaces/${ws.id}/media?contentId=${item.id}`), api<MediaCapabilities>(`/workspaces/${ws.id}/media/capabilities`)]).then(([a, c]) => { setAssets(a); setCaps(c); }).catch(setError);
+  const aiCard = () => run('aicard', async () => { await api(`${base}/media/card/ai`, { method: 'POST', body: { theme: card.theme, template: card.template || undefined, hint: card.hint || undefined } }); await loadMedia(); });
+  const renderCard = () => run('card', async () => {
+    const data: Record<string, unknown> = { theme: card.theme, brand: item.page.name, ...(card.kicker && { kicker: card.kicker }) };
+    if (card.template === 'quote') Object.assign(data, { quote: card.quote || item.title || (item.caption ?? '').slice(0, 80), sub: card.sub || undefined });
+    else if (card.template === 'tips') Object.assign(data, { title: card.title || item.title || 'เคล็ดลับ', items: card.items.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 7).map(x => ({ title: x })) });
+    else Object.assign(data, { title: card.title || item.title || (item.caption ?? '').slice(0, 40), sub: card.sub || undefined, punch: card.quote || undefined });
+    await api(`${base}/media/card`, { method: 'POST', body: { template: card.template, data, attach: true } }); await loadMedia();
+  });
+  const removeAsset = (id: string) => run(`rm:${id}`, async () => { await api(`/workspaces/${ws.id}/media/${id}`, { method: 'DELETE' }); await loadMedia(); });
   const s = item.status; const editable = ['PLANNED', 'IDEA', 'DRAFT', 'NEEDS_REVISION', 'READY_FOR_APPROVAL', 'APPROVED', 'SCHEDULED', 'REJECTED', 'PUBLISH_FAILED'].includes(s);
   const cEdit = can('content.edit'); const cApprove = can('content.approve'); const cPublish = can('content.publish'); const cAi = can('ai.use');
   return (
@@ -75,6 +87,26 @@ export function ContentCard({ item, onChange }: { item: ContentItem; onChange: (
           {cApprove && s === 'READY_FOR_APPROVAL' && <Field label={t('content.comment')}><Input value={comment} onChange={e => setComment(e.target.value)} /></Field>}
           {cPublish && ['APPROVED', 'PUBLISH_FAILED', 'SCHEDULED'].includes(s) && (
             <div className="flex flex-wrap items-end gap-2"><Field label={`${t('content.scheduleAt')} · ${item.page.timezone ?? ws.timezone}`}><Input type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} /></Field><Button variant="ghost" disabled={busy === 'schedule'} onClick={() => act('schedule', 'schedule', { scheduledLocal: when })}>{t('content.schedule')}</Button></div>
+          )}
+          {cEdit && editable && (
+            <div className="rounded-lg border border-slate-800 p-2">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-300">{t('media.title')}</span><button className="text-sky-400 hover:underline" onClick={loadMedia}>{t('media.attached')} ({item.mediaPaths.length}) ↓</button></div>
+              {assets && (
+                <div className="space-y-2">
+                  {caps && !caps.chromium && <p className="text-xs text-amber-300">{t('media.noChromium')}</p>}
+                  {assets.length > 0 && <div className="flex flex-wrap gap-2">{assets.map(a => <div key={a.id} className="relative"><img src={`/api/workspaces/${ws.id}/media/${a.id}/file`} alt="" className="h-28 w-28 rounded-lg object-cover" /><button onClick={() => removeAsset(a.id)} className="absolute right-1 top-1 rounded bg-slate-900/80 px-1 text-[10px] text-rose-300">{t('common.delete')}</button></div>)}</div>}
+                  <div className="grid gap-2 sm:grid-cols-4">
+                    <Field label={t('media.template')}><Select value={card.template} onChange={e => setCard(v => ({ ...v, template: e.target.value }))}>{(caps?.templates ?? ['quote', 'tips', 'hero', 'stat']).map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
+                    <Field label={t('media.theme')}><Select value={card.theme} onChange={e => setCard(v => ({ ...v, theme: e.target.value }))}>{(caps?.themes ?? ['default']).map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
+                    <div className="sm:col-span-2"><Field label={t('media.hint')}><Input value={card.hint} onChange={e => setCard(v => ({ ...v, hint: e.target.value }))} /></Field></div>
+                    <Field label="kicker"><Input value={card.kicker} onChange={e => setCard(v => ({ ...v, kicker: e.target.value }))} /></Field>
+                    <Field label={card.template === 'quote' ? 'quote' : 'title'}><Input value={card.template === 'quote' ? card.quote : card.title} onChange={e => setCard(v => card.template === 'quote' ? { ...v, quote: e.target.value } : { ...v, title: e.target.value })} /></Field>
+                    {card.template === 'tips' ? <div className="sm:col-span-2"><Field label="items (บรรทัดละข้อ)"><Textarea value={card.items} onChange={e => setCard(v => ({ ...v, items: e.target.value }))} className="min-h-16" /></Field></div> : <div className="sm:col-span-2"><Field label="sub"><Input value={card.sub} onChange={e => setCard(v => ({ ...v, sub: e.target.value }))} /></Field></div>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">{cAi && <Button disabled={busy === 'aicard' || !caps?.chromium} onClick={aiCard}>{busy === 'aicard' ? t('media.rendering') : t('media.aiCard')}</Button>}<Button variant="ghost" disabled={busy === 'card' || !caps?.chromium} onClick={renderCard}>{busy === 'card' ? t('media.rendering') : t('media.render')}</Button></div>
+                </div>
+              )}
+            </div>
           )}
           <div className="grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
             <div><div className="mb-1 font-semibold">{t('content.approvals')}</div>{item.approvals.length === 0 ? '—' : <ul>{item.approvals.map(a => <li key={a.id}>{a.status} · {a.requestedBy.name}{a.reviewedBy && ` → ${a.reviewedBy.name}`}{a.reviewerComment && ` "${a.reviewerComment}"`} · {fmt(a.reviewedAt ?? a.requestedAt)}</li>)}</ul>}</div>

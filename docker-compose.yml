@@ -40,6 +40,9 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/fbpm?schema=public
       REDIS_URL: redis://redis:6379
       API_PORT: 4000
+      MEDIA_DIR: /app/data/media
+    volumes:
+      - media-data:/app/data/media
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -58,6 +61,9 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/fbpm?schema=public
       REDIS_URL: redis://redis:6379
+      MEDIA_DIR: /app/data/media
+    volumes:
+      - media-data:/app/data/media   # publisher อ่านไฟล์ภาพที่ API สร้างไว้ (path เดียวกันทั้งสองคอนเทนเนอร์)
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -92,6 +98,7 @@ services:
       - api
 
 volumes:
+  media-data:
   pgdata:
   redisdata:
   caddydata:

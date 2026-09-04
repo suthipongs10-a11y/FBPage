@@ -224,6 +224,7 @@ model FacebookPage {
   content    ContentItem[]
   analyses   PageAnalysis[]
   plans      ContentPlan[]
+  reports    Report[]
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -470,6 +471,45 @@ model AiRoleConfig {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, role])
+}
+
+/// รายงานรายเดือน/ช่วง (§34, §64) — สร้างจากข้อมูลที่บันทึกไว้ ไม่รัน AI ซ้ำทุกครั้งที่เปิด
+model Report {
+  id          String   @id @default(cuid())
+  pageId      String
+  periodStart DateTime
+  periodEnd   DateTime
+  data        Json
+  provider    String?
+  model       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  page FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+}
+
+/// ไฟล์สื่อที่ระบบสร้าง/รับมา (§63) — เก็บในดิสก์ (MEDIA_DIR) หรือ S3 ภายหลัง
+model MediaAsset {
+  id          String   @id @default(cuid())
+  workspaceId String
+  contentId   String?
+  /// card | upload
+  kind        String
+  template    String?
+  theme       String?
+  path        String
+  mimeType    String
+  width       Int?
+  height      Int?
+  bytes       Int?
+  meta        Json?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([contentId])
 }
 
 /// ผลวิเคราะห์เพจโดย Analyst Agent (§19) — เก็บไว้ให้แดชบอร์ด/Strategist ใช้ต่อ

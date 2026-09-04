@@ -72,6 +72,17 @@ describe('FacebookService (mock Graph, §77)', () => {
     expect(calls[2]?.body['attached_media[1]']).toContain('media_fbid');
   });
 
+  it('multi-photo post with local files uploads multipart', async () => {
+    const { writeFileSync, rmSync } = await import('node:fs');
+    const f = `/tmp/fbpm-test-${Date.now()}.png`; writeFileSync(f, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    try {
+      const before = state.published.length;
+      const r = await svc().createPhotoPost('111', 'PAGE_111', { message: 'file', photos: [f] });
+      expect(r.externalId).toMatch(/^111_new/);
+      expect(state.published.slice(before)).toHaveLength(2);
+    } finally { rmSync(f, { force: true }); }
+  });
+
   it('validatePageToken never throws', async () => {
     expect(await svc().validatePageToken('111', 'PAGE_111')).toEqual({ valid: true });
     expect((await svc().validatePageToken('111', 'WRONG')).valid).toBe(false);

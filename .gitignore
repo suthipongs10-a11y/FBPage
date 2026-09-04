@@ -20,3 +20,6 @@ dist/
 .turbo/
 coverage/
 packages/database/generated/
+
+# media service output (§63)
+data/

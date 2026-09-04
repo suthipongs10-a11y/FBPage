@@ -12,8 +12,10 @@ import { FacebookModule } from './facebook/facebook.module';
 import { AiModule } from './ai/ai.module';
 import { JobsModule } from './jobs/jobs.module';
 import { ContentModule } from './content/content.module';
+import { ReportsModule } from './reports/reports.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, FacebookModule, AiModule, ContentModule, HealthModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, HealthModule],
 })
 export class AppModule {}

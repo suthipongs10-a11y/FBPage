@@ -36,7 +36,13 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
 
 **First Internal Milestone (§100) ครบทั้ง 15 ข้อ** — login → ลูกค้า → แบรนด์ → ข้อมูลแบรนด์ → เชื่อมเพจ → นำเข้าโพสต์ → analytics ที่ null-aware → AI วิเคราะห์ → แผน 7 วัน → ร่าง ≥3 → อนุมัติ → ตั้งเวลา/โพสต์อย่างปลอดภัย → เก็บ metric ภายหลัง → เห็นผลในหน้าเพจ → audit ครบ
 
-ยังไม่ทำ (ตามลำดับ §73): comments/leads (§23–24, §33) · รายงานรายเดือน (§34, §64) · webhooks (§14) · media service/ภาพประกอบในระบบใหม่ (§63 — ใช้ `make-card.mjs` ชุดเดิมไปก่อน) · notifications (§65) · hardening เพิ่มเติม
+- **Phase 7 — Reports + Media service + Overview** ✔ (§34, §36, §63, §64, §21)
+  รายงานรายเดือนต่อเพจจากข้อมูลที่บันทึกไว้ (โพสต์/metric/คอนเทนต์/ผลวิเคราะห์ล่าสุด) + สรุปผู้บริหารโดย AI (เลือกได้, เก็บผลไว้ไม่รันซ้ำ) + ข้อความพร้อมส่งลูกค้า + ข้อจำกัดข้อมูลระบุชัด
+  Media service: การ์ดภาพ 1080×1080 จากเทมเพลต quote/stat/tips/hero (พอร์ตจาก `make-card.mjs`) เรนเดอร์ด้วย Chromium เก็บใน `MEDIA_DIR` + Creative Director ให้ AI ออกแบบการ์ดจากโพสต์ → แนบเข้าคอนเทนต์ → publisher อัปโหลดให้ Facebook
+  Overview (§36): โพสต์เดือนนี้ · ตั้งเวลา · รออนุมัติ · โพสต์ไม่สำเร็จ · token มีปัญหา · ค่า AI + "ต้องดูแล" (รออนุมัติ, พรุ่งนี้ไม่มีโพสต์, งบ AI ≥85%, ยังไม่ตั้งค่า AI)
+  Docker: API image มี Chromium + ฟอนต์ไทย, volume `media-data` ใช้ร่วมกัน API/worker
+
+ยังไม่ทำ (ตามลำดับ §73): comments/leads (§23–24, §33 — token ปัจจุบันไม่มี pages_read_user_content/pages_manage_engagement จึงยังทดสอบกับเพจจริงไม่ได้) · webhooks (§14) · notifications (§65) · เชิญสมาชิกทางอีเมล/ลืมรหัสผ่าน · rate limit บน Redis
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
 
 ## โครงสร้าง

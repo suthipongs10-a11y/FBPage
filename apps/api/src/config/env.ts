@@ -26,6 +26,9 @@ export const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   LITELLM_BASE_URL: z.string().trim().optional().transform(v => v || undefined),
   LITELLM_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  /** Media service (§63): โฟลเดอร์เก็บไฟล์ + Chromium สำหรับเรนเดอร์การ์ดภาพ */
+  MEDIA_DIR: z.string().min(1).default('./data/media'),
+  CHROME_BIN: z.string().trim().optional().transform(v => v || undefined),
 });
 
 export type Env = z.infer<typeof envSchema>;

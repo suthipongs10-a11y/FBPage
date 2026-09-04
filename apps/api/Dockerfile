@@ -7,20 +7,29 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/database/package.json packages/database/
+COPY packages/facebook-core/package.json packages/facebook-core/
+COPY packages/ai-core/package.json packages/ai-core/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --filter @fbpm/api...
 
 FROM deps AS build
 COPY packages/shared packages/shared
 COPY packages/database packages/database
+COPY packages/facebook-core packages/facebook-core
+COPY packages/ai-core packages/ai-core
 COPY apps/api apps/api
 RUN pnpm --filter @fbpm/shared build \
  && pnpm --filter @fbpm/database build \
+ && pnpm --filter @fbpm/ai-core build \
+ && pnpm --filter @fbpm/facebook-core build \
  && pnpm --filter @fbpm/api build \
  && pnpm --filter @fbpm/api... deploy --prod /out
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
+# Media service (§63): Chromium + ฟอนต์ไทยสำหรับเรนเดอร์การ์ดภาพ
+RUN apk add --no-cache chromium font-noto-thai ttf-freefont && mkdir -p /app/data/media && chown -R node:node /app
+ENV CHROME_BIN=/usr/bin/chromium-browser MEDIA_DIR=/app/data/media
 WORKDIR /app
 COPY --from=build /out .
 COPY --from=build /repo/apps/api/dist ./dist

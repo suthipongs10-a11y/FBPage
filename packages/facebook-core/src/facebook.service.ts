@@ -120,9 +120,9 @@ export class FacebookService {
     if (input.photos.length > 10) throw new Error('แนบรูปได้สูงสุด 10 ใบ');
     const media: string[] = [];
     for (const ph of input.photos) {
-      const r = 'url' in (ph as object)
-        ? await this.graph.call<{ id: string }>(`${pageId}/photos`, { token: pageToken, method: 'POST', params: { url: (ph as { url: string }).url, published: false } })
-        : await this.graph.call<{ id: string }>(`${pageId}/photos`, { token: pageToken, method: 'POST', params: { published: false }, files: { source: ph as string | { data: Buffer; filename: string } } });
+      const r = typeof ph === 'object' && 'url' in ph
+        ? await this.graph.call<{ id: string }>(`${pageId}/photos`, { token: pageToken, method: 'POST', params: { url: ph.url, published: false } })
+        : await this.graph.call<{ id: string }>(`${pageId}/photos`, { token: pageToken, method: 'POST', params: { published: false }, files: { source: ph } });
       media.push(r.id);
     }
     const params: Record<string, unknown> = {};

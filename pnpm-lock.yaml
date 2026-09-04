@@ -87,9 +87,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@fbpm/ai-core':
-        specifier: workspace:*
-        version: link:../../packages/ai-core
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared

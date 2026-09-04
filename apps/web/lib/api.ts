@@ -78,3 +78,23 @@ export interface ContentItem {
 export interface ContentRevisionRow { version: number; caption: string | null; editedBy: string | null; reason: string | null; createdAt: string }
 export interface PublishOutcome { status: 'PUBLISHED' | 'SKIPPED' | 'FAILED'; externalId?: string; permalink?: string; reason?: string; error?: string; duplicateRecovered?: boolean }
 export interface PlanResult { id: string; plan: { objective: string; contentPillars: string[]; recommendedMix: Record<string, number>; rationale: string; dataLimitations: string[] }; items: ContentItem[]; model: string; costUsd: number | null }
+
+// ---------- Reports + Media (Phase 7) ----------
+export interface ReportPost { facebookPostId: string; publishedAt: string | null; mediaType: string | null; message: string; source: string; permalink: string | null; shares: number | null; reactions: number | null; comments: number | null; pillar: string | null }
+export interface ReportData {
+  page: { id: string; name: string; category: string | null; followers: number | null; completeness: number; missing: string[] };
+  period: { start: string; end: string; label: string; days: number };
+  metricsAvailable: Record<string, boolean>; dataLimitations: string[];
+  publishing: { posts: number; postsPrevPeriod: number; perWeek: number; activeDays: number; longestGapDays: number; bySystem: number; byType: Record<string, number> };
+  engagement: { sharesTotal: number | null; sharesAvg: number | null };
+  topPosts: ReportPost[]; bottomPosts: ReportPost[]; pillars: { pillar: string; posts: number; shares: number | null }[];
+  content: { created: number; approved: number; rejected: number; published: number; scheduledNext: number; aiDrafted: number };
+  ai: { tasks: number; costUsd: number };
+  analysis: { createdAt: string; recommendations: { title?: string; action?: string; confidence?: string }[]; patterns: unknown[]; contentPillars: string[] } | null;
+  summary: { executiveSummary: string; whatHappened: string[]; whyItHappened: string[]; repeat: string[]; stop: string[]; experiments: string[]; nextMonthFocus: string[] } | null;
+  text: string;
+}
+export interface ReportRow { id: string; periodStart: string; periodEnd: string; label: string; posts: number; hasSummary: boolean; provider: string | null; model: string | null; createdAt: string }
+export interface ReportDetail { id: string; pageId: string; periodStart: string; periodEnd: string; provider: string | null; model: string | null; createdAt: string; data: ReportData }
+export interface MediaAsset { id: string; contentId: string | null; kind: string; template: string | null; theme: string | null; path: string; mimeType: string; width: number | null; height: number | null; bytes: number | null; createdAt: string }
+export interface MediaCapabilities { templates: string[]; themes: string[]; size: number; chromium: boolean }

@@ -42,7 +42,8 @@ export class ContentController {
   /** ส่งขออนุมัติ — รัน Reviewer ก่อนถ้ามี AI */
   @Post('content/:id/submit') @HttpCode(200) @RequirePermission('content.edit')
   async submit(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) {
-    const review = await this.agents.review(t.workspaceId, u.id, id, rid);
+    // Reviewer ล้ม (AI ล่ม/งบหมด) ต้องไม่ล็อกทีมไว้ — บันทึกว่าข้ามการตรวจแล้วให้คนตัดสินต่อ
+    const review = await this.agents.review(t.workspaceId, u.id, id, rid).catch((e: unknown) => ({ result: 'SKIPPED', issues: [], summary: `ข้ามการตรวจโดย AI: ${e instanceof Error ? (e as Error & { response?: { message?: string } }).response?.message ?? e.message : String(e)}` }));
     return this.content.submit(t.workspaceId, u.id, id, rid, review ?? undefined);
   }
 

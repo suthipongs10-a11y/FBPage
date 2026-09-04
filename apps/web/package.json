@@ -11,7 +11,6 @@
     "test": "echo \"(no tests yet — Phase 1 shell only)\""
   },
   "dependencies": {
-    "@fbpm/ai-core": "workspace:*",
     "@fbpm/shared": "workspace:*",
     "next": "16.3.4",
     "react": "19.2.8",
