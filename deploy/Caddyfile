@@ -1,0 +1,20 @@
+# Reverse proxy + HTTPS อัตโนมัติ (Let's Encrypt) — ตั้ง DOMAIN ใน .env
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API อยู่หลัง /api/* — ตัด prefix ออกก่อนส่งต่อ
+	handle_path /api/* {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

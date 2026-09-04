@@ -1,0 +1,399 @@
+// Facebook AI Page Manager — data model ตาม AGENTS.md §8–10, §28–29, §48–50
+// หลัก: multi-tenant ตั้งแต่วันแรก · metric เก็บเป็น JSON (Meta เปลี่ยนชื่อ metric ได้) · token เข้ารหัสก่อนเก็บ
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity (§9) ----------
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships WorkspaceMember[]
+  connections FacebookConnection[]
+  auditLogs   AuditLog[]
+  approvalsRequested ApprovalRequest[] @relation("ApprovalRequestedBy")
+  approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewedBy")
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("internal")
+  status    String   @default("ACTIVE")
+  timezone  String   @default("Asia/Bangkok") // ค่าเริ่มต้นเท่านั้น — เพจ/ลูกค้า override ได้ (§87)
+  /// สวิตช์ฉุกเฉิน — หยุดอัตโนมัติทั้ง workspace โดยไม่ต้องพึ่ง AI (§92)
+  automationPaused Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members     WorkspaceMember[]
+  clients     Client[]
+  connections FacebookConnection[]
+  approvals   ApprovalRequest[]
+  auditLogs   AuditLog[]
+  aiTaskLogs  AiTaskLog[]
+  externalOps ExternalOperation[]
+}
+
+enum WorkspaceRole {
+  owner
+  admin
+  manager
+  editor
+  reviewer
+  analyst
+  viewer
+}
+
+model WorkspaceMember {
+  workspaceId String
+  userId      String
+  role        WorkspaceRole
+  /// สิทธิ์เพิ่ม/ลดจากค่าเริ่มต้นของบทบาท (ตรวจด้วย permission ไม่ใช่ชื่อบทบาท §58)
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+}
+
+// ---------- Client / Brand (§9) ----------
+model Client {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  notes       String?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brands    Brand[]
+
+  @@index([workspaceId])
+}
+
+model Brand {
+  id                  String   @id @default(cuid())
+  clientId            String
+  name                String
+  description         String?
+  industry            String?
+  targetAudience      String?
+  toneOfVoice         String?
+  preferredLanguage   String   @default("th")
+  serviceArea         String?
+  primaryCTA          String?
+  website             String?
+  knowledgeBaseStatus String   @default("EMPTY")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  client    Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  knowledge BrandKnowledgeItem[]
+  pages     FacebookPage[]
+
+  @@index([clientId])
+}
+
+model BrandKnowledgeItem {
+  id       String  @id @default(cuid())
+  brandId  String
+  /// business_info | product | service | faq | price | location | policy | brand_voice | prohibited_claim | customer_persona | past_campaign
+  type     String
+  title    String
+  content  String
+  source   String?
+  metadata Json?
+  /// embedding เก็บเป็น float[] ก่อน — เปลี่ยนเป็น pgvector เมื่อต้องค้นหาเชิงความหมาย (§6)
+  embedding Float[] @default([])
+  active   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, type])
+}
+
+// ---------- Facebook (§10, §13) ----------
+model FacebookConnection {
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  userId               String
+  providerUserId       String
+  /// เข้ารหัสด้วย AUTH_SECRET ก่อนเก็บ — ห้าม log/แสดง (§13)
+  encryptedAccessToken String
+  tokenExpiresAt       DateTime?
+  scopes               String[]  @default([])
+  status               String    @default("ACTIVE")
+  lastValidatedAt      DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id])
+  pages     FacebookPage[]
+
+  @@unique([workspaceId, providerUserId])
+}
+
+enum AutomationLevel {
+  READ_ONLY
+  AUTO_DRAFT
+  APPROVAL_REQUIRED
+  FULL_AUTO
+}
+
+model FacebookPage {
+  id                       String    @id @default(cuid())
+  brandId                  String
+  connectionId             String
+  facebookPageId           String
+  name                     String
+  username                 String?
+  category                 String?
+  pictureUrl               String?
+  pageAccessTokenEncrypted String
+  tokenStatus              String    @default("VALID")
+  /// สิทธิ์บนเพจจาก me/accounts.tasks เช่น CREATE_CONTENT, MANAGE — ไม่มี MANAGE = แก้ตั้งค่าเพจไม่ได้ (ADR-001)
+  tasks                    String[]  @default([])
+  automationLevel          AutomationLevel @default(APPROVAL_REQUIRED)
+  /// สวิตช์ฉุกเฉินระดับเพจ (§92)
+  publishingPaused         Boolean   @default(false)
+  timezone                 String?
+  connectedAt              DateTime  @default(now())
+  lastSyncedAt             DateTime?
+  disconnectedAt           DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection FacebookConnection @relation(fields: [connectionId], references: [id])
+  posts      FacebookPost[]
+  content    ContentItem[]
+
+  @@unique([brandId, facebookPageId])
+  @@index([connectionId])
+}
+
+model FacebookPost {
+  id             String    @id @default(cuid())
+  pageId         String
+  facebookPostId String
+  message        String?
+  mediaType      String?
+  permalink      String?
+  publishedAt    DateTime?
+  /// imported | app
+  source         String    @default("imported")
+  rawData        Json?
+  syncStatus     String    @default("OK")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  page      FacebookPage         @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  snapshots PostMetricSnapshot[]
+  content   ContentItem?
+
+  @@unique([pageId, facebookPostId])
+  @@index([pageId, publishedAt])
+}
+
+/// เก็บ metric แบบยืดหยุ่น — ค่าที่อ่านไม่ได้ต้องเป็น null ไม่ใช่ 0 (§10, §60, ADR-001)
+model PostMetricSnapshot {
+  id         String   @id @default(cuid())
+  postId     String
+  capturedAt DateTime @default(now())
+  /// { metric: { value: number|null, sourceMetric, period? } }
+  metrics    Json
+  apiVersion String
+
+  post FacebookPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, capturedAt])
+}
+
+// ---------- Content (§28, §38) ----------
+enum ContentStatus {
+  IDEA
+  PLANNED
+  DRAFT
+  AI_REVIEW
+  NEEDS_REVISION
+  READY_FOR_APPROVAL
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  ANALYZED
+  REJECTED
+  PUBLISH_FAILED
+  CANCELLED
+}
+
+model ContentItem {
+  id             String        @id @default(cuid())
+  pageId         String
+  status         ContentStatus @default(DRAFT)
+  contentType    String        @default("post")
+  title          String?
+  caption        String?
+  cta            String?
+  hashtags       String[]      @default([])
+  mediaBrief     String?
+  mediaPaths     String[]      @default([])
+  objective      String?
+  contentPillar  String?
+  /// เวลาที่ตั้งใจในเขตเวลาของเพจ + เขตเวลา + เวลาที่แปลงเป็น UTC แล้ว (§47)
+  scheduledLocal String?
+  scheduledTz    String?
+  scheduledAt    DateTime?
+  retryCount     Int           @default(0)
+  createdById    String?
+  aiProvider     String?
+  aiModel        String?
+  promptVersion  String?
+  editedByHuman  Boolean       @default(false)
+  publishedPostId String?      @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  page          FacebookPage      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  publishedPost FacebookPost?     @relation(fields: [publishedPostId], references: [id])
+  revisions     ContentRevision[]
+  approvals     ApprovalRequest[]
+
+  @@index([pageId, status])
+  @@index([scheduledAt])
+}
+
+/// ประวัติการแก้ไข AI draft → มนุษย์แก้ → เวอร์ชันที่อนุมัติ (§55)
+model ContentRevision {
+  id        String   @id @default(cuid())
+  contentId String
+  version   Int
+  caption   String?
+  editedBy  String?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, version])
+}
+
+// ---------- Approval (§29) ----------
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  EXPIRED
+}
+
+model ApprovalRequest {
+  id              String         @id @default(cuid())
+  workspaceId     String
+  resourceType    String
+  resourceId      String
+  contentId       String?
+  requestedById   String
+  requestedAt     DateTime       @default(now())
+  status          ApprovalStatus @default(PENDING)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewerComment String?
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  content     ContentItem? @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  requestedBy User         @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?        @relation("ApprovalReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([workspaceId, status])
+}
+
+// ---------- Idempotency (§48) ----------
+model ExternalOperation {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  provider       String
+  operationType  String
+  idempotencyKey String   @unique
+  requestHash    String
+  externalId     String?
+  status         String   @default("PENDING")
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, operationType])
+}
+
+// ---------- Audit (§49) ----------
+model AuditLog {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  before       Json?
+  after        Json?
+  requestId    String
+  createdAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@index([resourceType, resourceId])
+}
+
+// ---------- AI task log (§50, §51) ----------
+model AiTaskLog {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  taskType      String
+  role          String
+  provider      String
+  model         String
+  promptVersion String?
+  latencyMs     Int
+  inputTokens   Int?
+  outputTokens  Int?
+  estimatedCost Decimal? @db.Decimal(12, 6)
+  success       Boolean
+  retry         Int      @default(0)
+  resourceType  String?
+  resourceId    String?
+  requestId     String
+  error         String?
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([provider, model])
+}

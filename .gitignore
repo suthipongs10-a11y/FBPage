@@ -11,3 +11,12 @@ node_modules/
 config.json
 post/img/upload-*
 post/img/card-*
+
+# monorepo (AGENTS.md stack)
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+.turbo/
+coverage/
+packages/database/generated/

@@ -1,0 +1,38 @@
+{
+  "name": "fb-ai-page-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Facebook AI Page Manager — multi-tenant AI marketing manager for Facebook Pages (see AGENTS.md)",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/**' build && pnpm -r --filter './apps/**' --filter './workers/**' build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r test",
+    "dev:api": "pnpm --filter @fbpm/api dev",
+    "dev:web": "pnpm --filter @fbpm/web dev",
+    "dev:worker": "pnpm --filter @fbpm/worker-scheduler dev",
+    "db:generate": "pnpm --filter @fbpm/database generate",
+    "db:migrate": "pnpm --filter @fbpm/database migrate:dev",
+    "db:deploy": "pnpm --filter @fbpm/database migrate:deploy"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@types/node": "22.20.1",
+    "eslint": "^9.30.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "msgpackr-extract"
+    ]
+  }
+}

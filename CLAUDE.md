@@ -1,5 +1,21 @@
 # fb-page-ops — จัดการข้อมูลเพจ Facebook ของลูกค้า
 
+> **คู่มือหลักของโปรเจกต์คือ [`AGENTS.md`](AGENTS.md)** — อ่านทั้งไฟล์ก่อนแก้โค้ด production
+> การเปลี่ยนผ่านจากเครื่องมือชุดเดิม (ด้านล่าง) ไปสู่สถาปัตยกรรม SaaS อยู่ใน [`docs/architecture/ADR-001`](docs/architecture/ADR-001-migration-to-agents-md-stack.md)
+>
+> **ระบบใหม่ (monorepo — Phase 1 เสร็จแล้ว)**
+> ```
+> pnpm install && pnpm db:migrate && pnpm build
+> pnpm typecheck && pnpm lint && pnpm test          # Definition of Done §76
+> pnpm dev:api (:4000 /health /docs) · pnpm dev:web (:3000) · pnpm dev:worker
+> node test/phase1-smoke.mjs                        # ต้องเปิด api/web/postgres/redis ก่อน
+> ```
+> ไฟล์ตัวอย่างค่าตั้งชื่อ `env.example` (ไม่มีจุดนำหน้า เพราะเครื่องมือในทีมห้ามแตะ `.env*`) — `cp env.example .env`
+> ลำดับงานถัดไปตาม §73: Auth → Workspace/tenant → Client/Brand → Facebook OAuth → Sync → AI Gateway
+>
+> ---
+> **เครื่องมือชุดเดิม (ยังใช้ทำงานลูกค้าได้ระหว่างเปลี่ยนผ่าน):**
+
 โปรเจกต์นี้ใช้ `fb-pages.mjs` (Node 18+, ไม่มี dependency) คุยกับ Meta Pages API
 เพจทั้งหมดเป็นของลูกค้าที่เชิญเราเป็นแอดมิน — token ที่ใช้คือของบัญชีเรา
 
