@@ -28,7 +28,18 @@ node fb-pages.mjs post <page-id> post/<file>.json --dry        ดูข้อ�
 node fb-pages.mjs post <page-id> post/<file>.json              โพสต์จริง
 node fb-pages.mjs report <page-id> [--days 30] [--json]        สรุปผลรายเพจ
 node make-card.mjs <template> card/<file>.json out.png         สร้างภาพจากเทมเพลต
+node server.mjs                                               เปิดแดชบอร์ด (PWA) ที่ http://127.0.0.1:8787
 ```
+
+## แดชบอร์ด (server.mjs + web/)
+- `server.mjs` ผูกกับ 127.0.0.1 เท่านั้น · ทุก `/api` ต้องมี header `x-app-token` ที่สุ่มใหม่ทุกครั้งที่เปิด
+- token เพจ / API key ของ AI / token โฆษณา อยู่ฝั่งเซิร์ฟเวอร์เท่านั้น **ไม่เคยส่งไปหน้าเว็บ** (มี test ตรวจว่าไม่หลุด)
+- `config.json` เก็บ AI key + token โฆษณา (อยู่ใน .gitignore, chmod 600) — **ห้ามเปิดอ่าน/commit**
+- `lib/graph.mjs` แยกจาก `fb-pages.mjs` เพื่อไม่แตะ CLI ที่ทดสอบแล้ว (logic ซ้ำกันเล็กน้อยโดยตั้งใจ)
+- `lib/ai.mjs` เรียก AI ผ่าน HTTP ล้วน รองรับ anthropic / openai / gemini / compatible (Groq, OpenRouter, Ollama ฯลฯ)
+- AI มีเครื่องมืออ่านข้อมูลเต็มที่ แต่ **โพสต์จริงไม่ได้** — ใช้ `prepare_post` แล้วผู้ใช้ต้องกดยืนยันในหน้าเว็บ
+- ข้อมูลโฆษณาใช้ Marketing API ต้องมี token ที่มี `ads_read` (token เพจปกติไม่มี) ตั้งในหน้าตั้งค่า
+- ทดสอบ: `node test/smoke.mjs` และ `node test/mock-ai.mjs` + `node test/smoke-ai.mjs` (ต้องเปิด server ก่อน) — เช็ค auth, token ไม่หลุด, traversal, dry run, card, ลูป AI
 อ้างเพจด้วย page-id (เลข) หรือชื่อเพจตรงตัวก็ได้
 
 ## Workflow เมื่อได้รับคำสั่ง "ตั้งค่าเพจ X"
@@ -46,7 +57,7 @@ node make-card.mjs <template> card/<file>.json out.png         สร้าง�
 - **ห้าม** ยิง Graph API เองด้วย curl/fetch พร้อม token ใน command line — ใช้สคริปต์เท่านั้น
 - **ห้าม** `apply` หรือ `post` จริงโดยไม่ผ่าน `--dry` และการยืนยันจากผู้ใช้ก่อน
 - **ห้าม** โพสต์เนื้อหา/รูปที่คัดลอกมาจากเพจอื่นโดยไม่ได้รับอนุญาต
-- **ห้าม** commit `.env`, `pages.json`, `.claude/settings.local.json`
+- **ห้าม** commit `.env`, `pages.json`, `config.json`, `.claude/settings.local.json`
 - ถ้าเจอ error เกี่ยวกับ token หมดอายุ/ไม่มีสิทธิ์ → บอกผู้ใช้ให้ generate + extend token ใหม่แล้วอัปเดต USER_TOKEN ห้ามพยายามแก้เอง
 
 ## รูปแบบข้อมูลใน setup json

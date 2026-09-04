@@ -6,3 +6,8 @@ pages.json
 
 node_modules/
 .DS_Store
+
+# แดชบอร์ด — เก็บ API key ของ AI และ token โฆษณา
+config.json
+post/img/upload-*
+post/img/card-*
