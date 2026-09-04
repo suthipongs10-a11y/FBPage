@@ -121,3 +121,14 @@ export interface ToolContext {
   pageId?: string;
   requestId: string;
 }
+
+// ---------- Background job queues (§46) — ใช้ชื่อเดียวกันทั้ง API (ผู้ส่ง) และ worker (ผู้รับ) ----------
+export const QUEUES = {
+  facebookSync: 'facebook-sync', facebookPublish: 'facebook-publish', facebookWebhook: 'facebook-webhook',
+  analytics: 'analytics', ai: 'ai', media: 'media', reports: 'reports', maintenance: 'maintenance',
+} as const;
+export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
+/** ชื่องานในคิว — jobId ต้องกำหนดจากทรัพยากรเพื่อกันงานซ้ำ (§48) */
+export const JOBS = { publishContent: 'publish-content', syncPage: 'sync-page', syncAllPages: 'sync-all-pages', collectPostMetrics: 'collect-post-metrics' } as const;
+/** BullMQ ห้ามมี ':' ใน jobId */
+export const publishJobId = (contentId: string) => `publish-${contentId}`;

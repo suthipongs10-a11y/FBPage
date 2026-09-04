@@ -29,6 +29,8 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/fbpm REDIS_URL=redis:
 # end-to-end ผ่านหน้าเว็บ (เปิด api + web ก่อน)
 #   node test/phase3-smoke.mjs  — เชื่อมเพจจริงแบบอ่านอย่างเดียวด้วย USER_TOKEN ใน env (ตอนจบตัดการเชื่อมต่อ+ลบ token ให้เอง)
 #   node test/phase5-smoke.mjs  — AI gateway กับ mock AI ที่สคริปต์เปิดเอง (ไม่ใช้ key จริง)
+#   node test/phase6-smoke.mjs  — content loop (ร่าง→อนุมัติ→ตั้งเวลา→โพสต์) กับ mock Graph: เปิด API ด้วย META_GRAPH_BASE_URL=http://127.0.0.1:4998 ก่อน
+# worker (pnpm dev:worker) ต้องได้ AUTH_SECRET ตัวเดียวกับ API เพื่อถอดรหัส page token; งานตั้งเวลาโพสต์จะไม่ยิงถ้า worker ไม่รัน
 node test/phase1-smoke.mjs && node test/phase2-smoke.mjs
 ```
 

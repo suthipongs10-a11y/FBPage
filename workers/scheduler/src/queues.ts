@@ -1,15 +1,5 @@
-/** ชื่อคิวตาม AGENTS.md §46 — ใช้ค่าคงที่นี้ทั้งฝั่งผู้ส่ง (API) และผู้รับ (worker) */
-export const QUEUES = {
-  facebookSync: 'facebook-sync',
-  facebookPublish: 'facebook-publish',
-  facebookWebhook: 'facebook-webhook',
-  analytics: 'analytics',
-  ai: 'ai',
-  media: 'media',
-  reports: 'reports',
-  maintenance: 'maintenance',
-} as const;
-export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
+/** ชื่อคิวตาม AGENTS.md §46 — นิยามที่ @fbpm/shared เพื่อให้ API (ผู้ส่ง) และ worker (ผู้รับ) ใช้ค่าเดียวกัน */
+export { QUEUES, JOBS, publishJobId, type QueueName } from '@fbpm/shared';
 
 /** แปลง REDIS_URL เป็น connection options ของ BullMQ */
 export function redisConnectionFromUrl(url: string): { host: string; port: number; password?: string; db?: number; tls?: object } {

@@ -26,7 +26,17 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   หน้าเว็บ: "โมเดล AI" (key, ทดสอบ, บทบาท, งบ, งานล่าสุด) · "AI Command" (เลือกบริบท → แชท → เห็นขั้นตอน/ค่าใช้จ่าย) · ปุ่ม "วิเคราะห์ด้วย AI" ในหน้าเพจ
   ทดสอบ: unit 11 (ai-core) + integration 9 (mock AI + mock Graph) + `test/phase5-smoke.mjs`
 
-ยังไม่ทำ (ตามลำดับ §73): Strategist/Content agents + content domain + approval + scheduler + publisher (ขั้น 6+) · comments/leads · reports · webhooks
+- **Phase 6 — Content loop: Strategist → Content → Reviewer → Approval → Scheduler → Publisher → Metric collector** ✔ (§18, §20, §25, §28, §29, §31, §46–§48, §55, §92)
+  `apps/api/src/content`: ContentItem state machine (§28 ห้ามข้าม) · แก้โดยคนเก็บ revision ทุกครั้ง แก้หลังอนุมัติต้องขออนุมัติใหม่ · ApprovalRequest ทุกการตัดสิน (audit) · ตั้งเวลาเก็บ local + timezone + UTC แล้ว enqueue BullMQ (jobId = content) · "โพสต์ตอนนี้"
+  `packages/facebook-core/publisher.ts`: เผยแพร่กันซ้ำด้วย ExternalOperation (§48 — retry หลังเครือข่ายหลุดจะหาโพสต์เดิมก่อน) · ตรวจ kill switch ทุกครั้ง (workspace pause, page pause, token, สิทธิ์ CREATE_CONTENT)
+  `workers/scheduler`: processor จริงสำหรับ facebook-publish / facebook-sync (ซิงก์ทุกเพจทุก 6 ชม.) / analytics (เก็บ metric โพสต์หลัง 24/72 ชม.)
+  Agents: Strategist → `ContentPlan` + รายการ PLANNED · Content Creator → ร่างพร้อม `missingInfo` (NEEDS_HUMAN_INPUT §54 ไม่เดาราคา/เบอร์) · Reviewer → PASS / NEEDS_REVISION / BLOCKED ก่อนเข้าคิวอนุมัติ (ข้ามอัตโนมัติถ้ายังไม่ตั้งค่า AI)
+  หน้าเว็บ: "คอนเทนต์" (กลุ่มตามสถานะ, สร้าง/ให้ AI เขียน/ส่งตรวจ/อนุมัติ/ตั้งเวลา/โพสต์) · "ปฏิทิน" รายสัปดาห์ · "วางแผนคอนเทนต์ด้วย AI" ในหน้าเพจ
+  ทดสอบ: integration 10 (API) + 3 (worker) กับ mock Graph/mock AI + `test/phase6-smoke.mjs`
+
+**First Internal Milestone (§100) ครบทั้ง 15 ข้อ** — login → ลูกค้า → แบรนด์ → ข้อมูลแบรนด์ → เชื่อมเพจ → นำเข้าโพสต์ → analytics ที่ null-aware → AI วิเคราะห์ → แผน 7 วัน → ร่าง ≥3 → อนุมัติ → ตั้งเวลา/โพสต์อย่างปลอดภัย → เก็บ metric ภายหลัง → เห็นผลในหน้าเพจ → audit ครบ
+
+ยังไม่ทำ (ตามลำดับ §73): comments/leads (§23–24, §33) · รายงานรายเดือน (§34, §64) · webhooks (§14) · media service/ภาพประกอบในระบบใหม่ (§63 — ใช้ `make-card.mjs` ชุดเดิมไปก่อน) · notifications (§65) · hardening เพิ่มเติม
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
 
 ## โครงสร้าง

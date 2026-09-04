@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fbpm/database": "workspace:*",
+    "@fbpm/facebook-core": "workspace:*",
     "@fbpm/shared": "workspace:*",
     "bullmq": "6.3.4"
   },

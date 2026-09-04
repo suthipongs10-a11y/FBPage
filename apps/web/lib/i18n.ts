@@ -81,6 +81,18 @@ const th = {
   'analysis.summary': 'สรุป', 'analysis.limitations': 'ข้อจำกัดของข้อมูล', 'analysis.patterns': 'รูปแบบที่พบ', 'analysis.recommendations': 'คำแนะนำ', 'analysis.pillars': 'เสาหลักคอนเทนต์', 'analysis.topPosts': 'โพสต์เด่น',
   'analysis.confidence': 'ความมั่นใจ', 'analysis.impact': 'ผลกระทบ', 'analysis.by': 'โดย', 'analysis.days': 'ย้อนหลัง (วัน)',
   'conf.high': 'สูง', 'conf.medium': 'กลาง', 'conf.low': 'ต่ำ',
+  'content.title': 'คอนเทนต์', 'content.subtitle': 'ร่าง → ตรวจ → อนุมัติ → ตั้งเวลา → เผยแพร่ — ทุกขั้นบันทึกใน audit',
+  'content.new': 'สร้างร่างใหม่', 'content.filterPage': 'เพจ', 'content.filterStatus': 'สถานะ', 'content.all': 'ทั้งหมด',
+  'content.caption': 'ข้อความโพสต์', 'content.titleField': 'หัวข้อ (ภายใน)', 'content.cta': 'CTA', 'content.hashtags': 'แฮชแท็ก (คั่นด้วยเว้นวรรค)', 'content.mediaBrief': 'บรีฟภาพ', 'content.mediaPaths': 'รูป (URL หรือ path ในเครื่องเซิร์ฟเวอร์ คั่นด้วยบรรทัดใหม่)', 'content.pillar': 'เสาหลัก', 'content.objective': 'เป้าหมาย',
+  'content.generate': 'ให้ AI เขียนร่าง', 'content.generateBulk': 'ให้ AI สร้างร่างจาก brief', 'content.brief': 'brief', 'content.count': 'จำนวน',
+  'content.submit': 'ส่งขออนุมัติ (AI ตรวจก่อน)', 'content.approve': 'อนุมัติ', 'content.reject': 'ไม่อนุมัติ', 'content.changes': 'ขอแก้ไข', 'content.reopen': 'กลับไปแก้', 'content.cancel': 'ยกเลิก',
+  'content.schedule': 'ตั้งเวลา', 'content.scheduleAt': 'เวลาโพสต์ (เวลาท้องถิ่นของเพจ)', 'content.publishNow': 'โพสต์ตอนนี้', 'content.confirmPublish': 'โพสต์ลงเพจจริงตอนนี้?', 'content.confirmCancel': 'ยกเลิกคอนเทนต์นี้?',
+  'content.review': 'ผลตรวจโดย AI', 'content.missingInfo': 'ข้อมูลที่ AI ต้องการจากคุณ (ห้ามเดา)', 'content.revisions': 'ประวัติแก้ไข', 'content.approvals': 'ประวัติอนุมัติ', 'content.comment': 'ความเห็น',
+  'content.published': 'เผยแพร่แล้ว', 'content.openPost': 'เปิดโพสต์', 'content.lastError': 'ข้อผิดพลาดล่าสุด', 'content.byAi': 'AI', 'content.byHuman': 'แก้โดยคน', 'content.empty': 'ยังไม่มีคอนเทนต์ — สร้างร่างเอง หรือให้ AI วางแผนจากหน้าเพจ',
+  'content.pending': 'รออนุมัติ', 'content.queue': 'คิวอนุมัติ',
+  'cs.IDEA': 'ไอเดีย', 'cs.PLANNED': 'วางแผนแล้ว', 'cs.DRAFT': 'ร่าง', 'cs.AI_REVIEW': 'AI ตรวจ', 'cs.NEEDS_REVISION': 'ต้องแก้', 'cs.READY_FOR_APPROVAL': 'รออนุมัติ', 'cs.APPROVED': 'อนุมัติแล้ว', 'cs.SCHEDULED': 'ตั้งเวลาแล้ว', 'cs.PUBLISHING': 'กำลังโพสต์', 'cs.PUBLISHED': 'เผยแพร่แล้ว', 'cs.ANALYZED': 'วิเคราะห์แล้ว', 'cs.REJECTED': 'ไม่อนุมัติ', 'cs.PUBLISH_FAILED': 'โพสต์ไม่สำเร็จ', 'cs.CANCELLED': 'ยกเลิก',
+  'calendar.title': 'ปฏิทิน', 'calendar.subtitle': 'โพสต์ที่ตั้งเวลาและเผยแพร่แล้ว (เวลาท้องถิ่นของเพจ)', 'calendar.prev': 'สัปดาห์ก่อน', 'calendar.next': 'สัปดาห์ถัดไป', 'calendar.today': 'สัปดาห์นี้', 'calendar.empty': 'ไม่มีโพสต์ในสัปดาห์นี้',
+  'plan.title': 'วางแผนคอนเทนต์ด้วย AI', 'plan.run': 'วางแผน', 'plan.days': 'จำนวนวัน', 'plan.perWeek': 'โพสต์/สัปดาห์', 'plan.objective': 'เป้าหมาย (ไม่บังคับ)', 'plan.done': 'สร้างแผนแล้ว — ดูในหน้าคอนเทนต์', 'plan.hint': 'Strategist จะสร้างรายการ "วางแผนแล้ว" ให้ แล้วกด "ให้ AI เขียนร่าง" ทีละรายการในหน้าคอนเทนต์',
 } as const;
 
 const en: Record<keyof typeof th, string> = {
@@ -156,6 +168,18 @@ const en: Record<keyof typeof th, string> = {
   'analysis.summary': 'Summary', 'analysis.limitations': 'Data limitations', 'analysis.patterns': 'Patterns', 'analysis.recommendations': 'Recommendations', 'analysis.pillars': 'Content pillars', 'analysis.topPosts': 'Top posts',
   'analysis.confidence': 'Confidence', 'analysis.impact': 'Impact', 'analysis.by': 'by', 'analysis.days': 'Lookback (days)',
   'conf.high': 'high', 'conf.medium': 'medium', 'conf.low': 'low',
+  'content.title': 'Content', 'content.subtitle': 'Draft → review → approve → schedule → publish — every step audited',
+  'content.new': 'New draft', 'content.filterPage': 'Page', 'content.filterStatus': 'Status', 'content.all': 'All',
+  'content.caption': 'Caption', 'content.titleField': 'Internal title', 'content.cta': 'CTA', 'content.hashtags': 'Hashtags (space separated)', 'content.mediaBrief': 'Media brief', 'content.mediaPaths': 'Images (URL or server path, one per line)', 'content.pillar': 'Pillar', 'content.objective': 'Objective',
+  'content.generate': 'Let AI write', 'content.generateBulk': 'Generate drafts from brief', 'content.brief': 'brief', 'content.count': 'Count',
+  'content.submit': 'Submit for approval (AI review first)', 'content.approve': 'Approve', 'content.reject': 'Reject', 'content.changes': 'Request changes', 'content.reopen': 'Back to edit', 'content.cancel': 'Cancel',
+  'content.schedule': 'Schedule', 'content.scheduleAt': 'Publish time (page local time)', 'content.publishNow': 'Publish now', 'content.confirmPublish': 'Publish to the real page now?', 'content.confirmCancel': 'Cancel this content?',
+  'content.review': 'AI review', 'content.missingInfo': 'Information the AI needs from you (never guessed)', 'content.revisions': 'Revision history', 'content.approvals': 'Approval history', 'content.comment': 'Comment',
+  'content.published': 'Published', 'content.openPost': 'Open post', 'content.lastError': 'Last error', 'content.byAi': 'AI', 'content.byHuman': 'Human edited', 'content.empty': 'No content yet — create a draft or let AI plan from the page screen',
+  'content.pending': 'Pending approval', 'content.queue': 'Approval queue',
+  'cs.IDEA': 'Idea', 'cs.PLANNED': 'Planned', 'cs.DRAFT': 'Draft', 'cs.AI_REVIEW': 'AI review', 'cs.NEEDS_REVISION': 'Needs revision', 'cs.READY_FOR_APPROVAL': 'Ready for approval', 'cs.APPROVED': 'Approved', 'cs.SCHEDULED': 'Scheduled', 'cs.PUBLISHING': 'Publishing', 'cs.PUBLISHED': 'Published', 'cs.ANALYZED': 'Analyzed', 'cs.REJECTED': 'Rejected', 'cs.PUBLISH_FAILED': 'Publish failed', 'cs.CANCELLED': 'Cancelled',
+  'calendar.title': 'Calendar', 'calendar.subtitle': 'Scheduled and published posts (page local time)', 'calendar.prev': 'Previous week', 'calendar.next': 'Next week', 'calendar.today': 'This week', 'calendar.empty': 'Nothing this week',
+  'plan.title': 'Plan content with AI', 'plan.run': 'Plan', 'plan.days': 'Days', 'plan.perWeek': 'Posts/week', 'plan.objective': 'Objective (optional)', 'plan.done': 'Plan created — see Content', 'plan.hint': 'The Strategist creates "Planned" items; then press "Let AI write" per item on the Content screen',
 };
 
 const dict = { th, en } satisfies Record<Locale, Record<keyof typeof th, string>>;

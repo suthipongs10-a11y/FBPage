@@ -6,7 +6,7 @@ import { AUTOMATION_LEVELS } from '@fbpm/shared';
 import { api, type MetricCell, type PageAnalysisRow, type PageDetail, type PagePost, type SyncResult } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
-import { Button, Card, Empty, ErrorBox, Field, Kpi, Loading, Pill, Select } from '@/components/ui';
+import { Button, Card, Empty, ErrorBox, Field, Input, Kpi, Loading, Pill, Select } from '@/components/ui';
 
 const fmt = (d: string | null | undefined) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : t('pages.never'));
 const tone = (s: string): 'ok' | 'warn' | 'bad' | 'muted' => (s === 'VALID' ? 'ok' : s === 'INVALID' ? 'bad' : 'muted');
@@ -20,6 +20,7 @@ export default function PageDetailPage() {
   const [posts, setPosts] = useState<PagePost[] | null>(null);
   const [analyses, setAnalyses] = useState<PageAnalysisRow[]>([]);
   const [days, setDays] = useState(90);
+  const [plan, setPlan] = useState({ days: 7, postsPerWeek: 3, objective: '' });
   const [error, setError] = useState<unknown>(null); const [busy, setBusy] = useState(''); const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
@@ -32,6 +33,7 @@ export default function PageDetailPage() {
   const validate = () => run('validate', async () => { const r = await api<{ valid: boolean; error?: string }>(`/workspaces/${ws.id}/pages/${pageId}/validate`, { method: 'POST', body: {} }); setNotice(r.valid ? t('pages.status.VALID') : `${t('pages.status.INVALID')}: ${r.error ?? ''}`); await load(); });
   const patch = (body: Record<string, unknown>) => run('patch', async () => { await api(`/workspaces/${ws.id}/pages/${pageId}`, { method: 'PATCH', body }); await load(); });
   const analyze = () => run('analyze', async () => { await api(`/workspaces/${ws.id}/analytics/pages/${pageId}/analyze`, { method: 'POST', body: { days } }); await load(); });
+  const runPlan = () => run('plan', async () => { const r = await api<{ items: unknown[] }>(`/workspaces/${ws.id}/pages/${pageId}/content/plan`, { method: 'POST', body: { days: plan.days, postsPerWeek: plan.postsPerWeek, objective: plan.objective || undefined } }); setNotice(`${t('plan.done')} (${r.items.length})`); });
   const disconnect = () => { if (!confirm(t('pages.confirmDisconnect'))) return; void run('disc', async () => { await api(`/workspaces/${ws.id}/pages/${pageId}`, { method: 'DELETE' }); router.push('/pages'); }); };
 
   if (!page || !posts) return <div><ErrorBox error={error} /><Loading /></div>;
@@ -79,6 +81,19 @@ export default function PageDetailPage() {
           </div>
         </Card>
       </div>
+
+      {can('content.create') && can('ai.use') && live && (
+        <Card title={t('plan.title')}>
+          <p className="mb-2 text-xs text-slate-500">{t('plan.hint')}</p>
+          <div className="grid gap-2 sm:grid-cols-4">
+            <Field label={t('plan.days')}><Input type="number" min={3} max={31} value={plan.days} onChange={e => setPlan(v => ({ ...v, days: Number(e.target.value) || 7 }))} /></Field>
+            <Field label={t('plan.perWeek')}><Input type="number" min={1} max={14} value={plan.postsPerWeek} onChange={e => setPlan(v => ({ ...v, postsPerWeek: Number(e.target.value) || 3 }))} /></Field>
+            <Field label={t('plan.objective')}><Input value={plan.objective} onChange={e => setPlan(v => ({ ...v, objective: e.target.value }))} /></Field>
+            <div className="flex items-end"><Button disabled={busy === 'plan'} onClick={runPlan}>{busy === 'plan' ? t('ai.thinking') : t('plan.run')}</Button></div>
+          </div>
+          {notice.startsWith(t('plan.done')) && <Link href="/content" className="mt-2 inline-block text-sm text-sky-400 hover:underline">{t('content.title')} →</Link>}
+        </Card>
+      )}
 
       <Card title={t('pages.missing')}>
         {page.completeness.missing.length === 0 ? <p className="text-sm text-emerald-400">✔ {t('pages.complete')}</p> : (

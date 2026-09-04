@@ -64,3 +64,17 @@ export interface AiStep { type: 'tool' | 'result'; name: string; args?: Record<s
 export interface AiCommandResult { text: string; messages: AiChatMessage[]; steps: AiStep[]; usage: { input: number | null; output: number | null }; costUsd: number | null; model: string; provider: string; taskId: string; latencyMs: number; stoppedByLimit: boolean }
 export interface PageAnalysisResult { summary: string; dataLimitations: string[]; topPosts: { facebookPostId: string; why: string }[]; patterns: { finding: string; evidence: string; confidence: string }[]; recommendations: { title: string; why: string; action: string; confidence: string; expectedImpact: string }[]; contentPillars: string[] }
 export interface PageAnalysisRow { id: string; days: number; result: PageAnalysisResult; provider: string; model: string; createdAt: string }
+
+// ---------- Content (Phase 6) ----------
+export interface ApprovalRow { id: string; status: string; requestedAt: string; reviewedAt: string | null; reviewerComment: string | null; requestedBy: { name: string }; reviewedBy: { name: string } | null }
+export interface ContentItem {
+  id: string; pageId: string; status: string; contentType: string; title: string | null; caption: string | null; cta: string | null; hashtags: string[]; mediaBrief: string | null; mediaPaths: string[]; objective: string | null; contentPillar: string | null;
+  scheduledLocal: string | null; scheduledTz: string | null; scheduledAt: string | null; retryCount: number; createdById: string | null; aiProvider: string | null; aiModel: string | null; promptVersion: string | null; editedByHuman: boolean;
+  publishedPostId: string | null; externalPostId: string | null; publishedAt: string | null; planId: string | null; aiNotes: { hook?: string; dayOffset?: number; missingInfo?: string[]; needsHumanInput?: boolean } | null;
+  reviewResult: { result: string; summary?: string; issues: { type: string; detail: string; severity: string }[] } | null; lastError: string | null; createdAt: string; updatedAt: string;
+  page: { id: string; name: string; pictureUrl: string | null; timezone: string | null; automationLevel: string; publishingPaused: boolean; tokenStatus: string; brand: { id: string; name: string; client: { id: string; name: string } } };
+  approvals: ApprovalRow[]; _count: { revisions: number };
+}
+export interface ContentRevisionRow { version: number; caption: string | null; editedBy: string | null; reason: string | null; createdAt: string }
+export interface PublishOutcome { status: 'PUBLISHED' | 'SKIPPED' | 'FAILED'; externalId?: string; permalink?: string; reason?: string; error?: string; duplicateRecovered?: boolean }
+export interface PlanResult { id: string; plan: { objective: string; contentPillars: string[]; recommendedMix: Record<string, number>; rationale: string; dataLimitations: string[] }; items: ContentItem[]; model: string; costUsd: number | null }

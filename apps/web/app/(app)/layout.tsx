@@ -9,7 +9,7 @@ import { Select } from '@/components/ui';
 
 const NAV: { key: MessageKey; href?: string }[] = [
   { key: 'nav.overview', href: '/' }, { key: 'nav.clients', href: '/clients' }, { key: 'nav.pages', href: '/pages' }, { key: 'nav.ai', href: '/ai' },
-  { key: 'nav.content' }, { key: 'nav.calendar' }, { key: 'nav.analytics' }, { key: 'nav.comments' }, { key: 'nav.leads' },
+  { key: 'nav.content', href: '/content' }, { key: 'nav.calendar', href: '/calendar' }, { key: 'nav.analytics' }, { key: 'nav.comments' }, { key: 'nav.leads' },
   { key: 'nav.reports' }, { key: 'nav.automation' }, { key: 'nav.aiModels', href: '/ai-models' }, { key: 'nav.settings', href: '/settings' },
 ];
 

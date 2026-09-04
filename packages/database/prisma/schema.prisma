@@ -223,6 +223,7 @@ model FacebookPage {
   posts      FacebookPost[]
   content    ContentItem[]
   analyses   PageAnalysis[]
+  plans      ContentPlan[]
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -307,11 +308,21 @@ model ContentItem {
   promptVersion  String?
   editedByHuman  Boolean       @default(false)
   publishedPostId String?      @unique
+  /// id โพสต์บน Facebook หลังเผยแพร่ (เก็บซ้ำกับ FacebookPost เพื่อกันซ้ำตาม §48)
+  externalPostId String?
+  publishedAt    DateTime?
+  planId         String?
+  /// บันทึกจาก agent: ข้อมูลที่ขาด (NEEDS_HUMAN_INPUT §54), เหตุผล, hook ฯลฯ
+  aiNotes        Json?
+  /// ผล Reviewer (§25): { result: PASS|NEEDS_REVISION|BLOCKED, issues[] }
+  reviewResult   Json?
+  lastError      String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   page          FacebookPage      @relation(fields: [pageId], references: [id], onDelete: Cascade)
   publishedPost FacebookPost?     @relation(fields: [publishedPostId], references: [id])
+  plan          ContentPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
   revisions     ContentRevision[]
   approvals     ApprovalRequest[]
 
@@ -320,6 +331,26 @@ model ContentItem {
 }
 
 /// ประวัติการแก้ไข AI draft → มนุษย์แก้ → เวอร์ชันที่อนุมัติ (§55)
+/// แผนคอนเทนต์จาก Strategist (§18) — ต้องเป็นโครงสร้าง ไม่ใช่ข้อความล้วน
+model ContentPlan {
+  id          String   @id @default(cuid())
+  pageId      String
+  days        Int
+  objective   String
+  pillars     Json
+  mix         Json
+  items       Json
+  provider    String
+  model       String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  page  FacebookPage  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  posts ContentItem[]
+
+  @@index([pageId, createdAt])
+}
+
 model ContentRevision {
   id        String   @id @default(cuid())
   contentId String

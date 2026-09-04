@@ -10,8 +10,10 @@ import { ClientsModule } from './clients/clients.module';
 import { BrandsModule } from './brands/brands.module';
 import { FacebookModule } from './facebook/facebook.module';
 import { AiModule } from './ai/ai.module';
+import { JobsModule } from './jobs/jobs.module';
+import { ContentModule } from './content/content.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, FacebookModule, AiModule, HealthModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, FacebookModule, AiModule, ContentModule, HealthModule],
 })
 export class AppModule {}

@@ -15,7 +15,7 @@ export interface MockState {
   requests: string[];
 }
 
-export async function startMockGraph(): Promise<{ server: Server; url: string; state: MockState }> {
+export async function startMockGraph(port = 0): Promise<{ server: Server; url: string; state: MockState }> {
   const state: MockState = {
     validUserTokens: new Set(['USER_OK']),
     pageTokens: { '111': 'PAGE_111', '222': 'PAGE_222' },
@@ -75,7 +75,7 @@ export async function startMockGraph(): Promise<{ server: Server; url: string; s
     }
     err(res, 803, `Unknown path ${path}`, 404, 'GraphMethodException');
   });
-  await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+  await new Promise<void>(r => server.listen(port, '127.0.0.1', r));
   const addr = server.address() as { port: number };
   return { server, url: `http://127.0.0.1:${addr.port}`, state };
 }

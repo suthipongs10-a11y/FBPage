@@ -14,8 +14,11 @@
 > ไฟล์ตัวอย่างค่าตั้งชื่อ `env.example` (ไม่มีจุดนำหน้า เพราะเครื่องมือในทีมห้ามแตะ `.env*`) — `cp env.example .env`
 > ทำแล้ว: Phase 1 ฐานระบบ · Phase 2 Auth + Workspace/tenant + RBAC + Client/Brand/Knowledge + audit · Phase 3–4 เชื่อมเพจ (วาง token หรือ OAuth) + ซิงก์โพสต์/metric (`packages/facebook-core`, `apps/api/src/facebook`)
 > Phase 5 AI Gateway (`packages/ai-core`, `apps/api/src/ai`): BYOK key, บทบาท→โมเดล, งบ, AiTaskLog, tool registry, Analyst, Command Center
-> ถัดไปตาม §73: ขั้น 6 Strategist/Content agents → content domain → approval → scheduler → publisher → metric collector
+> Phase 6 Content loop (`apps/api/src/content`, `packages/facebook-core/publisher.ts`, `workers/scheduler`): state machine, approval, schedule (BullMQ), publish กันซ้ำ, Strategist/Content/Reviewer agents — §100 ครบ
+> ถัดไปตาม §73: comments/leads → reports → webhooks → media service
 > node test/phase5-smoke.mjs                        # AI gateway ผ่าน proxy กับ mock AI (ไม่ใช้ key จริง)
+> META_GRAPH_BASE_URL=http://127.0.0.1:4998 pnpm dev:api  แล้ว  node test/phase6-smoke.mjs   # content loop กับ mock Graph (ไม่แตะเพจจริง)
+> worker ต้องมี AUTH_SECRET เดียวกับ API (ถอดรหัส page token) — `pnpm dev:worker`
 > กฎที่ต้องรักษาในระบบใหม่: token/API key เข้ารหัสด้วย `common/crypto.ts` เท่านั้น ห้ามอยู่ใน select/response/audit · metric ที่อ่านไม่ได้ = `null` ห้ามแปลงเป็น 0 · test ห้ามยิงเพจจริง/AI จริง ใช้ `startMockGraph()` / `startMockAi()` · โค้ดเรียก AI ต้องผ่าน `AiGatewayService` เท่านั้น (ห้าม import SDK ผู้ให้บริการ)
 >
 > ---
