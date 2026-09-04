@@ -28,6 +28,7 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/fbpm REDIS_URL=redis:
   AUTH_SECRET=integration-test-secret-at-least-32-chars APP_ENV=test pnpm --filter @fbpm/api test
 # end-to-end ผ่านหน้าเว็บ (เปิด api + web ก่อน)
 #   node test/phase3-smoke.mjs  — เชื่อมเพจจริงแบบอ่านอย่างเดียวด้วย USER_TOKEN ใน env (ตอนจบตัดการเชื่อมต่อ+ลบ token ให้เอง)
+#   node test/phase5-smoke.mjs  — AI gateway กับ mock AI ที่สคริปต์เปิดเอง (ไม่ใช้ key จริง)
 node test/phase1-smoke.mjs && node test/phase2-smoke.mjs
 ```
 

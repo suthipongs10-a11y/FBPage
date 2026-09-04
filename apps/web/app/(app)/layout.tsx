@@ -8,9 +8,9 @@ import { WorkspaceProvider, useWorkspace } from '@/components/workspace-context'
 import { Select } from '@/components/ui';
 
 const NAV: { key: MessageKey; href?: string }[] = [
-  { key: 'nav.overview', href: '/' }, { key: 'nav.clients', href: '/clients' }, { key: 'nav.pages', href: '/pages' }, { key: 'nav.ai' },
+  { key: 'nav.overview', href: '/' }, { key: 'nav.clients', href: '/clients' }, { key: 'nav.pages', href: '/pages' }, { key: 'nav.ai', href: '/ai' },
   { key: 'nav.content' }, { key: 'nav.calendar' }, { key: 'nav.analytics' }, { key: 'nav.comments' }, { key: 'nav.leads' },
-  { key: 'nav.reports' }, { key: 'nav.automation' }, { key: 'nav.aiModels' }, { key: 'nav.settings', href: '/settings' },
+  { key: 'nav.reports' }, { key: 'nav.automation' }, { key: 'nav.aiModels', href: '/ai-models' }, { key: 'nav.settings', href: '/settings' },
 ];
 
 function Shell({ children }: { children: ReactNode }) {

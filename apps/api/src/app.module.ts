@@ -9,8 +9,9 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
 import { ClientsModule } from './clients/clients.module';
 import { BrandsModule } from './brands/brands.module';
 import { FacebookModule } from './facebook/facebook.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, FacebookModule, HealthModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, FacebookModule, AiModule, HealthModule],
 })
 export class AppModule {}

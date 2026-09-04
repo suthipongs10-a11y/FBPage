@@ -33,7 +33,7 @@ export interface Brand { id: string; clientId: string; name: string; description
 export interface KnowledgeItem { id: string; type: string; title: string; content: string; source: string | null; active: boolean; createdAt: string }
 export interface Member { role: string; permissions: string[]; createdAt: string; user: User }
 export interface AuditRow { id: string; action: string; resourceType: string; resourceId: string | null; before: unknown; after: unknown; requestId: string; createdAt: string; user: User | null }
-export interface WorkspaceDetail { id: string; name: string; slug: string; timezone: string; automationPaused: boolean; role: string; permissions: string[]; _count: { clients: number; members: number } }
+export interface WorkspaceDetail { id: string; name: string; slug: string; timezone: string; automationPaused: boolean; aiMonthlyBudgetUsd: string | number | null; aiMaxCostPerTaskUsd: string | number | null; role: string; permissions: string[]; _count: { clients: number; members: number } }
 
 // ---------- Facebook (Phase 3–4) ----------
 export interface FbConnection { id: string; providerUserId: string; providerUserName: string | null; scopes: string[]; status: string; tokenExpiresAt: string | null; lastValidatedAt: string | null; createdAt: string; user: { id: string; name: string } | null; _count: { pages: number } }
@@ -51,3 +51,16 @@ export interface PageDetail extends PageRow {
 export interface MetricCell { value: number | null; sourceMetric: string }
 export interface PagePost { id: string; facebookPostId: string; message: string | null; mediaType: string | null; permalink: string | null; publishedAt: string | null; source: string; metrics: Record<string, MetricCell> | null; capturedAt: string | null }
 export interface SyncResult { imported: number; updated: number; total: number; availability: { likes: boolean; comments: boolean; shares: boolean }; syncedAt: string }
+
+// ---------- AI (Phase 5) ----------
+export interface AiProviderRow { id: string; label: string; defaultModel: string; baseUrl: string; needsBaseUrl: boolean; keyHelp: string; configured: boolean; platformKey: boolean; keyHint: string | null; customBaseUrl: string | null; lastValidatedAt: string | null; lastError: string | null; updatedAt: string | null }
+export interface AiRoleCfg { provider: string; model: string }
+export interface AiRoles { roles: Record<string, AiRoleCfg | null> }
+export interface AiUsage { monthlyBudgetUsd: number | null; maxCostPerTaskUsd: number | null; monthToDate: { costUsd: number; tasks: number; failed: number; since: string }; byModel: { provider: string; model: string; tasks: number; costUsd: number; inputTokens: number; outputTokens: number; avgLatencyMs: number }[] }
+export interface AiTaskRow { id: string; taskType: string; role: string; provider: string; model: string; latencyMs: number; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | number | null; success: boolean; retry: number; resourceType: string | null; resourceId: string | null; requestId: string; error: string | null; createdAt: string }
+export interface AiToolRow { name: string; description: string; riskLevel: string; requiredPermission: string | null; allowed: boolean }
+export type AiChatMessage = { role: 'user'; content: string } | { role: 'assistant'; content: string; toolCalls?: { id: string; name: string; args: Record<string, unknown> }[] } | { role: 'tool'; toolCallId: string; name: string; content: string };
+export interface AiStep { type: 'tool' | 'result'; name: string; args?: Record<string, unknown>; preview?: string }
+export interface AiCommandResult { text: string; messages: AiChatMessage[]; steps: AiStep[]; usage: { input: number | null; output: number | null }; costUsd: number | null; model: string; provider: string; taskId: string; latencyMs: number; stoppedByLimit: boolean }
+export interface PageAnalysisResult { summary: string; dataLimitations: string[]; topPosts: { facebookPostId: string; why: string }[]; patterns: { finding: string; evidence: string; confidence: string }[]; recommendations: { title: string; why: string; action: string; confidence: string; expectedImpact: string }[]; contentPillars: string[] }
+export interface PageAnalysisRow { id: string; days: number; result: PageAnalysisResult; provider: string; model: string; createdAt: string }

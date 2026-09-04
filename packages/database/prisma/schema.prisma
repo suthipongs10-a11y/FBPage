@@ -55,9 +55,14 @@ model Workspace {
   timezone  String   @default("Asia/Bangkok") // ค่าเริ่มต้นเท่านั้น — เพจ/ลูกค้า override ได้ (§87)
   /// สวิตช์ฉุกเฉิน — หยุดอัตโนมัติทั้ง workspace โดยไม่ต้องพึ่ง AI (§92)
   automationPaused Boolean @default(false)
+  /// งบ AI ต่อเดือน (USD) และเพดานต่อ task (§41) — null = ไม่จำกัด
+  aiMonthlyBudgetUsd   Decimal? @db.Decimal(12, 4)
+  aiMaxCostPerTaskUsd  Decimal? @db.Decimal(12, 4)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  aiProviderKeys AiProviderKey[]
+  aiRoleConfigs  AiRoleConfig[]
   members     WorkspaceMember[]
   clients     Client[]
   connections FacebookConnection[]
@@ -217,6 +222,7 @@ model FacebookPage {
   connection FacebookConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   posts      FacebookPost[]
   content    ContentItem[]
+  analyses   PageAnalysis[]
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -398,6 +404,60 @@ model AuditLog {
 }
 
 // ---------- AI task log (§50, §51) ----------
+/// BYOK (§42) — key ของผู้ให้บริการ AI ต่อ workspace เข้ารหัสด้วย AUTH_SECRET ห้าม log/ส่งไปหน้าเว็บ
+model AiProviderKey {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  /// anthropic | openai | gemini | openrouter | compatible
+  provider        String
+  label           String?
+  encryptedApiKey String
+  /// 4 ตัวท้ายของ key เพื่อให้ผู้ใช้จำได้ว่าใส่ key ไหน
+  keyHint         String?
+  baseUrl         String?
+  status          String    @default("ACTIVE")
+  lastValidatedAt DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
+}
+
+/// บทบาท AI → ผู้ให้บริการ/โมเดล (§5, §41)
+model AiRoleConfig {
+  id          String   @id @default(cuid())
+  workspaceId String
+  role        String
+  provider    String
+  model       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, role])
+}
+
+/// ผลวิเคราะห์เพจโดย Analyst Agent (§19) — เก็บไว้ให้แดชบอร์ด/Strategist ใช้ต่อ
+model PageAnalysis {
+  id          String   @id @default(cuid())
+  pageId      String
+  days        Int
+  /// { summary, dataLimitations[], topPosts[], patterns[], recommendations[{title, why, confidence, action}] }
+  result      Json
+  provider    String
+  model       String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  page FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+}
+
 model AiTaskLog {
   id            String   @id @default(cuid())
   workspaceId   String

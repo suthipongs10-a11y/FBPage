@@ -18,7 +18,15 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   หน้าเว็บ "เพจ": เชื่อมบัญชี → เลือกเพจ → เลือกแบรนด์ · รายละเอียดเพจ (ผู้ติดตาม, คะแนนข้อมูลครบ, สิทธิ์ MANAGE/CREATE_CONTENT, โพสต์ + ตัวเลขที่แสดง "อ่านไม่ได้" แทน 0)
   ทดสอบ: unit 11 (facebook-core) + integration 11 (mock Graph, tenant isolation, token ไม่หลุด) + `test/phase3-smoke.mjs` (token จริง อ่านอย่างเดียว)
 
-ยังไม่ทำ (ตามลำดับ §73): AI Gateway + BYOK (ขั้น 5) · Agents + content/approval/scheduler/publisher (ขั้น 6+)
+- **Phase 5 — AI Gateway + AI task log + Analyst + Command Center** ✔ (§4, §5, §19, §37, §41–§43, §50)
+  `packages/ai-core`: interface กลาง + adapter anthropic / openai / gemini / openrouter / OpenAI-compatible (LiteLLM, Groq, Ollama …) · tool loop · structured output พร้อม retry · ประเมินค่าใช้จ่าย · mock AI สำหรับ test
+  `apps/api/src/ai`: BYOK key ต่อ workspace (เข้ารหัส, ไม่เคยส่งกลับ) · บทบาท→โมเดล (strategy/content/analysis/…) พร้อม fallback · งบต่อเดือน (402 เมื่อเกิน) · `AiTaskLog` ทุกครั้ง (latency, token, cost, success)
+  Tool registry (§43) READ tools: list_pages, get_page_overview, get_posts (null-aware), get_brand_knowledge, list_clients_brands, get_latest_page_analysis — บริบท client/brand/page ล็อกฝั่งเซิร์ฟเวอร์
+  Analyst Agent: `POST /analytics/pages/:id/analyze` → ผลแบบโครงสร้าง (summary, dataLimitations, patterns, recommendations + confidence, content pillars) เก็บใน `PageAnalysis`
+  หน้าเว็บ: "โมเดล AI" (key, ทดสอบ, บทบาท, งบ, งานล่าสุด) · "AI Command" (เลือกบริบท → แชท → เห็นขั้นตอน/ค่าใช้จ่าย) · ปุ่ม "วิเคราะห์ด้วย AI" ในหน้าเพจ
+  ทดสอบ: unit 11 (ai-core) + integration 9 (mock AI + mock Graph) + `test/phase5-smoke.mjs`
+
+ยังไม่ทำ (ตามลำดับ §73): Strategist/Content agents + content domain + approval + scheduler + publisher (ขั้น 6+) · comments/leads · reports · webhooks
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
 
 ## โครงสร้าง

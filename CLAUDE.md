@@ -13,8 +13,10 @@
 > ```
 > ไฟล์ตัวอย่างค่าตั้งชื่อ `env.example` (ไม่มีจุดนำหน้า เพราะเครื่องมือในทีมห้ามแตะ `.env*`) — `cp env.example .env`
 > ทำแล้ว: Phase 1 ฐานระบบ · Phase 2 Auth + Workspace/tenant + RBAC + Client/Brand/Knowledge + audit · Phase 3–4 เชื่อมเพจ (วาง token หรือ OAuth) + ซิงก์โพสต์/metric (`packages/facebook-core`, `apps/api/src/facebook`)
-> ถัดไปตาม §73: ขั้น 5 AI Gateway + BYOK → ขั้น 6 Agents/Content/Approval/Publisher
-> กฎที่ต้องรักษาในระบบใหม่: token เข้ารหัสด้วย `common/crypto.ts` เท่านั้น ห้ามอยู่ใน select/response/audit · metric ที่อ่านไม่ได้ = `null` ห้ามแปลงเป็น 0 · test ห้ามยิงเพจจริง ใช้ `startMockGraph()`
+> Phase 5 AI Gateway (`packages/ai-core`, `apps/api/src/ai`): BYOK key, บทบาท→โมเดล, งบ, AiTaskLog, tool registry, Analyst, Command Center
+> ถัดไปตาม §73: ขั้น 6 Strategist/Content agents → content domain → approval → scheduler → publisher → metric collector
+> node test/phase5-smoke.mjs                        # AI gateway ผ่าน proxy กับ mock AI (ไม่ใช้ key จริง)
+> กฎที่ต้องรักษาในระบบใหม่: token/API key เข้ารหัสด้วย `common/crypto.ts` เท่านั้น ห้ามอยู่ใน select/response/audit · metric ที่อ่านไม่ได้ = `null` ห้ามแปลงเป็น 0 · test ห้ามยิงเพจจริง/AI จริง ใช้ `startMockGraph()` / `startMockAi()` · โค้ดเรียก AI ต้องผ่าน `AiGatewayService` เท่านั้น (ห้าม import SDK ผู้ให้บริการ)
 >
 > ---
 > **เครื่องมือชุดเดิม (ยังใช้ทำงานลูกค้าได้ระหว่างเปลี่ยนผ่าน):**

@@ -19,6 +19,13 @@ export const envSchema = z.object({
   META_APP_ID: z.string().trim().optional().transform(v => v || undefined),
   META_APP_SECRET: z.string().trim().optional().transform(v => v || undefined),
   META_OAUTH_REDIRECT_URI: z.string().trim().optional().transform(v => v || undefined),
+  /** key ระดับแพลตฟอร์ม (§82) — workspace ที่ไม่มี BYOK จะใช้ตัวนี้ */
+  OPENAI_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  ANTHROPIC_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  GOOGLE_AI_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  OPENROUTER_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  LITELLM_BASE_URL: z.string().trim().optional().transform(v => v || undefined),
+  LITELLM_API_KEY: z.string().trim().optional().transform(v => v || undefined),
 });
 
 export type Env = z.infer<typeof envSchema>;

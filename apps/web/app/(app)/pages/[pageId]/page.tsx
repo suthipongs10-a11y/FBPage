@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AUTOMATION_LEVELS } from '@fbpm/shared';
-import { api, type MetricCell, type PageDetail, type PagePost, type SyncResult } from '@/lib/api';
+import { api, type MetricCell, type PageAnalysisRow, type PageDetail, type PagePost, type SyncResult } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Kpi, Loading, Pill, Select } from '@/components/ui';
@@ -18,10 +18,12 @@ export default function PageDetailPage() {
   const router = useRouter();
   const [page, setPage] = useState<PageDetail | null>(null);
   const [posts, setPosts] = useState<PagePost[] | null>(null);
+  const [analyses, setAnalyses] = useState<PageAnalysisRow[]>([]);
+  const [days, setDays] = useState(90);
   const [error, setError] = useState<unknown>(null); const [busy, setBusy] = useState(''); const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
-    try { const [p, ps] = await Promise.all([api<PageDetail>(`/workspaces/${ws.id}/pages/${pageId}`), api<PagePost[]>(`/workspaces/${ws.id}/pages/${pageId}/posts?limit=50`)]); setPage(p); setPosts(ps); }
+    try { const [p, ps, an] = await Promise.all([api<PageDetail>(`/workspaces/${ws.id}/pages/${pageId}`), api<PagePost[]>(`/workspaces/${ws.id}/pages/${pageId}/posts?limit=50`), api<PageAnalysisRow[]>(`/workspaces/${ws.id}/analytics/pages/${pageId}/analyses`).catch(() => [] as PageAnalysisRow[])]); setPage(p); setPosts(ps); setAnalyses(an); }
     catch (e) { setError(e); }
   }, [ws.id, pageId]);
   useEffect(() => { void load(); }, [load]);
@@ -29,6 +31,7 @@ export default function PageDetailPage() {
   const sync = () => run('sync', async () => { const r = await api<SyncResult>(`/workspaces/${ws.id}/pages/${pageId}/sync`, { method: 'POST', body: { days: 90 } }); setNotice(`${t('pages.syncDone')}: +${r.imported} / ${r.updated}`); await load(); });
   const validate = () => run('validate', async () => { const r = await api<{ valid: boolean; error?: string }>(`/workspaces/${ws.id}/pages/${pageId}/validate`, { method: 'POST', body: {} }); setNotice(r.valid ? t('pages.status.VALID') : `${t('pages.status.INVALID')}: ${r.error ?? ''}`); await load(); });
   const patch = (body: Record<string, unknown>) => run('patch', async () => { await api(`/workspaces/${ws.id}/pages/${pageId}`, { method: 'PATCH', body }); await load(); });
+  const analyze = () => run('analyze', async () => { await api(`/workspaces/${ws.id}/analytics/pages/${pageId}/analyze`, { method: 'POST', body: { days } }); await load(); });
   const disconnect = () => { if (!confirm(t('pages.confirmDisconnect'))) return; void run('disc', async () => { await api(`/workspaces/${ws.id}/pages/${pageId}`, { method: 'DELETE' }); router.push('/pages'); }); };
 
   if (!page || !posts) return <div><ErrorBox error={error} /><Loading /></div>;
@@ -81,6 +84,23 @@ export default function PageDetailPage() {
         {page.completeness.missing.length === 0 ? <p className="text-sm text-emerald-400">✔ {t('pages.complete')}</p> : (
           <ul className="grid gap-1 text-sm sm:grid-cols-2">{page.completeness.missing.map(m => <li key={m.key} className="text-slate-300">• {m.label}{m.hint && <span className="text-xs text-slate-500"> — {m.hint}</span>}</li>)}</ul>
         )}
+      </Card>
+
+      <Card title={t('analysis.title')} actions={can('ai.use') && live ? <div className="flex items-center gap-2 text-xs"><span className="text-slate-500">{t('analysis.days')}</span><input type="number" min={7} max={365} value={days} onChange={e => setDays(Number(e.target.value) || 90)} className="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1" /><Button disabled={busy === 'analyze'} onClick={analyze}>{busy === 'analyze' ? t('analysis.running') : t('analysis.run')}</Button></div> : undefined}>
+        {analyses.length === 0 ? <p className="text-sm text-slate-500">{t('analysis.none')}</p> : (() => { const a = analyses[0]!; const r = a.result; const ct = (c: string): 'ok' | 'warn' | 'bad' => (c === 'high' ? 'ok' : c === 'medium' ? 'warn' : 'bad'); return (
+          <div className="space-y-3 text-sm">
+            <p className="text-xs text-slate-500">{fmt(a.createdAt)} · {a.days} วัน · {t('analysis.by')} {a.provider}/{a.model}</p>
+            <div><div className="text-xs text-slate-500">{t('analysis.summary')}</div><p className="whitespace-pre-wrap">{r.summary}</p></div>
+            {r.dataLimitations.length > 0 && <div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-2 text-xs text-amber-200"><div className="font-semibold">{t('analysis.limitations')}</div><ul className="list-disc pl-4">{r.dataLimitations.map((x, i) => <li key={i}>{x}</li>)}</ul></div>}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div><div className="mb-1 text-xs text-slate-500">{t('analysis.recommendations')}</div><ol className="space-y-2">{r.recommendations.map((x, i) => <li key={i} className="rounded-lg border border-slate-800 p-2"><div className="flex flex-wrap items-center gap-1 font-medium">{i + 1}. {x.title} <Pill tone={ct(x.confidence)}>{t('analysis.confidence')} {t(`conf.${x.confidence}` as MessageKey)}</Pill><Pill tone={ct(x.expectedImpact)}>{t('analysis.impact')} {t(`conf.${x.expectedImpact}` as MessageKey)}</Pill></div><p className="text-xs text-slate-400">{x.why}</p><p className="text-xs">→ {x.action}</p></li>)}</ol></div>
+              <div className="space-y-3">
+                {r.patterns.length > 0 && <div><div className="mb-1 text-xs text-slate-500">{t('analysis.patterns')}</div><ul className="space-y-1">{r.patterns.map((x, i) => <li key={i}>• {x.finding} <span className="text-xs text-slate-500">({x.evidence})</span> <Pill tone={ct(x.confidence)}>{t(`conf.${x.confidence}` as MessageKey)}</Pill></li>)}</ul></div>}
+                {r.contentPillars.length > 0 && <div><div className="mb-1 text-xs text-slate-500">{t('analysis.pillars')}</div><div className="flex flex-wrap gap-1">{r.contentPillars.map((x, i) => <Pill key={i} tone="ok">{x}</Pill>)}</div></div>}
+                {r.topPosts.length > 0 && <div><div className="mb-1 text-xs text-slate-500">{t('analysis.topPosts')}</div><ul className="space-y-1 text-xs">{r.topPosts.map((x, i) => <li key={i}>• <a className="text-sky-400 hover:underline" href={`https://www.facebook.com/${x.facebookPostId}`} target="_blank" rel="noreferrer">{x.facebookPostId}</a> — {x.why}</li>)}</ul></div>}
+              </div>
+            </div>
+          </div>); })()}
       </Card>
 
       <Card title={`${t('pages.postsTitle')} (${posts.length})`}>

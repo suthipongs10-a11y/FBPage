@@ -11,6 +11,8 @@ export const updateWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   timezone: tz.optional(),
   automationPaused: z.boolean().optional(),
+  aiMonthlyBudgetUsd: z.number().min(0).max(1_000_000).nullable().optional(),
+  aiMaxCostPerTaskUsd: z.number().min(0).max(10_000).nullable().optional(),
 }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export const addMemberSchema = z.object({
   email: z.string().trim().toLowerCase().email(),

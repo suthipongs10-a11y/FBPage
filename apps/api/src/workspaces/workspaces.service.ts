@@ -6,7 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import { slugify } from '../auth/auth.service';
 import type { AddMemberDto, CreateWorkspaceDto, UpdateMemberDto, UpdateWorkspaceDto } from './dto';
 
-const WS_SELECT = { id: true, name: true, slug: true, timezone: true, plan: true, status: true, automationPaused: true, createdAt: true } as const;
+const WS_SELECT = { id: true, name: true, slug: true, timezone: true, plan: true, status: true, automationPaused: true, aiMonthlyBudgetUsd: true, aiMaxCostPerTaskUsd: true, createdAt: true } as const;
 
 @Injectable()
 export class WorkspacesService {
