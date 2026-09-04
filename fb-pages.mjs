@@ -207,6 +207,131 @@ async function cmdApply(id, file, dry) {
   console.log(res.success ? '✔ อัปเดตสำเร็จ — รัน audit ซ้ำเพื่อยืนยัน' : JSON.stringify(res));
 }
 
+// ---------- report: สรุปผลรายเพจ (ข้อมูลเพจ + โพสต์ + ยอดมีส่วนร่วม) ----------
+const POST_FIELDS = [
+  'id', 'message', 'created_time', 'permalink_url', 'shares',
+  'likes.summary(true).limit(0)', 'comments.summary(true).limit(0)',
+].join(',');
+
+const nf = n => n.toLocaleString('th-TH');
+
+// Graph เปลี่ยน edge ที่ใช้ดึงโพสต์ของเพจไปมาในแต่ละเวอร์ชัน — ลองไล่จนกว่าจะได้
+const POST_EDGES = ['published_posts', 'feed', 'posts'];
+
+const POST_FIELD_SETS = [
+  POST_FIELDS,
+  'id,message,created_time,permalink_url,shares',
+  'id,message,created_time',
+  'id,created_time',
+];
+
+async function fetchPosts(p, sinceSec, debug) {
+  let lastErr;
+  for (const edge of POST_EDGES) {
+    for (const fields of POST_FIELD_SETS) {
+      try {
+        const posts = [];
+        let after;
+        do {
+          const j = await graph(`${p.id}/${edge}`, {
+            token: p.access_token,
+            params: { fields, limit: 100, ...(after && { after }) },
+          });
+          posts.push(...(j.data || []));
+          after = j.paging?.next ? j.paging.cursors?.after : undefined;
+        } while (after);
+        if (debug) console.log(`  (ใช้ ${edge} · fields: ${fields.slice(0, 40)}…)`);
+        return { edge, fields, posts: posts.filter(x => new Date(x.created_time).getTime() / 1000 >= sinceSec) };
+      } catch (e) {
+        lastErr = e;
+        if (debug) console.log(`  ✖ ${edge} [${fields.slice(0, 34)}…] → ${e.message.slice(0, 70)}`);
+      }
+    }
+  }
+  return { edge: null, posts: [], error: lastErr?.message };
+}
+
+function scoreOf(info) {
+  const missing = CHECKS.filter(([k]) => isMissing(k, info[k]));
+  return { missing, score: Math.round(((CHECKS.length - missing.length) / CHECKS.length) * 100) };
+}
+
+async function cmdReport(id, days, asJson, debug) {
+  if (!id) die('ใช้: node fb-pages.mjs report <page-id> [--days 30] [--json]');
+  const p = await findPage(id);
+  const info = await graph(p.id, { token: p.access_token, params: { fields: PAGE_FIELDS } });
+  const sinceSec = Math.floor(Date.now() / 1000) - days * 86400;
+  const { posts, fields: usedFields, error: postErr } = await fetchPosts(p, sinceSec, debug);
+
+  // ฟิลด์ไหนอ่านได้จริงบ้าง ขึ้นกับชุดฟิลด์ที่ Graph ยอมให้ผ่าน
+  const can = {
+    like: !!usedFields?.includes('likes.summary'),
+    comment: !!usedFields?.includes('comments.summary'),
+    share: !!usedFields?.includes('shares'),
+  };
+  const rows = posts.map(x => ({
+    ...x,
+    like: can.like ? (x.likes?.summary?.total_count || 0) : null,
+    comment: can.comment ? (x.comments?.summary?.total_count || 0) : null,
+    share: can.share ? (x.shares?.count || 0) : null,
+  })).map(r => ({ ...r, total: (r.like || 0) + (r.comment || 0) + (r.share || 0) }))
+    .sort((a, b) => b.total - a.total);
+
+  const sum = k => rows.reduce((t, r) => t + (r[k] || 0), 0);
+  const totals = {
+    like: can.like ? sum('like') : null,
+    comment: can.comment ? sum('comment') : null,
+    share: can.share ? sum('share') : null,
+  };
+  const NA = 'อ่านไม่ได้ (ต้องขอสิทธิ์เพิ่ม)';
+  const val = (v) => v === null ? NA : nf(v);
+  const { missing, score } = scoreOf(info);
+
+  if (asJson) {
+    console.log(JSON.stringify({
+      page: { id: info.id, name: info.name, fan_count: info.fan_count || 0 },
+      period_days: days, score, missing: missing.map(([, label]) => label),
+      posts: rows.length, posts_error: postErr || null,
+      engagement: totals, metrics_available: can,
+      posts_per_week: rows.length ? +(rows.length / days * 7).toFixed(1) : 0,
+      top: rows.slice(0, 5).map(r => ({
+        message: (r.message || '(ไม่มีข้อความ)').replace(/\s+/g, ' ').slice(0, 90),
+        created_time: r.created_time, permalink_url: r.permalink_url,
+        like: r.like, comment: r.comment, share: r.share,
+      })),
+    }, null, 2));
+    return;
+  }
+
+  const line = '─'.repeat(46);
+  console.log(`\n${line}\nรายงานเพจ: ${info.name}  (${info.id})\nช่วงเวลา: ${days} วันล่าสุด\n${line}`);
+  console.log(`\n[ ความสมบูรณ์ของข้อมูลเพจ ]  ${score}%`);
+  if (!missing.length) console.log('  ✔ ข้อมูลครบทุกรายการ');
+  else for (const [, label, hint] of missing) console.log(`  ✖ ${label}${hint ? `  — ${hint}` : ''}`);
+
+  console.log(`\n[ ผู้ติดตาม ]  ${nf(info.fan_count || 0)} คน`);
+
+  console.log(`\n[ โพสต์ในช่วงเวลา ]  ${postErr ? 'ดึงข้อมูลไม่ได้' : rows.length + ' โพสต์'}`);
+  if (postErr) {
+    console.log(`  ⚠ ${postErr}`);
+  } else if (!rows.length) {
+    console.log('  — ไม่มีโพสต์ในช่วงนี้');
+  } else {
+    console.log(`  ถูกใจ: ${val(totals.like)}`);
+    console.log(`  ความคิดเห็น: ${val(totals.comment)}`);
+    console.log(`  แชร์: ${val(totals.share)}`);
+    console.log(`  ความถี่: ${(rows.length / days * 7).toFixed(1)} โพสต์ต่อสัปดาห์`);
+    console.log('\n[ โพสต์ล่าสุด ]');
+    for (const [i, r] of rows.slice(0, 5).entries()) {
+      const msg = (r.message || '(ไม่มีข้อความ)').replace(/\s+/g, ' ').slice(0, 68);
+      const d = new Date(r.created_time).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' });
+      console.log(`  ${i + 1}. ${msg}${msg.length >= 68 ? '…' : ''}`);
+      console.log(`     ${d}${can.share ? `  ·  แชร์ ${nf(r.share)}` : ''}`);
+    }
+  }
+  console.log(`\n${line}\nหมายเหตุ: ยอดถูกใจ/ความคิดเห็นรายโพสต์ และตัวเลขการเข้าถึง ต้องขอสิทธิ์เพิ่ม\n(pages_read_engagement ระดับ App Review และ read_insights) · ค่าโฆษณาดูแยกที่ Ads Manager\n${line}\n`);
+}
+
 // ---------- post: โพสต์ลงเพจ (ข้อความ / ลิงก์ / รูปหลายใบ / ตั้งเวลา) ----------
 const isUrl = v => /^https?:\/\//.test(v);
 
@@ -323,7 +448,12 @@ async function cmdCheck() {
 // ---------- main ----------
 const [cmd, ...args] = process.argv.slice(2);
 const dry = args.includes('--dry');
-const pos = args.filter(a => !a.startsWith('--'));
+const daysIdx = args.indexOf('--days');
+const pos = args.filter((a, i) => !a.startsWith('--') && i !== daysIdx + 1);
+const daysArg = (() => {
+  const v = daysIdx >= 0 ? Number(args[daysIdx + 1]) : 30;
+  return Number.isFinite(v) && v > 0 && v <= 365 ? Math.floor(v) : 30;
+})();
 const run = {
   check: cmdCheck,
   sync: cmdSync,
@@ -331,6 +461,7 @@ const run = {
   show: () => cmdShow(pos[0]),
   apply: () => cmdApply(pos[0], pos[1], dry),
   post: () => cmdPost(pos[0], pos[1], dry),
+  report: () => cmdReport(pos[0], daysArg, args.includes('--json'), args.includes('--debug')),
 }[cmd];
-if (!run) die('คำสั่ง: check | sync | audit | show <page-id> | apply <page-id> <setup.json> [--dry] | post <page-id> <post.json> [--dry]');
+if (!run) die('คำสั่ง: check | sync | audit | show <page-id> | apply <page-id> <setup.json> [--dry] | post <page-id> <post.json> [--dry] | report <page-id> [--days 30] [--json]');
 run().catch(e => die(e.message));
