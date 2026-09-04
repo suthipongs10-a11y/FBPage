@@ -26,6 +26,8 @@ node fb-pages.mjs apply <page-id> setup/<page-id>.json --dry   ดู payload �
 node fb-pages.mjs apply <page-id> setup/<page-id>.json         อัปเดตจริง
 node fb-pages.mjs post <page-id> post/<file>.json --dry        ดูข้อความ+รูปก่อนโพสต์
 node fb-pages.mjs post <page-id> post/<file>.json              โพสต์จริง
+node fb-pages.mjs report <page-id> [--days 30] [--json]        สรุปผลรายเพจ
+node make-card.mjs <template> card/<file>.json out.png         สร้างภาพจากเทมเพลต
 ```
 อ้างเพจด้วย page-id (เลข) หรือชื่อเพจตรงตัวก็ได้
 
@@ -65,3 +67,18 @@ node fb-pages.mjs post <page-id> post/<file>.json              โพสต์�
 - `scheduled_publish_time` — เช่น `"2026-09-05T10:00:00+07:00"` ต้องล่วงหน้า 10 นาที–75 วัน
 - ต้องมีอย่างน้อย 1 อย่างใน `message` / `link` / `photos`
 - ต้องมีสิทธิ์ `CREATE_CONTENT` บนเพจนั้น (ดูจาก `check`)
+
+## รูปแบบข้อมูลใน card json (ภาพประกอบ)
+เทมเพลต: `quote` (ข้อความเด่น) · `stat` (เปรียบเทียบก่อน→หลัง) · `tips` (รายการมีเลข) · `hero` (หัวเรื่อง+ภาพ SVG)
+ธีม: `fadaeng` · `phuketmaids` · `rabiangboon` · `dark` · `default` (ใส่ใน json ที่คีย์ `theme` หรือ `--theme`)
+- ทุกเทมเพลตรับ `kicker`, `footer`, `brand`
+- ในข้อความใช้ `\n` ขึ้นบรรทัดใหม่ และ `*ข้อความ*` เพื่อเน้นเป็นสีหลักของธีม
+- ภาพออกมาขนาด 1080x1080 · `tips` ย่อขนาดอัตโนมัติตามจำนวนข้อ
+- ดูตัวอย่างที่ `card/demo-*.json`
+
+## ข้อจำกัดของ report
+- อ่านได้: คะแนนความสมบูรณ์ของข้อมูลเพจ, ผู้ติดตาม, จำนวนโพสต์, ยอดแชร์
+- **อ่านไม่ได้**: ยอดถูกใจ/ความคิดเห็นรายโพสต์ (Graph ปฏิเสธ `likes.summary`/`comments.summary`
+  ด้วยสิทธิ์ปัจจุบัน) และตัวเลขการเข้าถึง (ต้องมี `read_insights`)
+- รายงานจะขึ้นว่า "อ่านไม่ได้" ไม่ใช่เลข 0 — **ห้ามแก้ให้แสดง 0** เพราะทำให้รายงานหลอกตา
+- ค่าโฆษณาไม่ได้อยู่ในคำสั่งนี้ ดูแยกจาก Ads Manager

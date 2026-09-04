@@ -449,7 +449,7 @@ async function cmdCheck() {
 const [cmd, ...args] = process.argv.slice(2);
 const dry = args.includes('--dry');
 const daysIdx = args.indexOf('--days');
-const pos = args.filter((a, i) => !a.startsWith('--') && i !== daysIdx + 1);
+const pos = args.filter((a, i) => !a.startsWith('--') && !(daysIdx >= 0 && i === daysIdx + 1));
 const daysArg = (() => {
   const v = daysIdx >= 0 ? Number(args[daysIdx + 1]) : 30;
   return Number.isFinite(v) && v > 0 && v <= 365 ? Math.floor(v) : 30;
