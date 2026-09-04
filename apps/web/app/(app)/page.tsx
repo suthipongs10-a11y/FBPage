@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, type Client, type WorkspaceDetail } from '@/lib/api';
+import { api, type Client, type PageRow, type WorkspaceDetail } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Card, Kpi, Loading } from '@/components/ui';
@@ -10,18 +10,22 @@ export default function OverviewPage() {
   const { ws } = useWorkspace();
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [clients, setClients] = useState<Client[] | null>(null);
+  const [pages, setPages] = useState<PageRow[] | null>(null);
   useEffect(() => {
-    setDetail(null); setClients(null);
+    setDetail(null); setClients(null); setPages(null);
+    api<PageRow[]>(`/workspaces/${ws.id}/pages`).then(setPages).catch(() => setPages([]));
     api<WorkspaceDetail>(`/workspaces/${ws.id}`).then(setDetail).catch(() => setDetail(null));
     api<Client[]>(`/workspaces/${ws.id}/clients`).then(setClients).catch(() => setClients([]));
   }, [ws.id]);
-  if (!detail || !clients) return <Loading />;
+  if (!detail || !clients || !pages) return <Loading />;
+  const activePages = pages.filter(p => !p.disconnectedAt);
 
   const brands = clients.reduce((n, c) => n + c._count.brands, 0);
   const attention: { text: string; href?: string; tone: 'warn' | 'bad' }[] = [];
   if (clients.length === 0) attention.push({ text: t('needsAttention.noClients'), href: '/clients', tone: 'warn' });
   if (ws.automationPaused) attention.push({ text: t('needsAttention.automationPaused'), href: '/settings', tone: 'bad' });
-  attention.push({ text: t('needsAttention.noPages'), tone: 'warn' });
+  if (activePages.length === 0) attention.push({ text: t('needsAttention.noPages'), href: '/pages', tone: 'warn' });
+  if (activePages.some(p => p.tokenStatus === 'INVALID')) attention.push({ text: t('needsAttention.pageTokenInvalid'), href: '/pages', tone: 'bad' });
 
   return (
     <div className="space-y-6">
@@ -30,7 +34,7 @@ export default function OverviewPage() {
         <Kpi value={detail._count.clients} label={t('overview.clients')} />
         <Kpi value={brands} label={t('overview.brands')} />
         <Kpi value={detail._count.members} label={t('overview.members')} />
-        <Kpi value={0} label={t('overview.pages')} />
+        <Kpi value={activePages.length} label={t('overview.pages')} />
         <Kpi value={0} label={t('overview.pending')} />
         <Kpi value={0} label={t('overview.leads')} />
       </div>

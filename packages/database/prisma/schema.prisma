@@ -160,6 +160,7 @@ model FacebookConnection {
   workspaceId          String
   userId               String
   providerUserId       String
+  providerUserName     String?
   /// เข้ารหัสด้วย AUTH_SECRET ก่อนเก็บ — ห้าม log/แสดง (§13)
   encryptedAccessToken String
   tokenExpiresAt       DateTime?
@@ -192,8 +193,14 @@ model FacebookPage {
   username                 String?
   category                 String?
   pictureUrl               String?
+  link                     String?
+  fanCount                 Int?
+  /// ข้อมูลเพจล่าสุดจาก Graph (about, phone, hours …) สำหรับคะแนนความสมบูรณ์ — ไม่มี token
+  profile                  Json?
   pageAccessTokenEncrypted String
   tokenStatus              String    @default("VALID")
+  lastValidatedAt          DateTime?
+  lastSyncError            String?
   /// สิทธิ์บนเพจจาก me/accounts.tasks เช่น CREATE_CONTENT, MANAGE — ไม่มี MANAGE = แก้ตั้งค่าเพจไม่ได้ (ADR-001)
   tasks                    String[]  @default([])
   automationLevel          AutomationLevel @default(APPROVAL_REQUIRED)
@@ -207,7 +214,7 @@ model FacebookPage {
   updatedAt                DateTime  @updatedAt
 
   brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  connection FacebookConnection @relation(fields: [connectionId], references: [id])
+  connection FacebookConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   posts      FacebookPost[]
   content    ContentItem[]
 

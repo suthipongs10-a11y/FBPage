@@ -13,6 +13,12 @@ export const envSchema = z.object({
   AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),
   DEFAULT_TIMEZONE: z.string().min(1).default('Asia/Bangkok'),
   META_GRAPH_API_VERSION: z.string().regex(/^v\d+\.\d+$/, 'META_GRAPH_API_VERSION must look like v26.0').default('v26.0'),
+  /** override ปลายทาง Graph (ใช้กับ mock ใน test เท่านั้น) */
+  META_GRAPH_BASE_URL: z.string().url().optional(),
+  /** OAuth — ไม่ใส่ก็ใช้ระบบได้ด้วยการวาง token (Phase 3) */
+  META_APP_ID: z.string().trim().optional().transform(v => v || undefined),
+  META_APP_SECRET: z.string().trim().optional().transform(v => v || undefined),
+  META_OAUTH_REDIRECT_URI: z.string().trim().optional().transform(v => v || undefined),
 });
 
 export type Env = z.infer<typeof envSchema>;

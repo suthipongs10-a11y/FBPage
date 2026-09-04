@@ -29,9 +29,9 @@ check('nosniff header', h.headers.get('x-content-type-options') === 'nosniff');
 
 // web
 const w = await fetch(`${WEB}/`);
-const html = await w.text();
 check('web / → 200', w.status === 200);
-check('web renders health from API (Thai i18n)', html.includes('ทำงานปกติ') && html.includes('PostgreSQL'));
+const lg = await fetch(`${WEB}/login`); const html = await lg.text();
+check('web /login renders app shell (Thai i18n)', lg.status === 200 && html.includes('เข้าสู่ระบบ'));
 const wh = await fetch(`${WEB}/health`);
 check('web /health liveness', wh.status === 200 && (await wh.json()).service === 'web');
 

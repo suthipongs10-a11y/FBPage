@@ -8,8 +8,9 @@ import { AuthModule } from './auth/auth.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { ClientsModule } from './clients/clients.module';
 import { BrandsModule } from './brands/brands.module';
+import { FacebookModule } from './facebook/facebook.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, HealthModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, FacebookModule, HealthModule],
 })
 export class AppModule {}
