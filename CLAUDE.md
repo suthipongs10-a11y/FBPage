@@ -11,7 +11,8 @@
 > node test/phase1-smoke.mjs                        # ต้องเปิด api/web/postgres/redis ก่อน
 > ```
 > ไฟล์ตัวอย่างค่าตั้งชื่อ `env.example` (ไม่มีจุดนำหน้า เพราะเครื่องมือในทีมห้ามแตะ `.env*`) — `cp env.example .env`
-> ลำดับงานถัดไปตาม §73: Auth → Workspace/tenant → Client/Brand → Facebook OAuth → Sync → AI Gateway
+> ทำแล้ว: Phase 1 ฐานระบบ · Phase 2 Auth + Workspace/tenant + RBAC + Client/Brand/Knowledge + audit (tests: unit 31 + integration + smoke)
+> ถัดไปตาม §73: ขั้น 3 Facebook OAuth + Page connect → ขั้น 4 Sync → ขั้น 5 AI Gateway
 >
 > ---
 > **เครื่องมือชุดเดิม (ยังใช้ทำงานลูกค้าได้ระหว่างเปลี่ยนผ่าน):**

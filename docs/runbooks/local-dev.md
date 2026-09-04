@@ -23,7 +23,16 @@ pnpm dev:worker                # BullMQ worker (ต้องมี Redis)
 ## ตรวจก่อน commit (Definition of Done §76)
 ```bash
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
+# integration test (tenant isolation / RBAC / audit) ต้องชี้ DB จริง — ข้ามอัตโนมัติถ้าไม่มี DATABASE_URL
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/fbpm REDIS_URL=redis://127.0.0.1:6379 \
+  AUTH_SECRET=integration-test-secret-at-least-32-chars APP_ENV=test pnpm --filter @fbpm/api test
+# end-to-end ผ่านหน้าเว็บ (เปิด api + web ก่อน)
+node test/phase1-smoke.mjs && node test/phase2-smoke.mjs
 ```
+
+## บัญชีแรก
+เปิด http://localhost:3000/register — ผู้สมัครคนแรกเป็น owner ของ workspace ที่สร้างให้อัตโนมัติ
+เพิ่มสมาชิกได้ที่ ตั้งค่า → สมาชิก (ต้องมีบัญชีแล้ว) · หน้าเว็บคุยกับ API ผ่าน `/api/*` (Next rewrite) จึงเป็น same-origin
 
 ## ถ้าไม่มี Docker daemon (เช่นในคอนเทนเนอร์พัฒนา)
 ```bash
