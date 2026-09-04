@@ -6,10 +6,11 @@ import { api } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { WorkspaceProvider, useWorkspace } from '@/components/workspace-context';
 import { Select } from '@/components/ui';
+import { NotificationBell } from '@/components/notification-bell';
 
 const NAV: { key: MessageKey; href?: string }[] = [
   { key: 'nav.overview', href: '/' }, { key: 'nav.clients', href: '/clients' }, { key: 'nav.pages', href: '/pages' }, { key: 'nav.ai', href: '/ai' },
-  { key: 'nav.content', href: '/content' }, { key: 'nav.calendar', href: '/calendar' }, { key: 'nav.analytics' }, { key: 'nav.comments' }, { key: 'nav.leads' },
+  { key: 'nav.content', href: '/content' }, { key: 'nav.calendar', href: '/calendar' }, { key: 'nav.analytics' }, { key: 'nav.comments', href: '/comments' }, { key: 'nav.leads', href: '/leads' },
   { key: 'nav.reports', href: '/reports' }, { key: 'nav.automation' }, { key: 'nav.aiModels', href: '/ai-models' }, { key: 'nav.settings', href: '/settings' },
 ];
 
@@ -21,9 +22,12 @@ function Shell({ children }: { children: ReactNode }) {
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[230px_1fr]">
       <aside className="flex flex-col gap-3 border-b border-slate-800 bg-slate-900 p-4 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r">
         <div className="text-base font-semibold text-sky-400">{t('app.name')}</div>
-        <Select value={ws.id} onChange={e => setWorkspace(e.target.value)} aria-label="workspace">
-          {me.workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={ws.id} onChange={e => setWorkspace(e.target.value)} aria-label="workspace">
+            {me.workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </Select>
+          <NotificationBell />
+        </div>
         <nav className="flex flex-wrap gap-1 md:flex-col">
           {NAV.map(n => n.href ? (
             <Link key={n.key} href={n.href} className={`rounded-md px-3 py-2 text-sm ${path === n.href || (n.href !== '/' && path.startsWith(n.href)) ? 'bg-slate-800 text-slate-100 font-semibold' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}>{t(n.key)}</Link>

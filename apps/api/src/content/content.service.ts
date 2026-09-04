@@ -10,6 +10,7 @@ import { PRISMA } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QueueService } from '../jobs/queue.service';
 import { SyncService } from '../facebook/sync.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { isValidTimeZone, localToUtc } from './tz';
 import type { CalendarDto, CreateContentDto, ListContentDto, ScheduleDto, UpdateContentDto } from './dto';
 
@@ -29,6 +30,7 @@ export class ContentService {
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(QueueService) private readonly queue: QueueService,
     @Inject(SyncService) private readonly sync: SyncService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
   private async load(workspaceId: string, id: string) {
@@ -97,6 +99,7 @@ export class ContentService {
     const out = await this.transition(workspaceId, userId, id, 'READY_FOR_APPROVAL', requestId, { reviewResult: review ? (review as unknown as Prisma.InputJsonValue) : undefined }, 'content.submit');
     await this.prisma.approvalRequest.updateMany({ where: { contentId: id, status: 'PENDING' }, data: { status: 'EXPIRED' } });
     await this.prisma.approvalRequest.create({ data: { workspaceId, resourceType: 'contentItem', resourceId: id, contentId: id, requestedById: userId } });
+    await this.notifications.notify(workspaceId, { type: 'approval_required', severity: 'warn', title: `รออนุมัติ: ${c.title ?? (c.caption ?? '').slice(0, 40)}`, body: `เพจ ${c.page.name}`, href: '/content', resourceType: 'contentItem', resourceId: id, dedupeKey: `approval:${id}` });
     return this.load(workspaceId, out.id);
   }
 
@@ -157,6 +160,7 @@ export class ContentService {
     const outcome = await publishContent(this.sync.deps, id, { requestId });
     await this.audit.log({ workspaceId, userId, action: 'content.publish', resourceType: 'contentItem', resourceId: id, after: outcome as unknown as Prisma.InputJsonValue, requestId });
     if (outcome.status === 'PUBLISHED') await this.queue.scheduleMetricCollection(outcome.postId, requestId).catch(() => undefined);
+    if (outcome.status === 'FAILED') await this.notifications.notify(workspaceId, { type: 'publish_failed', severity: 'bad', title: `โพสต์ไม่สำเร็จ: ${c.title ?? (c.caption ?? '').slice(0, 40)}`, body: outcome.error, href: '/content', resourceType: 'contentItem', resourceId: id, dedupeKey: `publish_failed:${id}` });
     return { outcome, content: await this.load(workspaceId, id) };
   }
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ZodPipe } from '../common/zod.pipe';
@@ -8,7 +8,9 @@ import { CurrentUser, type AppRequest, type AuthUser } from '../common/request-c
 import { ENV, type Env } from '../config/env';
 import { AuthGuard, SESSION_COOKIE } from './auth.guard';
 import { AuthService, SESSION_TTL_SEC } from './auth.service';
-import { loginSchema, registerSchema, type LoginDto, type RegisterDto } from './dto';
+import { acceptInviteSchema, changePasswordSchema, loginSchema, registerSchema, resetPasswordSchema, type AcceptInviteDto, type ChangePasswordDto, type LoginDto, type RegisterDto, type ResetPasswordDto } from './dto';
+import { InvitesService } from './invites.service';
+import { parseCookies } from '../common/cookies';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -16,6 +18,7 @@ export class AuthController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(ENV) private readonly env: Env,
+    @Inject(InvitesService) private readonly invites: InvitesService,
   ) {}
 
   private meta(req: AppRequest) {
@@ -62,5 +65,31 @@ export class AuthController {
   @UseGuards(AuthGuard)
   me(@CurrentUser() user: AuthUser) {
     return this.auth.me(user.id);
+  }
+
+  @Post('password') @HttpCode(200) @UseGuards(AuthGuard)
+  changePassword(@CurrentUser() u: AuthUser, @Body(new ZodPipe(changePasswordSchema)) dto: ChangePasswordDto, @Req() req: AppRequest) { return this.invites.changePassword(u.id, dto.current, dto.next, req.requestId); }
+
+  // ---------- คำเชิญ / รีเซ็ต (สาธารณะ — ตัวตนอยู่ใน token ของลิงก์) ----------
+  @Get('invites/:token') @UseGuards(AuthRateLimitGuard)
+  inspectInvite(@Param('token') token: string) { return this.invites.inspect(token); }
+
+  @Post('invites/:token/accept') @HttpCode(200) @UseGuards(AuthRateLimitGuard)
+  async acceptInvite(@Param('token') token: string, @Body(new ZodPipe(acceptInviteSchema)) dto: AcceptInviteDto, @Req() req: AppRequest, @Res({ passthrough: true }) res: Response) {
+    const cookie = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    const current = cookie ? await this.auth.resolveSession(cookie) : null;
+    const r = await this.invites.accept(token, current?.user.id ?? null, dto, this.meta(req));
+    if (r.token) this.setSession(res, r.token);
+    return { workspaceId: r.workspaceId, workspaceName: r.workspaceName, role: r.role };
+  }
+
+  @Get('reset/:token') @UseGuards(AuthRateLimitGuard)
+  inspectReset(@Param('token') token: string) { return this.invites.inspectReset(token); }
+
+  @Post('reset/:token') @HttpCode(200) @UseGuards(AuthRateLimitGuard)
+  async reset(@Param('token') token: string, @Body(new ZodPipe(resetPasswordSchema)) dto: ResetPasswordDto, @Req() req: AppRequest, @Res({ passthrough: true }) res: Response) {
+    const r = await this.invites.resetPassword(token, dto.password, this.meta(req));
+    this.setSession(res, r.token);
+    return { ok: true };
   }
 }

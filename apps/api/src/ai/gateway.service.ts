@@ -8,6 +8,7 @@ import type { AiRole } from '@fbpm/shared';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
 import { decryptSecret } from '../common/crypto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface ResolvedModel { cfg: ProviderConfig; provider: AiProviderId; model: string; role: AiRole; source: 'role' | 'fallback' | 'auto' }
 export interface TaskMeta { workspaceId: string; userId?: string | null; taskType: string; role: AiRole; requestId: string; resourceType?: string; resourceId?: string; promptVersion?: string }
@@ -21,7 +22,7 @@ const ROLE_FALLBACK_ORDER: Record<AiRole, AiRole[]> = {
 
 @Injectable()
 export class AiGatewayService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env) {}
+  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env, @Inject(NotificationsService) private readonly notifications: NotificationsService) {}
 
   /** key ของ provider — จาก BYOK ของ workspace ก่อน ไม่มีจึงใช้ key ระดับแพลตฟอร์มจาก env (§42) */
   private async providerConfig(workspaceId: string, provider: AiProviderId, model: string): Promise<ProviderConfig | null> {
@@ -66,8 +67,10 @@ export class AiGatewayService {
   private async assertBudget(workspaceId: string): Promise<void> {
     const ws = await this.prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { aiMonthlyBudgetUsd: true } });
     if (ws.aiMonthlyBudgetUsd == null) return;
-    const { costUsd } = await this.monthUsage(workspaceId);
-    if (costUsd >= Number(ws.aiMonthlyBudgetUsd)) throw new HttpException({ statusCode: HttpStatus.PAYMENT_REQUIRED, message: `งบ AI เดือนนี้ (${Number(ws.aiMonthlyBudgetUsd)} USD) ถูกใช้หมดแล้ว — เพิ่มงบที่หน้า "โมเดล AI"` }, HttpStatus.PAYMENT_REQUIRED);
+    const { costUsd, since } = await this.monthUsage(workspaceId);
+    const budget = Number(ws.aiMonthlyBudgetUsd);
+    if (budget > 0 && costUsd / budget >= 0.85) await this.notifications.notify(workspaceId, { type: 'ai_budget', severity: 'warn', title: `งบ AI เดือนนี้ใช้ไปแล้ว ${Math.round((costUsd / budget) * 100)}%`, body: `${costUsd.toFixed(2)} / ${budget} USD`, href: '/ai-models', dedupeKey: `ai_budget:${since.toISOString().slice(0, 7)}` });
+    if (costUsd >= budget) throw new HttpException({ statusCode: HttpStatus.PAYMENT_REQUIRED, message: `งบ AI เดือนนี้ (${Number(ws.aiMonthlyBudgetUsd)} USD) ถูกใช้หมดแล้ว — เพิ่มงบที่หน้า "โมเดล AI"` }, HttpStatus.PAYMENT_REQUIRED);
   }
 
   /** รัน task หนึ่งครั้งพร้อม log — fn ได้รับ config ของโมเดลที่เลือก; ถ้า provider ล้มแบบ retryable จะลอง fallback provider อื่น 1 ครั้ง */

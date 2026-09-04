@@ -10,6 +10,10 @@ export interface MockState {
   pages: { id: string; name: string; category: string; tasks: string[] }[];
   posts: Record<string, { id: string; message: string; created_time: string; shares?: number }[]>;
   denyEngagementSummary: boolean;
+  /** จำลองยังไม่มีสิทธิ์ pages_read_user_content / pages_manage_engagement */
+  denyComments: boolean;
+  comments: Record<string, { id: string; message: string; created_time: string; from: { id: string; name: string }; parent?: string }[]>;   // postId → comments
+  replies: { commentId: string; body: Record<string, string> }[];
   rateLimitNext: number;                     // จำนวนคำขอถัดไปที่จะตอบ code 4
   published: { pageId: string; body: Record<string, string> }[];
   requests: string[];
@@ -27,7 +31,15 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
       '111': [{ id: '111_1', message: 'โพสต์แรก', created_time: new Date(Date.now() - 2 * 86400000).toISOString(), shares: 3 }, { id: '111_2', message: 'โพสต์สอง', created_time: new Date(Date.now() - 86400000).toISOString() }],
       '222': [{ id: '222_1', message: 'ทำความสะอาด', created_time: new Date(Date.now() - 3600000).toISOString(), shares: 6 }],
     },
-    denyEngagementSummary: true, rateLimitNext: 0, published: [], requests: [],
+    denyEngagementSummary: true, denyComments: false, rateLimitNext: 0, published: [], requests: [],
+    comments: {
+      '111_1': [
+        { id: 'c1', message: 'ราคาเท่าไหร่คะ จัดงาน 30 คน วันที่ 18 กันยา', created_time: new Date(Date.now() - 3000_000).toISOString(), from: { id: 'u_a', name: 'สมศรี' } },
+        { id: 'c2', message: 'สวยมากค่ะ ชอบ', created_time: new Date(Date.now() - 2000_000).toISOString(), from: { id: 'u_b', name: 'มานี' } },
+        { id: 'c3', message: 'รับสมัครงานออนไลน์ รายได้ดี ทักมา', created_time: new Date(Date.now() - 1000_000).toISOString(), from: { id: 'u_c', name: 'spam' } },
+      ],
+      '111_2': [],
+    }, replies: [],
   };
   const err = (res: import('node:http').ServerResponse, code: number, message: string, status = 400, type = 'OAuthException') => {
     res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message, code, type } }));
@@ -54,6 +66,16 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
     if (path === 'me/permissions') return ok({ data: ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'pages_manage_posts'].map(p => ({ permission: p, status: 'granted' })) });
     if (path === 'debug_token') return ok({ data: { type: 'USER', expires_at: 0 } });
     if (path === 'me/accounts') { if (!state.validUserTokens.has(token)) return err(res, 190, 'Invalid OAuth access token', 401); return ok({ data: state.pages.map(p => ({ ...p, access_token: state.pageTokens[p.id], picture: { data: { url: `http://x/${p.id}.jpg` } } })) }); }
+
+    // คอมเมนต์: /{post-id}/comments (GET), /{comment-id}/comments (POST reply), /{comment-id} (POST is_hidden)
+    const cm = path.match(/^([\w]+)\/comments$/);
+    if (cm && !/^\d+$/.test(cm[1]!)) {
+      if (!pageByToken) return err(res, 190, 'Invalid OAuth access token', 401);
+      if (state.denyComments) return err(res, 10, '(#10) This endpoint requires the \'pages_read_user_content\' permission', 400, 'OAuthException');
+      if (req.method === 'POST') { state.replies.push({ commentId: cm[1]!, body: Object.fromEntries(params) } as never); return ok({ id: `${cm[1]}_reply${state.replies.length}` }); }
+      return ok({ data: (state.comments[cm[1]!] ?? []).map(c => ({ id: c.id, message: c.message, created_time: c.created_time, from: c.from, ...(c.parent && { parent: { id: c.parent } }), permalink_url: `http://x/${c.id}`, is_hidden: false })) });
+    }
+    if (/^c\d+$/.test(path) && req.method === 'POST') { if (state.denyComments) return err(res, 200, 'Permissions error', 400, 'OAuthException'); return ok({ success: true }); }
 
     const m = path.match(/^(\d+)(?:\/(\w+))?$/);
     if (m) {

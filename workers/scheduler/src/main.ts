@@ -5,8 +5,9 @@
  * - analytics: เก็บ metric โพสต์หลังเผยแพร่ 24/72 ชม.
  */
 import { Queue, Worker, type Job } from 'bullmq';
-import { PrismaClient } from '@fbpm/database';
-import { FacebookService, PageNotSyncable, collectPostMetrics, publishContent, syncPage, type SyncDeps } from '@fbpm/facebook-core';
+import { PrismaClient, notify } from '@fbpm/database';
+import { FacebookService, PageNotSyncable, collectPostMetrics, publishContent, syncComments, syncPage, type SyncDeps } from '@fbpm/facebook-core';
+import type { SocialEvent } from '@fbpm/shared';
 import { JOBS, QUEUES, redisConnectionFromUrl } from './queues';
 
 const REDIS_URL = process.env.REDIS_URL; const AUTH_SECRET = process.env.AUTH_SECRET;
@@ -31,7 +32,12 @@ export async function handlePublish(job: Job<{ contentId: string; requestId?: st
   if (outcome.status === 'PUBLISHED') {
     for (const h of [24, 72]) await analyticsQueue.add(JOBS.collectPostMetrics, { postId: outcome.postId, afterHours: h, requestId }, { jobId: `metrics-${outcome.postId}-${h}h`, delay: h * 3_600_000, attempts: 3, backoff: { type: 'exponential', delay: 300_000 } });
   }
-  if (outcome.status === 'FAILED' && outcome.retryable) throw new Error(outcome.error);   // ให้ BullMQ retry ตาม backoff — publisher กันซ้ำเองด้วย ExternalOperation
+  if (outcome.status === 'FAILED') {
+    const ws = await prisma.contentItem.findUnique({ where: { id: contentId }, select: { title: true, caption: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
+    const last = !outcome.retryable || job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+    if (ws && last) await notify(prisma, AUTH_SECRET!, ws.page.brand.client.workspaceId, { type: 'publish_failed', severity: 'bad', title: `โพสต์ตามเวลาไม่สำเร็จ: ${ws.title ?? (ws.caption ?? '').slice(0, 40)}`, body: outcome.error, href: '/content', resourceType: 'contentItem', resourceId: contentId, dedupeKey: `publish_failed:${contentId}` }).catch(() => undefined);
+    if (outcome.retryable) throw new Error(outcome.error);   // ให้ BullMQ retry ตาม backoff — publisher กันซ้ำเองด้วย ExternalOperation
+  }
   return outcome;
 }
 
@@ -42,8 +48,21 @@ export async function handleSync(job: Job<{ pageId?: string; days?: number }>): 
     return { enqueued: pages.length };
   }
   if (!job.data.pageId) return { skipped: 'no pageId' };
-  try { const r = await syncPage(deps, job.data.pageId, { days: job.data.days ?? 7 }); log('page synced', { pageId: job.data.pageId, ...r }); return r; }
-  catch (e) { if (e instanceof PageNotSyncable) return { skipped: e.message }; throw e; }
+  if (job.name === JOBS.syncComments) {
+    try { const r = await syncComments(deps, job.data.pageId, { days: job.data.days ?? 7, postIds: (job.data as { postIds?: string[] }).postIds }); log('comments synced', { pageId: job.data.pageId, ...r }); return r; }
+    catch (e) { if (e instanceof PageNotSyncable) return { skipped: e.message }; throw e; }
+  }
+  try {
+    const r = await syncPage(deps, job.data.pageId, { days: job.data.days ?? 7 }); log('page synced', { pageId: job.data.pageId, ...r });
+    const p = await prisma.facebookPage.findUnique({ where: { id: job.data.pageId }, select: { commentsStatus: true } });
+    if (p && p.commentsStatus !== 'NO_PERMISSION') await syncComments(deps, job.data.pageId, { days: 7 }).catch(() => undefined);   // คอมเมนต์ตามรอบ ถ้ามีสิทธิ์
+    return r;
+  } catch (e) {
+    if (e instanceof PageNotSyncable) return { skipped: e.message };
+    const page = await prisma.facebookPage.findUnique({ where: { id: job.data.pageId }, select: { name: true, tokenStatus: true, brand: { select: { client: { select: { workspaceId: true } } } } } });
+    if (page?.tokenStatus === 'INVALID') await notify(prisma, AUTH_SECRET!, page.brand.client.workspaceId, { type: 'reconnect_required', severity: 'bad', title: `เพจ ${page.name} ต้องเชื่อมต่อใหม่`, body: 'token ของเพจใช้ไม่ได้แล้ว — วาง token ใหม่ในหน้าเพจ', href: '/pages', resourceType: 'facebookPage', resourceId: job.data.pageId, dedupeKey: `token:${job.data.pageId}` }).catch(() => undefined);
+    throw e;
+  }
 }
 
 export async function handleAnalytics(job: Job<{ postId: string }>): Promise<unknown> {
@@ -52,8 +71,28 @@ export async function handleAnalytics(job: Job<{ postId: string }>): Promise<unk
   catch (e) { if (e instanceof PageNotSyncable) return { skipped: e.message }; throw e; }
 }
 
+/** Webhook events (§14): normalize แล้ว → ซิงก์เฉพาะส่วนที่เปลี่ยน ไม่รัน AI ตรงนี้ */
+export async function handleWebhook(job: Job<SocialEvent>): Promise<unknown> {
+  const ev = job.data;
+  const pages = await prisma.facebookPage.findMany({ where: { facebookPageId: ev.facebookPageId, disconnectedAt: null }, select: { id: true, commentsStatus: true } });
+  if (!pages.length) return { skipped: 'page not connected' };
+  for (const p of pages) {
+    if (ev.type === 'COMMENT_CREATED') {
+      const post = ev.postId ? await prisma.facebookPost.findFirst({ where: { pageId: p.id, facebookPostId: ev.postId }, select: { id: true } }) : null;
+      if (!post) await syncQueue.add(JOBS.syncPage, { pageId: p.id, days: 3 }, { jobId: `sync-${p.id}-wh-${Math.floor(Date.now() / 60_000)}`, attempts: 2 });
+      await syncQueue.add(JOBS.syncComments, { pageId: p.id, days: 3, ...(post && { postIds: [post.id] }) }, { jobId: `synccomments-${p.id}-${ev.commentId}`, attempts: 2, delay: post ? 0 : 30_000 });
+    } else if (ev.type === 'POST_UPDATED') {
+      await syncQueue.add(JOBS.syncPage, { pageId: p.id, days: 3 }, { jobId: `sync-${p.id}-wh-${Math.floor(Date.now() / 60_000)}`, attempts: 2 });
+    } else if (ev.type === 'TOKEN_ERROR') {
+      await prisma.facebookPage.update({ where: { id: p.id }, data: { tokenStatus: 'INVALID', lastSyncError: ev.reason } });
+    }
+  }
+  log('webhook event handled', { type: ev.type, facebookPageId: ev.facebookPageId, pages: pages.length });
+  return { handled: ev.type, pages: pages.length };
+}
+
 const ack = async (job: Job): Promise<{ acknowledged: true }> => { log('job received (no processor yet)', { queue: job.queueName, name: job.name, id: job.id }); return { acknowledged: true }; };
-const processors: Record<string, (job: Job) => Promise<unknown>> = { [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics };
+const processors: Record<string, (job: Job) => Promise<unknown>> = { [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics, [QUEUES.facebookWebhook]: handleWebhook as (job: Job) => Promise<unknown> };
 
 async function main(): Promise<void> {
   const workers = Object.values(QUEUES).map(name => {

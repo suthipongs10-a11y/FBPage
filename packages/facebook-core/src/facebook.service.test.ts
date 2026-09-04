@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FacebookService, FacebookApiError } from './index';
+import { FacebookService, FacebookApiError, CommentsPermissionError } from './index';
 import { normalizePostMetrics, pageCompleteness, toSnapshot } from './metrics';
 import { startMockGraph, type MockState } from './mock-graph';
 
@@ -81,6 +81,17 @@ describe('FacebookService (mock Graph, §77)', () => {
       expect(r.externalId).toMatch(/^111_new/);
       expect(state.published.slice(before)).toHaveLength(2);
     } finally { rmSync(f, { force: true }); }
+  });
+
+  it('reads comments of a post and replies; permission denial becomes CommentsPermissionError', async () => {
+    const cs = await svc().getComments('111_1', 'PAGE_111');
+    expect(cs.map(c => c.id)).toEqual(['c1', 'c2', 'c3']); expect(cs[0]!.fromName).toBe('สมศรี');
+    const r = await svc().replyToComment('c1', 'PAGE_111', 'ทักแชทได้เลยค่ะ');
+    expect(r.externalId).toMatch(/^c1_reply/); expect(state.replies.at(-1)!.body.message).toBe('ทักแชทได้เลยค่ะ');
+    state.denyComments = true;
+    await expect(svc().getComments('111_1', 'PAGE_111')).rejects.toBeInstanceOf(CommentsPermissionError);
+    await expect(svc().replyToComment('c1', 'PAGE_111', 'x')).rejects.toThrow(/pages_read_user_content/);
+    state.denyComments = false;
   });
 
   it('validatePageToken never throws', async () => {

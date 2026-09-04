@@ -129,6 +129,19 @@ export const QUEUES = {
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 /** ชื่องานในคิว — jobId ต้องกำหนดจากทรัพยากรเพื่อกันงานซ้ำ (§48) */
-export const JOBS = { publishContent: 'publish-content', syncPage: 'sync-page', syncAllPages: 'sync-all-pages', collectPostMetrics: 'collect-post-metrics' } as const;
+export const JOBS = { publishContent: 'publish-content', syncPage: 'sync-page', syncAllPages: 'sync-all-pages', collectPostMetrics: 'collect-post-metrics', syncComments: 'sync-comments', webhookEvent: 'webhook-event' } as const;
 /** BullMQ ห้ามมี ':' ใน jobId */
 export const publishJobId = (contentId: string) => `publish-${contentId}`;
+
+// ---------- Webhook events (§14) — รูปแบบกลางที่ worker ประมวลผล ----------
+export type SocialEvent =
+  | { type: 'COMMENT_CREATED'; facebookPageId: string; postId: string | null; commentId: string; message: string | null; fromId: string | null; fromName: string | null; createdTime: string }
+  | { type: 'POST_UPDATED'; facebookPageId: string; postId: string; verb: string }
+  | { type: 'MESSAGE_RECEIVED'; facebookPageId: string; senderId: string; text: string | null }
+  | { type: 'TOKEN_ERROR'; facebookPageId: string; reason: string }
+  | { type: 'UNKNOWN'; facebookPageId: string; field: string; raw: unknown };
+
+export const LEAD_STATUSES = ['NEW', 'CONTACTED', 'QUALIFIED', 'WON', 'LOST', 'SPAM'] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+export const REPLY_STATUSES = ['NONE', 'DRAFTED', 'APPROVED', 'SENT', 'FAILED', 'SKIPPED'] as const;
+export type ReplyStatus = (typeof REPLY_STATUSES)[number];

@@ -40,7 +40,7 @@ export interface FbConnection { id: string; providerUserId: string; providerUser
 export interface AvailablePage { id: string; name: string; category: string | null; tasks: string[]; pictureUrl: string | null; connected: { pageId: string; brandId: string; brandName: string } | null }
 export interface PageRow {
   id: string; brandId: string; connectionId: string; facebookPageId: string; name: string; username: string | null; category: string | null; pictureUrl: string | null; link: string | null; fanCount: number | null;
-  tokenStatus: string; tasks: string[]; automationLevel: string; publishingPaused: boolean; timezone: string | null; connectedAt: string; lastSyncedAt: string | null; lastSyncError: string | null; lastValidatedAt: string | null; disconnectedAt: string | null;
+  tokenStatus: string; tasks: string[]; automationLevel: string; publishingPaused: boolean; timezone: string | null; connectedAt: string; lastSyncedAt: string | null; lastSyncError: string | null; lastValidatedAt: string | null; disconnectedAt: string | null; commentsStatus?: string; commentsSyncedAt?: string | null;
   brand: { id: string; name: string; client: { id: string; name: string } }; _count: { posts: number };
 }
 export interface PageDetail extends PageRow {
@@ -98,3 +98,10 @@ export interface ReportRow { id: string; periodStart: string; periodEnd: string;
 export interface ReportDetail { id: string; pageId: string; periodStart: string; periodEnd: string; provider: string | null; model: string | null; createdAt: string; data: ReportData }
 export interface MediaAsset { id: string; contentId: string | null; kind: string; template: string | null; theme: string | null; path: string; mimeType: string; width: number | null; height: number | null; bytes: number | null; createdAt: string }
 export interface MediaCapabilities { templates: string[]; themes: string[]; size: number; chromium: boolean }
+
+// ---------- Comments / Leads / Notifications / Invites (Phase 8) ----------
+export interface CommentRow { id: string; pageId: string; postId: string | null; facebookCommentId: string; parentCommentId: string | null; fromName: string | null; message: string | null; createdTime: string; permalink: string | null; classification: string | null; sentiment: string | null; riskFlag: boolean; aiSummary: string | null; draftReply: string | null; replyStatus: string; replyExternalId: string | null; repliedAt: string | null; resolvedAt: string | null; isHidden: boolean; page: { id: string; name: string; automationLevel: string; commentsStatus: string }; post: { id: string; message: string | null; permalink: string | null } | null; lead: { id: string; leadScore: number; status: string } | null }
+export interface CommentInsights { days: number; total: number; distribution: { classification: string; count: number; share: number }[]; recommendations: string[]; unresolved: number; drafted: number; leadsNew: number; unclassified: number }
+export interface LeadRow { id: string; pageId: string; commentId: string | null; source: string; name: string | null; intent: string | null; product: string | null; service: string | null; quantity: string | null; requestedDate: string | null; location: string | null; budget: string | null; phone: string | null; urgency: string | null; leadScore: number; confidence: number; status: string; notes: string | null; createdAt: string; page: { id: string; name: string }; comment: { message: string | null; fromName: string | null; permalink: string | null } | null }
+export interface NotificationRow { id: string; type: string; severity: string; title: string; body: string | null; href: string | null; readAt: string | null; createdAt: string }
+export interface InviteRow { id: string; role: string; email: string | null; expiresAt: string; createdAt: string }

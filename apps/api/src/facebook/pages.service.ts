@@ -14,7 +14,7 @@ import type { ConnectPageDto, UpdatePageDto } from './dto';
 
 const PAGE_SELECT = {
   id: true, brandId: true, connectionId: true, facebookPageId: true, name: true, username: true, category: true, pictureUrl: true, link: true, fanCount: true,
-  tokenStatus: true, tasks: true, automationLevel: true, publishingPaused: true, timezone: true, connectedAt: true, lastSyncedAt: true, lastSyncError: true, lastValidatedAt: true, disconnectedAt: true,
+  tokenStatus: true, tasks: true, automationLevel: true, publishingPaused: true, timezone: true, connectedAt: true, lastSyncedAt: true, lastSyncError: true, lastValidatedAt: true, disconnectedAt: true, commentsStatus: true, commentsSyncedAt: true,
   brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } },
   _count: { select: { posts: true } },
 } as const;

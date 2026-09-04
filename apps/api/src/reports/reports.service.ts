@@ -9,6 +9,7 @@ import { pageCompleteness, type MetricSnapshot } from '@fbpm/facebook-core';
 import { PRISMA } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AiGatewayService } from '../ai/gateway.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { GenerateReportDto } from './dto';
 
 export const REPORT_PROMPT_VERSION = 'report-v1';
@@ -38,7 +39,7 @@ function validateSummary(v: unknown): NonNullable<ReportData['summary']> {
 
 @Injectable()
 export class ReportsService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(AiGatewayService) private readonly ai: AiGatewayService, @Inject(AuditService) private readonly audit: AuditService) {}
+  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(AiGatewayService) private readonly ai: AiGatewayService, @Inject(AuditService) private readonly audit: AuditService, @Inject(NotificationsService) private readonly notifications: NotificationsService) {}
 
   private period(dto: GenerateReportDto): { start: Date; end: Date; label: string } {
     if (dto?.from && dto.to) return { start: new Date(dto.from), end: new Date(dto.to), label: `${dto.from.slice(0, 10)} – ${dto.to.slice(0, 10)}` };
@@ -115,6 +116,7 @@ export class ReportsService {
     }
     data.text = renderText(data, page.brand.client.name, page.brand.name);
     const saved = await this.prisma.report.create({ data: { pageId, periodStart: start, periodEnd: end, data: data as unknown as Prisma.InputJsonValue, provider, model, createdById: userId }, select: { id: true, createdAt: true } });
+    await this.notifications.notify(workspaceId, { type: 'report_ready', title: `รายงาน ${page.name} (${label}) พร้อมแล้ว`, href: '/reports', resourceType: 'report', resourceId: saved.id });
     await this.audit.log({ workspaceId, userId, action: 'report.generate', resourceType: 'report', resourceId: saved.id, after: { pageId, period: label, posts: rows.length, withAi: !!data.summary }, requestId });
     return { id: saved.id, createdAt: saved.createdAt, pageId, periodStart: start, periodEnd: end, provider, model, data };
   }

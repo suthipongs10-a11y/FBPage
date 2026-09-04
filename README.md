@@ -42,7 +42,15 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   Overview (§36): โพสต์เดือนนี้ · ตั้งเวลา · รออนุมัติ · โพสต์ไม่สำเร็จ · token มีปัญหา · ค่า AI + "ต้องดูแล" (รออนุมัติ, พรุ่งนี้ไม่มีโพสต์, งบ AI ≥85%, ยังไม่ตั้งค่า AI)
   Docker: API image มี Chromium + ฟอนต์ไทย, volume `media-data` ใช้ร่วมกัน API/worker
 
-ยังไม่ทำ (ตามลำดับ §73): comments/leads (§23–24, §33 — token ปัจจุบันไม่มี pages_read_user_content/pages_manage_engagement จึงยังทดสอบกับเพจจริงไม่ได้) · webhooks (§14) · notifications (§65) · เชิญสมาชิกทางอีเมล/ลืมรหัสผ่าน · rate limit บน Redis
+- **Phase 8 — Comments/Leads + Notifications + Webhooks + Invite/Reset links + Redis rate limit** ✔ (§14, §23, §24, §33, §56, §65)
+  คอมเมนต์: ซิงก์จากโพสต์ → Community agent จำแนก 9 ประเภท + sentiment + risk + ร่างตอบ → Lead Detector (ไม่แต่งข้อมูลติดต่อ) → คนตรวจแล้วส่ง/ซ่อน/จัดการ · FULL_AUTO ตอบเองเฉพาะกลุ่มปลอดภัย · insights §33 → ข้อเสนอคอนเทนต์
+  **ต้องมีสิทธิ์ `pages_read_user_content` (อ่าน) และ `pages_manage_engagement` (ตอบ/ซ่อน)** — token ปัจจุบันยังไม่มี ระบบจะขึ้นสถานะ NO_PERMISSION และแจ้งเตือน ไม่ล้ม
+  การแจ้งเตือน (§65): in-app (กระดิ่ง) + webhook ภายนอก (Discord/Slack/LINE ผ่านตัวกลาง) — รออนุมัติ, โพสต์ไม่สำเร็จ, token เพจเสีย, ลีดร้อน, รายงานพร้อม, งบ AI ≥85%, ไม่มีสิทธิ์อ่านคอมเมนต์ (dedupe)
+  Webhook Meta (§14): `GET/POST /facebook/webhook` ตรวจ verify token + ลายเซ็น sha256 → normalize เป็น SocialEvent → คิว → worker ซิงก์เฉพาะส่วนที่เปลี่ยน
+  ลิงก์เชิญสมาชิก (ครั้งเดียว 7 วัน) + ลิงก์ตั้งรหัสใหม่ที่ owner สร้างให้ + เปลี่ยนรหัสผ่าน — ไม่ต้องมีระบบอีเมล · rate limit auth ผ่าน Redis (ถอยเป็นในหน่วยความจำเมื่อ Redis ล่ม)
+  ทดสอบ: integration 11 (comments 5, invites 3, webhook 3) กับ mock Graph/AI/webhook receiver
+
+ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
 
 ## โครงสร้าง

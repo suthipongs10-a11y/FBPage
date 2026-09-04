@@ -14,8 +14,10 @@ import { JobsModule } from './jobs/jobs.module';
 import { ContentModule } from './content/content.module';
 import { ReportsModule } from './reports/reports.module';
 import { MediaModule } from './media/media.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { CommentsModule } from './comments/comments.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, HealthModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, HealthModule],
 })
 export class AppModule {}

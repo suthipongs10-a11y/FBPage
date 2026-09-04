@@ -84,6 +84,31 @@ if (caps.json?.chromium) {
   const pubImg = await api('POST', `/workspaces/${ws}/content/${draft.json.id}/publish`, {});
   check('publish with 2 images → photos uploaded then attached', pubImg.json?.outcome?.status === 'PUBLISHED' && graph.state.published.length === b4 + 3, JSON.stringify(pubImg.json?.outcome));
 }
+
+// Phase 8: คอมเมนต์/ลีด/แจ้งเตือน/ลิงก์เชิญ
+for (const p of ['/comments', '/leads']) { const r = await fetch(`${WEB}${p}`); check(`web ${p} → 200`, r.status === 200); }
+const cs = await api('POST', `/workspaces/${ws}/pages/${pageId}/comments/sync`, { days: 30 });
+check('comments sync (mock) → imported 3', cs.status === 200 && cs.json.imported === 3, cs.text.slice(0, 80));
+const clist = await api('GET', `/workspaces/${ws}/comments?pageId=${pageId}`);
+await api('PUT', `/workspaces/${ws}/ai/roles`, { roles: { community: { provider: 'compatible', model: 'm' } } });
+ai.state.replies.push({ text: JSON.stringify({ comments: clist.json.map((c, i) => ({ id: c.id, classification: i === 0 ? 'PRICE_QUERY' : 'OTHER', sentiment: 'neutral', risk: false, summary: 's', draftReply: 'ทักแชทได้เลยค่ะ', lead: i === 0 ? { intent: 'จัดงาน', service: 'จัดงานบุญ', quantity: '30', requestedDate: null, location: null, budget: null, phone: null, product: null, urgency: 'high', leadScore: 85, confidence: 0.9 } : null })) }) });
+const cl = await api('POST', `/workspaces/${ws}/comments/classify`, { pageId });
+check('classify → drafts + 1 lead, no auto reply', cl.status === 200 && cl.json.leads === 1 && cl.json.autoReplied === 0, cl.text.slice(0, 100));
+const first = cl.json.items.find(x => x.classification === 'PRICE_QUERY');
+const crep = await api('POST', `/workspaces/${ws}/comments/${first.id}/reply`, { message: 'สวัสดีค่ะ ทักแชทมาได้เลย' });
+check('human sends reply → SENT (mock graph received)', crep.json?.replyStatus === 'SENT' && graph.state.replies.length === 1);
+check('leads listed', (await api('GET', `/workspaces/${ws}/leads`)).json?.length === 1);
+const notif = await api('GET', `/workspaces/${ws}/notifications`);
+check('notifications include hot_lead + approval_required', notif.json?.items?.some(n => n.type === 'hot_lead') && notif.json.items.some(n => n.type === 'approval_required'), notif.json?.items?.map(n => n.type).join(','));
+const inv = await api('POST', `/workspaces/${ws}/invites`, { role: 'editor' });
+const invToken = inv.json?.url?.split('/invite/')[1];
+check('invite link created', inv.status === 201 && !!invToken);
+const invPage = await fetch(`${WEB}/invite/${invToken}`); check('web /invite/[token] → 200', invPage.status === 200);
+const savedCookie = cookie; cookie = '';
+const acc = await api('POST', `/auth/invites/${invToken}/accept`, { name: 'Member', email: `smoke6-m-${stamp}@test.local`, password: 'member-password-123' });
+check('accept invite → member logged in', acc.status === 200 && acc.json.role === 'editor');
+check('member sees workspace', (await api('GET', '/auth/me')).json?.workspaces?.some(w => w.id === ws));
+cookie = savedCookie;
 graph.server.close(); ai.server.close();
-console.log(fail ? `\n${fail} check(s) failed` : '\nPhase 6–7 smoke: all checks passed');
+console.log(fail ? `\n${fail} check(s) failed` : '\nPhase 6–8 smoke: all checks passed');
 process.exit(fail ? 1 : 0);

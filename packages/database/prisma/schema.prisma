@@ -28,6 +28,129 @@ model User {
   auditLogs   AuditLog[]
   approvalsRequested ApprovalRequest[] @relation("ApprovalRequestedBy")
   approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewedBy")
+  passwordResets     PasswordReset[]
+}
+
+/// ลิงก์เชิญเข้า workspace (ไม่ต้องมีอีเมล — owner คัดลอกลิงก์ส่งเอง) token เก็บเป็น sha256
+model WorkspaceInvite {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  email        String?
+  role         WorkspaceRole
+  tokenHash    String    @unique
+  invitedById  String
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  createdAt    DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+/// ลิงก์ตั้งรหัสผ่านใหม่ที่ owner/admin สร้างให้สมาชิก (ไม่ต้องมีอีเมล)
+model PasswordReset {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  createdById String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// การแจ้งเตือนในแอป (§65) — ส่งต่อไป webhook ภายนอกได้ dedupeKey กันซ้ำ
+model Notification {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  type         String
+  severity     String    @default("info")
+  title        String
+  body         String?
+  href         String?
+  resourceType String?
+  resourceId   String?
+  dedupeKey    String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, readAt, createdAt])
+}
+
+/// คอมเมนต์บนโพสต์ของเพจ (§23, §33) — ต้องมีสิทธิ์ pages_read_user_content จึงอ่านได้
+model PageComment {
+  id                String    @id @default(cuid())
+  pageId            String
+  postId            String?
+  facebookCommentId String
+  parentCommentId   String?
+  fromId            String?
+  fromName          String?
+  message           String?
+  createdTime       DateTime
+  permalink         String?
+  /// QUESTION | LEAD | COMPLAINT | PRAISE | SPAM | PRICE_QUERY | LOCATION_QUERY | SERVICE_QUERY | OTHER
+  classification    String?
+  sentiment         String?
+  riskFlag          Boolean   @default(false)
+  aiSummary         String?
+  draftReply        String?
+  /// NONE | DRAFTED | APPROVED | SENT | FAILED | SKIPPED
+  replyStatus       String    @default("NONE")
+  replyExternalId   String?
+  repliedAt         DateTime?
+  resolvedAt        DateTime?
+  isHidden          Boolean   @default(false)
+  rawData           Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  page FacebookPage  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  post FacebookPost? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  lead Lead?
+
+  @@unique([pageId, facebookCommentId])
+  @@index([pageId, createdTime])
+  @@index([pageId, replyStatus])
+}
+
+/// ลีดที่ตรวจพบ (§24) — ห้ามแต่งข้อมูลติดต่อ ค่าที่ไม่รู้เป็น null
+model Lead {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  pageId        String
+  commentId     String?   @unique
+  source        String    @default("comment")
+  name          String?
+  intent        String?
+  product       String?
+  service       String?
+  quantity      String?
+  requestedDate String?
+  location      String?
+  budget        String?
+  phone         String?
+  urgency       String?
+  leadScore     Int
+  confidence    Float
+  /// NEW | CONTACTED | QUALIFIED | WON | LOST | SPAM
+  status        String    @default("NEW")
+  notes         String?
+  data          Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  page      FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  comment   PageComment? @relation(fields: [commentId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, createdAt])
 }
 
 /// เซสชันเก็บฝั่งเซิร์ฟเวอร์ เพิกถอนได้ทันที — cookie ถือเฉพาะ token ส่วน DB เก็บ hash (§56)
@@ -58,11 +181,17 @@ model Workspace {
   /// งบ AI ต่อเดือน (USD) และเพดานต่อ task (§41) — null = ไม่จำกัด
   aiMonthlyBudgetUsd   Decimal? @db.Decimal(12, 4)
   aiMaxCostPerTaskUsd  Decimal? @db.Decimal(12, 4)
+  /// ปลายทางแจ้งเตือนภายนอก (§65) — URL เข้ารหัส เพราะมักมี token อยู่ในตัว (Discord/LINE/Slack webhook)
+  notifyWebhookEncrypted String?
+  notifyWebhookHint      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   aiProviderKeys AiProviderKey[]
   aiRoleConfigs  AiRoleConfig[]
+  notifications  Notification[]
+  invites        WorkspaceInvite[]
+  leads          Lead[]
   members     WorkspaceMember[]
   clients     Client[]
   connections FacebookConnection[]
@@ -206,6 +335,9 @@ model FacebookPage {
   tokenStatus              String    @default("VALID")
   lastValidatedAt          DateTime?
   lastSyncError            String?
+  /// UNKNOWN | OK | NO_PERMISSION | ERROR — ผลซิงก์คอมเมนต์ล่าสุด (§23)
+  commentsStatus           String    @default("UNKNOWN")
+  commentsSyncedAt         DateTime?
   /// สิทธิ์บนเพจจาก me/accounts.tasks เช่น CREATE_CONTENT, MANAGE — ไม่มี MANAGE = แก้ตั้งค่าเพจไม่ได้ (ADR-001)
   tasks                    String[]  @default([])
   automationLevel          AutomationLevel @default(APPROVAL_REQUIRED)
@@ -225,6 +357,8 @@ model FacebookPage {
   analyses   PageAnalysis[]
   plans      ContentPlan[]
   reports    Report[]
+  comments   PageComment[]
+  leads      Lead[]
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -248,6 +382,7 @@ model FacebookPost {
   page      FacebookPage         @relation(fields: [pageId], references: [id], onDelete: Cascade)
   snapshots PostMetricSnapshot[]
   content   ContentItem?
+  comments  PageComment[]
 
   @@unique([pageId, facebookPostId])
   @@index([pageId, publishedAt])

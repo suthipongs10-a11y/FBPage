@@ -10,7 +10,7 @@ import { loadEnv, type Env } from './config/env';
 /** สร้าง Nest app พร้อม middleware มาตรฐาน — ใช้ทั้ง main.ts และ integration tests */
 export async function createApp(): Promise<{ app: INestApplication; env: Env }> {
   const env = loadEnv(); // ล้มเร็วถ้าค่าตั้งผิด (ก่อนสร้าง Nest app)
-  const app = await NestFactory.create(AppModule, { logger: env.APP_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] });
+  const app = await NestFactory.create(AppModule, { rawBody: true, logger: env.APP_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] });   // rawBody สำหรับตรวจลายเซ็น webhook (§14)
 
   // ทุก request มี correlation id (AGENTS.md §79) — ใช้ต่อใน audit log และ AI task log
   app.use((req: Request, res: Response, next: NextFunction) => {

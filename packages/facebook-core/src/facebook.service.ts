@@ -19,6 +19,8 @@ export interface GetPostsOptions { since?: Date; limit?: number }
 export interface CreatePostInput { message?: string; link?: string; scheduledAt?: Date }
 export interface PhotoPostInput extends CreatePostInput { photos: (string | { data: Buffer; filename: string } | { url: string })[] }
 export interface PublishResult { externalId: string; permalink: string; scheduled: boolean }
+export interface PageComment { id: string; postId: string; parentId: string | null; fromId: string | null; fromName: string | null; message: string | null; createdTime: Date; permalink: string | null; isHidden: boolean; raw: Record<string, unknown> }
+export class CommentsPermissionError extends Error { constructor(public readonly graphError: FacebookApiError) { super('อ่านคอมเมนต์ไม่ได้ — token ต้องมีสิทธิ์ pages_read_user_content (และ pages_manage_engagement เพื่อตอบ)'); this.name = 'CommentsPermissionError'; } }
 
 export const PAGE_FIELDS = [
   'id', 'name', 'username', 'link', 'category', 'about', 'description', 'phone', 'website', 'emails', 'single_line_address', 'hours',
@@ -131,6 +133,32 @@ export class FacebookService {
     Object.assign(params, scheduleParams(input.scheduledAt));
     const r = await this.graph.call<{ id: string }>(`${pageId}/feed`, { token: pageToken, method: 'POST', params });
     return { externalId: r.id, permalink: `https://www.facebook.com/${r.id}`, scheduled: !!input.scheduledAt };
+  }
+
+  /** คอมเมนต์ของโพสต์ (รวมคำตอบย่อย) — ต้องมี pages_read_user_content; ถ้าโดนปฏิเสธ (code 10/200) โยน CommentsPermissionError */
+  async getComments(postId: string, pageToken: string, opts: { since?: Date; limit?: number } = {}): Promise<PageComment[]> {
+    const out: PageComment[] = [];
+    try {
+      for await (const chunk of this.graph.paginate<Record<string, unknown>>(`${postId}/comments`, { token: pageToken, params: { fields: 'id,message,created_time,from{id,name},parent{id},permalink_url,is_hidden', filter: 'stream', order: 'reverse_chronological', limit: Math.min(100, opts.limit ?? 100), ...(opts.since && { since: Math.floor(opts.since.getTime() / 1000) }) } }, 10)) {
+        for (const c of chunk) {
+          const from = c.from as { id?: string; name?: string } | undefined; const parent = c.parent as { id?: string } | undefined;
+          out.push({ id: String(c.id), postId, parentId: parent?.id ?? null, fromId: from?.id ?? null, fromName: from?.name ?? null, message: (c.message as string) ?? null, createdTime: new Date(String(c.created_time)), permalink: (c.permalink_url as string) ?? null, isHidden: c.is_hidden === true, raw: c });
+          if (opts.limit && out.length >= opts.limit) return out;
+        }
+      }
+    } catch (e) { if (e instanceof FacebookApiError && e.isPermissionError) throw new CommentsPermissionError(e); throw e; }
+    return out;
+  }
+
+  /** ตอบคอมเมนต์ในนามเพจ — ต้องมี pages_manage_engagement */
+  async replyToComment(commentId: string, pageToken: string, message: string): Promise<{ externalId: string }> {
+    try { const r = await this.graph.call<{ id: string }>(`${commentId}/comments`, { token: pageToken, method: 'POST', params: { message } }); return { externalId: r.id }; }
+    catch (e) { if (e instanceof FacebookApiError && e.isPermissionError) throw new CommentsPermissionError(e); throw e; }
+  }
+
+  async hideComment(commentId: string, pageToken: string, hidden = true): Promise<void> {
+    try { await this.graph.call(commentId, { token: pageToken, method: 'POST', params: { is_hidden: hidden } }); }
+    catch (e) { if (e instanceof FacebookApiError && e.isPermissionError) throw new CommentsPermissionError(e); throw e; }
   }
 
   async deletePost(postId: string, pageToken: string): Promise<void> {

@@ -77,7 +77,7 @@ export class AuthService {
     return { user, workspaces: memberships.map(m => ({ ...m.workspace, role: m.role })) };
   }
 
-  private async createSession(userId: string, meta: SessionMeta): Promise<string> {
+  async createSession(userId: string, meta: SessionMeta): Promise<string> {
     const token = newSessionToken();
     await this.prisma.session.create({
       data: { userId, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + SESSION_TTL_SEC * 1000), ip: meta.ip ?? null, userAgent: meta.userAgent?.slice(0, 300) ?? null },
