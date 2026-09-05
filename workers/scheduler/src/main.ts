@@ -9,6 +9,7 @@ import { PrismaClient, notify } from '@fbpm/database';
 import { FacebookService, PageNotSyncable, collectPostMetrics, publishContent, syncComments, syncPage, type SyncDeps } from '@fbpm/facebook-core';
 import type { SocialEvent } from '@fbpm/shared';
 import { JOBS, QUEUES, redisConnectionFromUrl } from './queues';
+import { YT_QUEUES, buildWorkerYtDeps, createYtHandlers, registerYtSchedulers } from './youtube';
 
 const REDIS_URL = process.env.REDIS_URL; const AUTH_SECRET = process.env.AUTH_SECRET;
 if (!REDIS_URL) { console.error('REDIS_URL is required'); process.exit(1); }
@@ -21,6 +22,9 @@ const fb = new FacebookService({ version: process.env.META_GRAPH_API_VERSION, ba
 const deps: SyncDeps = { prisma, fb, authSecret: AUTH_SECRET, apiVersion: process.env.META_GRAPH_API_VERSION ?? 'v26.0' };
 const analyticsQueue = new Queue(QUEUES.analytics, { connection });
 const syncQueue = new Queue(QUEUES.facebookSync, { connection });
+const ytQueues = { upload: new Queue(YT_QUEUES.upload, { connection }), sync: new Queue(YT_QUEUES.sync, { connection }), analytics: new Queue(YT_QUEUES.analytics, { connection }), comments: new Queue(YT_QUEUES.comments, { connection }) };
+const ytBuilt = buildWorkerYtDeps(prisma, AUTH_SECRET);
+export const yt = createYtHandlers({ prisma, deps: ytBuilt.deps, quota: ytBuilt.quota, authSecret: AUTH_SECRET, queues: ytQueues, log });
 
 export async function handlePublish(job: Job<{ contentId: string; requestId?: string }>): Promise<unknown> {
   const { contentId, requestId = `job-${job.id}` } = job.data;
@@ -35,7 +39,7 @@ export async function handlePublish(job: Job<{ contentId: string; requestId?: st
   if (outcome.status === 'FAILED') {
     const ws = await prisma.contentItem.findUnique({ where: { id: contentId }, select: { title: true, caption: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
     const last = !outcome.retryable || job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
-    if (ws && last) await notify(prisma, AUTH_SECRET!, ws.page.brand.client.workspaceId, { type: 'publish_failed', severity: 'bad', title: `โพสต์ตามเวลาไม่สำเร็จ: ${ws.title ?? (ws.caption ?? '').slice(0, 40)}`, body: outcome.error, href: '/content', resourceType: 'contentItem', resourceId: contentId, dedupeKey: `publish_failed:${contentId}` }).catch(() => undefined);
+    if (ws?.page && last) await notify(prisma, AUTH_SECRET!, ws.page.brand.client.workspaceId, { type: 'publish_failed', severity: 'bad', title: `โพสต์ตามเวลาไม่สำเร็จ: ${ws.title ?? (ws.caption ?? '').slice(0, 40)}`, body: outcome.error, href: '/content', resourceType: 'contentItem', resourceId: contentId, dedupeKey: `publish_failed:${contentId}` }).catch(() => undefined);
     if (outcome.retryable) throw new Error(outcome.error);   // ให้ BullMQ retry ตาม backoff — publisher กันซ้ำเองด้วย ExternalOperation
   }
   return outcome;
@@ -92,18 +96,23 @@ export async function handleWebhook(job: Job<SocialEvent>): Promise<unknown> {
 }
 
 const ack = async (job: Job): Promise<{ acknowledged: true }> => { log('job received (no processor yet)', { queue: job.queueName, name: job.name, id: job.id }); return { acknowledged: true }; };
-const processors: Record<string, (job: Job) => Promise<unknown>> = { [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics, [QUEUES.facebookWebhook]: handleWebhook as (job: Job) => Promise<unknown> };
+const processors: Record<string, (job: Job) => Promise<unknown>> = {
+  [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics, [QUEUES.facebookWebhook]: handleWebhook as (job: Job) => Promise<unknown>,
+  [YT_QUEUES.upload]: yt.handleUpload as (job: Job) => Promise<unknown>, [YT_QUEUES.sync]: yt.handleSync as (job: Job) => Promise<unknown>, [YT_QUEUES.analytics]: yt.handleAnalytics as (job: Job) => Promise<unknown>, [YT_QUEUES.comments]: yt.handleComments as (job: Job) => Promise<unknown>,
+};
+const ALL_QUEUES = [...Object.values(QUEUES), ...Object.values(YT_QUEUES)];
 
 async function main(): Promise<void> {
-  const workers = Object.values(QUEUES).map(name => {
-    const w = new Worker(name, processors[name] ?? ack, { connection, concurrency: name === QUEUES.facebookPublish ? 1 : 4 });
+  const workers = ALL_QUEUES.map(name => {
+    const w = new Worker(name, processors[name] ?? ack, { connection, concurrency: name === QUEUES.facebookPublish || name === YT_QUEUES.upload ? 1 : 4 });
     w.on('failed', (job, err) => log('job failed', { queue: name, id: job?.id, name: job?.name, attempt: job?.attemptsMade, error: err.message }));
     w.on('error', err => log('worker error', { queue: name, error: err.message }));
     return w;
   });
   // งานรอบ: ซิงก์ทุกเพจทุก 6 ชั่วโมง (retry-safe — แค่เพิ่ม snapshot)
   await syncQueue.upsertJobScheduler('sync-all-pages-6h', { every: 6 * 3_600_000 }, { name: JOBS.syncAllPages, data: {} });
-  log('worker started', { queues: Object.values(QUEUES), graph: process.env.META_GRAPH_BASE_URL ?? 'graph.facebook.com' });
+  await registerYtSchedulers(ytQueues.sync);
+  log('worker started', { queues: ALL_QUEUES, graph: process.env.META_GRAPH_BASE_URL ?? 'graph.facebook.com', youtube: process.env.YOUTUBE_MOCK_BASE_URL ?? 'googleapis.com', youtubeUpload: ytBuilt.deps.uploadEnabled });
   const shutdown = async (signal: string): Promise<void> => { log('shutting down', { signal }); await Promise.all(workers.map(w => w.close())); await prisma.$disconnect(); process.exit(0); };
   process.on('SIGINT', () => void shutdown('SIGINT')); process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }

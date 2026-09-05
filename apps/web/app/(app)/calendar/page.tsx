@@ -10,7 +10,7 @@ const startOfWeek = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0)
 export default function CalendarPage() {
   const { ws } = useWorkspace();
   const [week, setWeek] = useState(() => startOfWeek(new Date()));
-  const [items, setItems] = useState<ContentItem[] | null>(null); const [error, setError] = useState<unknown>(null);
+  const [items, setItems] = useState<ContentItem[] | null>(null); const [error, setError] = useState<unknown>(null); const [platform, setPlatform] = useState('');
   const load = useCallback(async () => {
     const to = new Date(week); to.setDate(to.getDate() + 7);
     try { setItems(await api<ContentItem[]>(`/workspaces/${ws.id}/content/calendar?from=${week.toISOString()}&to=${to.toISOString()}`)); } catch (e) { setError(e); }
@@ -26,9 +26,10 @@ export default function CalendarPage() {
         <div className="flex gap-2"><Button variant="ghost" onClick={() => setWeek(w => { const d = new Date(w); d.setDate(d.getDate() - 7); return d; })}>← {t('calendar.prev')}</Button><Button variant="ghost" onClick={() => setWeek(startOfWeek(new Date()))}>{t('calendar.today')}</Button><Button variant="ghost" onClick={() => setWeek(w => { const d = new Date(w); d.setDate(d.getDate() + 7); return d; })}>{t('calendar.next')} →</Button></div>
       </div>
       <ErrorBox error={error} />
+      <div className="flex gap-1 text-xs">{[['', t('content.all')], ['FACEBOOK', 'Facebook'], ['YOUTUBE', 'YouTube']].map(([v, l]) => <button key={v} onClick={() => setPlatform(v)} className={`rounded-full border px-2 py-0.5 ${platform === v ? 'border-sky-500 text-sky-300' : 'border-slate-700 text-slate-400'}`}>{l}</button>)}</div>
       {items.length === 0 && <Empty text={t('calendar.empty')} />}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
-        {days.map(d => { const list = items.filter(it => { const x = dayOf(it); return x >= d && x < new Date(d.getTime() + 86_400_000); }); const today = d.toDateString() === new Date().toDateString(); return (
+        {days.map(d => { const list = items.filter(it => !platform || (it.platform ?? 'FACEBOOK') === platform).filter(it => { const x = dayOf(it); return x >= d && x < new Date(d.getTime() + 86_400_000); }); const today = d.toDateString() === new Date().toDateString(); return (
           <div key={d.toISOString()} className={`rounded-xl border p-2 ${today ? 'border-sky-700' : 'border-slate-800'}`}>
             <div className="mb-2 text-xs font-semibold text-slate-400">{d.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
             <div className="space-y-2">{list.map(it => <ContentCard key={it.id} item={it} onChange={load} />)}</div>

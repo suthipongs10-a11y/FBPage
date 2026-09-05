@@ -19,6 +19,7 @@ const PUBLISHABLE = ['APPROVED', 'SCHEDULED', 'PUBLISHING', 'PUBLISH_FAILED'];
 export async function publishBlockReason(prisma: PrismaClient, contentId: string): Promise<string | null> {
   const c = await prisma.contentItem.findUnique({ where: { id: contentId }, select: { status: true, page: { select: { publishingPaused: true, tokenStatus: true, tasks: true, disconnectedAt: true, brand: { select: { client: { select: { workspace: { select: { automationPaused: true } } } } } } } } } });
   if (!c) return 'ไม่พบคอนเทนต์';
+  if (!c.page) return 'คอนเทนต์นี้ไม่ได้ผูกกับเพจ Facebook (publisher ของ YouTube แยกต่างหาก)';
   if (!PUBLISHABLE.includes(c.status)) return `สถานะ ${c.status} เผยแพร่ไม่ได้ — ต้องอนุมัติก่อน`;
   if (c.page.brand.client.workspace.automationPaused) return 'ระบบอัตโนมัติของ workspace ถูกหยุดไว้ (สวิตช์ฉุกเฉิน)';
   if (c.page.publishingPaused) return 'เพจนี้ถูกหยุดการโพสต์ไว้';
@@ -31,7 +32,9 @@ export async function publishBlockReason(prisma: PrismaClient, contentId: string
 export async function publishContent(d: SyncDeps, contentId: string, _opts: { requestId: string; scheduledPublish?: boolean } = { requestId: 'n/a' }): Promise<PublishOutcome> {
   const blocked = await publishBlockReason(d.prisma, contentId);
   if (blocked) return { status: 'SKIPPED', reason: blocked };
-  const c = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, pageId: true, caption: true, hashtags: true, mediaPaths: true, status: true, retryCount: true, publishedPostId: true, externalPostId: true, scheduledAt: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
+  const c0 = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, pageId: true, caption: true, hashtags: true, mediaPaths: true, status: true, retryCount: true, publishedPostId: true, externalPostId: true, scheduledAt: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
+  if (!c0.pageId || !c0.page) return { status: 'SKIPPED', reason: 'ไม่ได้ผูกกับเพจ Facebook' };
+  const c = { ...c0, pageId: c0.pageId, page: c0.page };
   const workspaceId = c.page.brand.client.workspaceId;
   const message = [c.caption ?? '', c.hashtags.length ? c.hashtags.map(h => (h.startsWith('#') ? h : `#${h}`)).join(' ') : ''].filter(Boolean).join('\n\n').trim();
   if (!message && !c.mediaPaths.length) return { status: 'FAILED', error: 'ไม่มีข้อความหรือรูปให้โพสต์', retryable: false };

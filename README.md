@@ -50,12 +50,21 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   ลิงก์เชิญสมาชิก (ครั้งเดียว 7 วัน) + ลิงก์ตั้งรหัสใหม่ที่ owner สร้างให้ + เปลี่ยนรหัสผ่าน — ไม่ต้องมีระบบอีเมล · rate limit auth ผ่าน Redis (ถอยเป็นในหน่วยความจำเมื่อ Redis ล่ม)
   ทดสอบ: integration 11 (comments 5, invites 3, webhook 3) กับ mock Graph/AI/webhook receiver
 
+- **Phase 9 — YouTube AI Channel Manager (โมดูลใน monorepo เดียว ตาม [`AGENTS_YOUTUBE.md`](AGENTS_YOUTUBE.md) YT-1…YT-7 / MVP §165)** ✔
+  `packages/youtube-core`: Google OAuth (scopes ขั้นต่ำตามฟีเจอร์ §8, refresh อัตโนมัติ, `invalid_grant` → RECONNECT) · `YouTubeClient` (Data v3 / Analytics v2 / resumable upload, error normalization §139, retry, quota ledger ทุกคำขอ §21) · progressive sync §17 (ช่อง → วิดีโอผ่าน uploads playlist 1 unit ไม่ใช้ search 100 → Analytics → คอมเมนต์ → playlists) · Shorts classifier ≤180s · metric normalization (ค่าที่อ่านไม่ได้ = `null`) · หน้าต่างอายุเท่ากัน (§42) · packaging diagnosis/revival score เป็น *สมมติฐาน* (§43, §130) · `mock-youtube.ts` สำหรับทดสอบ
+  `apps/api/src/youtube`: connections (OAuth callback + วาง refresh token) · channels (OAUTH / PUBLIC_API_KEY โดย @handle, policy §64, automation level, kill switches) · videos (คลัง + stats + baseline ต่อรูปแบบ + แก้ metadata ทีละรายการผ่าน API มี audit §67) · Analyst / Topic Opportunity / Script / Title / Thumbnail brief / SEO / Reviewer / Comment intelligence / Repurposing agents ผ่าน `AiGatewayService` เท่านั้น · Content Lab บน `ContentItem` เดียวกัน (`platform=YOUTUBE`, `ytStatus` state machine §55–61, ฟิลด์นโยบาย madeForKids/synthetic/paid ต้องเป็นคนกรอก §62–63) · อนุมัติ → อัปโหลด resumable + idempotent ผ่าน `YouTubeUploadOperation` (§56–61) · คอมเมนต์ → ลีด/คลัสเตอร์ → ไอเดีย (§47–50) · cross-platform: repurpose → ร่าง Facebook + `ContentRelation`, `BrandInsight` (§71–76) · รายงานรายเดือน `YouTubeReport` (§78) · quota/health
+  worker: คิว `youtube-upload` (concurrency 1, ตรวจ processing ทุก 5 นาที) · `youtube-sync` (quick ทุก 6 ชม., videos+analytics รายวัน) · `youtube-analytics` (+1h/+24h/+72h/+7d/+28d) · `youtube-comments` — quota-aware, `quotaExceeded` ไม่ retry
+  หน้าเว็บ: "YouTube" (สถานะ/โควตา/บัญชี Google/เชื่อมช่อง/kill switch/ข้อเสนอ) · "YT · วิดีโอ" · "YT · Content Lab" · "YT · คอมเมนต์" · "YT · รายงาน" · ปฏิทิน/คิวอนุมัติรวมสองแพลตฟอร์ม (§65, §117)
+  RBAC `youtube.*` (§89–91) · env `GOOGLE_*`, `YOUTUBE_*` (§144) · เอกสาร `docs/youtube/` (API changelog §167, Google Cloud setup, first-channel runbook)
+  ทดสอบ: unit 11 (youtube-core) + integration 17 (API กับ mock YouTube/mock AI/mock Graph — OAuth, connect, sync, quota 429, analyst, metadata audit, comments→lead→cluster→idea, ideas→script→metadata→policy gate→approve→asset→upload idempotent, repurpose, report, tenant isolation, disconnect/revoke) + `test/phase9-smoke.mjs`
+  ยังไม่ทำ (นอก MVP §165): Live (§68), Playlist Architect อัตโนมัติ (§45 — API มี `syncPlaylists`/`createPlaylist` แล้ว), YouTube Reporting API bulk (§93), thumbnail generation ด้วยภาพ AI (§39 มีแค่บรีฟ), แดชบอร์ดกราฟ
+
 ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
 
 ## โครงสร้าง
 ```
-apps/api            NestJS REST API        →  :4000  /health  /docs
+apps/api            NestJS REST API        →  :4000  /health  /docs  (+ /workspaces/:id/youtube/*)
 apps/web            Next.js dashboard      →  :3000
 workers/scheduler   BullMQ worker (คิวตาม §46)
 packages/shared     enum + กฎโดเมนล้วน (state machine, RBAC, risk level)

@@ -54,3 +54,13 @@ redis-server --daemonize yes
 
 ## เริ่มรับงานลูกค้า
 ดู [first-client.md](first-client.md) — ขั้นตอนครบลูปตั้งแต่สร้างลูกค้าจนส่งรายงาน
+
+## โมดูล YouTube (Phase 9)
+- ไม่ตั้ง `GOOGLE_*`/`YOUTUBE_API_KEY` ก็รันได้ — หน้า YouTube จะขึ้น "ยังไม่ตั้งค่า" (ดู [docs/youtube/runbooks/google-cloud-setup.md](../youtube/runbooks/google-cloud-setup.md))
+- ทดสอบครบลูปโดยไม่แตะช่องจริง:
+  ```bash
+  YOUTUBE_MOCK_BASE_URL=http://127.0.0.1:4997 GOOGLE_CLIENT_ID=gclient GOOGLE_CLIENT_SECRET=gsecret \
+  GOOGLE_OAUTH_REDIRECT_URI=http://127.0.0.1:4000/youtube/oauth/callback YOUTUBE_API_KEY=APIKEY_OK YOUTUBE_UPLOAD_ENABLED=true pnpm dev:api
+  node test/phase9-smoke.mjs
+  ```
+- worker ต้องเห็น env เดียวกัน (`GOOGLE_*`, `YOUTUBE_*`, `MEDIA_DIR`, `AUTH_SECRET`) เพื่ออัปโหลด/ซิงก์ตามรอบ

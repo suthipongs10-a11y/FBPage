@@ -18,6 +18,9 @@
 > Phase 7 Reports (`apps/api/src/reports`) + Media service (`apps/api/src/media` — การ์ดภาพ Chromium, MEDIA_DIR) + Overview §36
 > Phase 8 Comments/Leads (`apps/api/src/comments`) + Notifications (`notifications`, helper ใน `@fbpm/database/notify`) + Webhook (`facebook/webhook.controller.ts`) + Invite/Reset links (`auth/invites.service.ts`)
 > คอมเมนต์ต้องมีสิทธิ์ pages_read_user_content/pages_manage_engagement — ไม่มีจะขึ้น NO_PERMISSION (ทดสอบผ่าน mock เท่านั้น)
+> Phase 9 YouTube module (`packages/youtube-core`, `apps/api/src/youtube`, worker คิว `youtube-*`, หน้า `/youtube/*`) ตาม `AGENTS_YOUTUBE.md` — Google OAuth/API key, progressive sync (quota-aware), Analyst/Topic/Script/Title/Thumb/SEO/Reviewer/Comment agents, Content Lab บน ContentItem เดียวกัน (platform=YOUTUBE), อนุมัติ → resumable upload idempotent, comments→leads→clusters→ideas, repurpose→Facebook, YouTubeReport
+> YOUTUBE_MOCK_BASE_URL=http://127.0.0.1:4997 GOOGLE_CLIENT_ID=gclient GOOGLE_CLIENT_SECRET=gsecret GOOGLE_OAUTH_REDIRECT_URI=http://127.0.0.1:4000/youtube/oauth/callback YOUTUBE_API_KEY=APIKEY_OK YOUTUBE_UPLOAD_ENABLED=true pnpm dev:api  แล้ว  node test/phase9-smoke.mjs   # YouTube กับ mock (ไม่แตะช่องจริง)
+> กฎ YouTube เพิ่มเติม: ห้าม import googleapis SDK ในโค้ดธุรกิจ (ผ่าน `@fbpm/youtube-core` เท่านั้น) · ทุกคำขอต้องบันทึก quota · ใช้ uploads playlist ไม่ใช้ search.list · ฟิลด์นโยบาย (madeForKids/syntheticMedia/paidPlacement) AI ห้ามตัดสิน · ห้ามอัปโหลด/แก้ metadata จริงโดยไม่ผ่านอนุมัติ · CI/test ห้ามยิงช่องจริง ใช้ `startMockYouTube()`
 > node test/phase5-smoke.mjs                        # AI gateway ผ่าน proxy กับ mock AI (ไม่ใช้ key จริง)
 > META_GRAPH_BASE_URL=http://127.0.0.1:4998 pnpm dev:api  แล้ว  node test/phase6-smoke.mjs   # content loop กับ mock Graph (ไม่แตะเพจจริง)
 > worker ต้องมี AUTH_SECRET เดียวกับ API (ถอดรหัส page token) — `pnpm dev:worker`

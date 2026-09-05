@@ -8,6 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/database/package.json packages/database/
 COPY packages/facebook-core/package.json packages/facebook-core/
+COPY packages/youtube-core/package.json packages/youtube-core/
 COPY workers/scheduler/package.json workers/scheduler/
 RUN pnpm install --frozen-lockfile --filter @fbpm/worker-scheduler...
 
@@ -15,10 +16,12 @@ FROM deps AS build
 COPY packages/shared packages/shared
 COPY packages/database packages/database
 COPY packages/facebook-core packages/facebook-core
+COPY packages/youtube-core packages/youtube-core
 COPY workers/scheduler workers/scheduler
 RUN pnpm --filter @fbpm/shared build \
  && pnpm --filter @fbpm/database build \
  && pnpm --filter @fbpm/facebook-core build \
+ && pnpm --filter @fbpm/youtube-core build \
  && pnpm --filter @fbpm/worker-scheduler build \
  && pnpm --filter @fbpm/worker-scheduler... deploy --prod /out
 

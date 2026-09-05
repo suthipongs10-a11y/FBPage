@@ -15,6 +15,7 @@
     "@fbpm/ai-core": "workspace:*",
     "@fbpm/database": "workspace:*",
     "@fbpm/facebook-core": "workspace:*",
+    "@fbpm/youtube-core": "workspace:*",
     "@fbpm/shared": "workspace:*",
     "@nestjs/common": "12.0.1",
     "@nestjs/core": "12.0.1",

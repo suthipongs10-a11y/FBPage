@@ -121,6 +121,7 @@ export class ContentAgentsService {
   async review(workspaceId: string, userId: string, contentId: string, requestId: string): Promise<ReviewResult | null> {
     const c = await this.prisma.contentItem.findFirst({ where: { id: contentId, ...contentInWorkspace(workspaceId) }, select: { id: true, pageId: true, caption: true, cta: true, hashtags: true, contentPillar: true } });
     if (!c) throw new NotFoundException('ไม่พบคอนเทนต์');
+    if (!c.pageId) return null;   // reviewer ฝั่ง YouTube อยู่ในโมดูล youtube
     try { await this.ai.resolve(workspaceId, 'fast'); } catch { return null; }
     const { text } = await this.pageContext(workspaceId, c.pageId);
     const dupes = await this.prisma.contentItem.findMany({ where: { pageId: c.pageId, id: { not: c.id }, status: { in: ['PUBLISHED', 'SCHEDULED', 'APPROVED'] } }, orderBy: { updatedAt: 'desc' }, take: 10, select: { caption: true } });

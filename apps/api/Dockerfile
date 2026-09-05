@@ -9,6 +9,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/database/package.json packages/database/
 COPY packages/facebook-core/package.json packages/facebook-core/
 COPY packages/ai-core/package.json packages/ai-core/
+COPY packages/youtube-core/package.json packages/youtube-core/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --filter @fbpm/api...
 
@@ -17,11 +18,13 @@ COPY packages/shared packages/shared
 COPY packages/database packages/database
 COPY packages/facebook-core packages/facebook-core
 COPY packages/ai-core packages/ai-core
+COPY packages/youtube-core packages/youtube-core
 COPY apps/api apps/api
 RUN pnpm --filter @fbpm/shared build \
  && pnpm --filter @fbpm/database build \
  && pnpm --filter @fbpm/ai-core build \
  && pnpm --filter @fbpm/facebook-core build \
+ && pnpm --filter @fbpm/youtube-core build \
  && pnpm --filter @fbpm/api build \
  && pnpm --filter @fbpm/api... deploy --prod /out
 

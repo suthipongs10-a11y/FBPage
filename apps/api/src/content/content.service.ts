@@ -15,7 +15,7 @@ import { isValidTimeZone, localToUtc } from './tz';
 import type { CalendarDto, CreateContentDto, ListContentDto, ScheduleDto, UpdateContentDto } from './dto';
 
 export const CONTENT_SELECT = {
-  id: true, pageId: true, status: true, contentType: true, title: true, caption: true, cta: true, hashtags: true, mediaBrief: true, mediaPaths: true, objective: true, contentPillar: true,
+  id: true, pageId: true, platform: true, ytStatus: true, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true, privacyStatus: true, scheduledPublishAt: true } }, status: true, contentType: true, title: true, caption: true, cta: true, hashtags: true, mediaBrief: true, mediaPaths: true, objective: true, contentPillar: true,
   scheduledLocal: true, scheduledTz: true, scheduledAt: true, retryCount: true, createdById: true, aiProvider: true, aiModel: true, promptVersion: true, editedByHuman: true,
   publishedPostId: true, externalPostId: true, publishedAt: true, planId: true, aiNotes: true, reviewResult: true, lastError: true, createdAt: true, updatedAt: true,
   page: { select: { id: true, name: true, pictureUrl: true, timezone: true, automationLevel: true, publishingPaused: true, tokenStatus: true, brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } } } },
@@ -99,7 +99,7 @@ export class ContentService {
     const out = await this.transition(workspaceId, userId, id, 'READY_FOR_APPROVAL', requestId, { reviewResult: review ? (review as unknown as Prisma.InputJsonValue) : undefined }, 'content.submit');
     await this.prisma.approvalRequest.updateMany({ where: { contentId: id, status: 'PENDING' }, data: { status: 'EXPIRED' } });
     await this.prisma.approvalRequest.create({ data: { workspaceId, resourceType: 'contentItem', resourceId: id, contentId: id, requestedById: userId } });
-    await this.notifications.notify(workspaceId, { type: 'approval_required', severity: 'warn', title: `รออนุมัติ: ${c.title ?? (c.caption ?? '').slice(0, 40)}`, body: `เพจ ${c.page.name}`, href: '/content', resourceType: 'contentItem', resourceId: id, dedupeKey: `approval:${id}` });
+    await this.notifications.notify(workspaceId, { type: 'approval_required', severity: 'warn', title: `รออนุมัติ: ${c.title ?? (c.caption ?? '').slice(0, 40)}`, body: c.page ? `เพจ ${c.page.name}` : 'YouTube', href: '/content', resourceType: 'contentItem', resourceId: id, dedupeKey: `approval:${id}` });
     return this.load(workspaceId, out.id);
   }
 
@@ -137,7 +137,7 @@ export class ContentService {
   async schedule(workspaceId: string, userId: string, id: string, dto: ScheduleDto, requestId: string) {
     const c = await this.load(workspaceId, id);
     const ws = await this.prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
-    const tz = dto.timezone ?? c.page.timezone ?? ws.timezone;
+    const tz = dto.timezone ?? c.page?.timezone ?? ws.timezone;
     if (!isValidTimeZone(tz)) throw new BadRequestException('เขตเวลาไม่ถูกต้อง');
     const at = localToUtc(dto.scheduledLocal, tz);
     const mins = (at.getTime() - Date.now()) / 60_000;

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { api, type ContentItem, type ContentRevisionRow, type MediaAsset, type MediaCapabilities, type PublishOutcome } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
+import Link from 'next/link';
 import { Button, ErrorBox, Field, Input, Pill, Select, Textarea } from '@/components/ui';
 
 export const statusTone = (s: string): 'ok' | 'warn' | 'bad' | 'muted' => (['PUBLISHED', 'ANALYZED', 'APPROVED', 'SCHEDULED'].includes(s) ? 'ok' : ['NEEDS_REVISION', 'READY_FOR_APPROVAL', 'PUBLISHING', 'AI_REVIEW'].includes(s) ? 'warn' : ['REJECTED', 'PUBLISH_FAILED'].includes(s) ? 'bad' : 'muted');
@@ -11,6 +12,20 @@ const defaultLocal = () => { const d = new Date(Date.now() + 3_600_000); d.setMi
 
 /** การ์ดคอนเทนต์ + การกระทำตามสถานะ (§38) — ใช้ทั้งหน้าคอนเทนต์และปฏิทิน */
 export function ContentCard({ item, onChange }: { item: ContentItem; onChange: () => Promise<void> }) {
+  if (item.platform === 'YOUTUBE' || !item.page) return <YoutubeMiniCard item={item} />;
+  return <FacebookCard item={{ ...item, page: item.page }} onChange={onChange} />;
+}
+/** งาน YouTube ในปฏิทิน/คิวรวม — รายละเอียดอยู่ใน Content Lab */
+function YoutubeMiniCard({ item }: { item: ContentItem }) {
+  const s = item.ytStatus ?? item.status;
+  return (
+    <Link href="/youtube/content" className="block rounded-xl border border-rose-900/50 bg-slate-900 p-3 text-sm hover:border-rose-700">
+      <div className="flex flex-wrap items-center gap-2"><Pill tone="bad">YouTube</Pill><Pill tone={statusTone(item.status)}>{t(`yts.${s}` as MessageKey)}</Pill><span className="font-medium">{item.youtubeMeta?.title || item.title || '(ไม่มีหัวข้อ)'}</span></div>
+      <div className="mt-1 text-xs text-slate-500">{item.youtubeChannel?.title ?? '—'} · {item.youtubeMeta?.format ? t(`ytf.${item.youtubeMeta.format}` as MessageKey) : ''}{item.scheduledAt && ` · ⏰ ${fmt(item.scheduledAt, item.scheduledTz)}`}{item.publishedAt && ` · ✔ ${fmt(item.publishedAt)}`}</div>
+    </Link>
+  );
+}
+function FacebookCard({ item, onChange }: { item: ContentItem & { page: NonNullable<ContentItem['page']> }; onChange: () => Promise<void> }) {
   const { ws, can } = useWorkspace();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState(false);
   const [f, setF] = useState({ title: item.title ?? '', caption: item.caption ?? '', cta: item.cta ?? '', hashtags: item.hashtags.join(' '), mediaBrief: item.mediaBrief ?? '', mediaPaths: item.mediaPaths.join('\n'), reason: '' });

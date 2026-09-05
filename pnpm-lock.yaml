@@ -38,6 +38,9 @@ importers:
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@fbpm/youtube-core':
+        specifier: workspace:*
+        version: link:../../packages/youtube-core
       '@nestjs/common':
         specifier: 12.0.1
         version: 12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -176,6 +179,25 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
 
+  packages/youtube-core:
+    dependencies:
+      '@fbpm/database':
+        specifier: workspace:*
+        version: link:../database
+      '@fbpm/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+
   workers/scheduler:
     dependencies:
       '@fbpm/database':
@@ -187,6 +209,9 @@ importers:
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@fbpm/youtube-core':
+        specifier: workspace:*
+        version: link:../../packages/youtube-core
       bullmq:
         specifier: 6.3.4
         version: 6.3.4(ioredis@5.11.1)

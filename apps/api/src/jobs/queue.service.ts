@@ -4,7 +4,7 @@
  */
 import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { JOBS, QUEUES, publishJobId } from '@fbpm/shared';
+import { JOBS, QUEUES, YT_QUEUES, publishJobId, ytUploadJobId } from '@fbpm/shared';
 import { ENV, type Env } from '../config/env';
 
 function connectionFromUrl(url: string) {
@@ -15,10 +15,12 @@ function connectionFromUrl(url: string) {
 @Injectable()
 export class QueueService implements OnModuleDestroy {
   readonly publish: Queue; readonly sync: Queue; readonly analytics: Queue;
+  readonly ytUpload: Queue; readonly ytSync: Queue; readonly ytAnalytics: Queue; readonly ytComments: Queue;
   constructor(@Inject(ENV) env: Env) {
     const connection = connectionFromUrl(env.REDIS_URL);
     const mk = (name: string) => new Queue(name, { connection, defaultJobOptions: { removeOnComplete: 500, removeOnFail: 1000 } });
     this.publish = mk(QUEUES.facebookPublish); this.sync = mk(QUEUES.facebookSync); this.analytics = mk(QUEUES.analytics);
+    this.ytUpload = mk(YT_QUEUES.upload); this.ytSync = mk(YT_QUEUES.sync); this.ytAnalytics = mk(YT_QUEUES.analytics); this.ytComments = mk(YT_QUEUES.comments);
   }
 
   /** ตั้งเวลาเผยแพร่ — งานเดิมของคอนเทนต์นี้ (ถ้ามี) ถูกแทนที่ */
@@ -53,5 +55,46 @@ export class QueueService implements OnModuleDestroy {
     await this.sync.add(JOBS.syncPage, { pageId, days, requestId }, { jobId: `sync-${pageId}-${Math.floor(Date.now() / 60_000)}`, attempts: 2 });
   }
 
-  async onModuleDestroy(): Promise<void> { await Promise.all([this.publish.close(), this.sync.close(), this.analytics.close()]); }
+  // ---------- YouTube (AGENTS_YOUTUBE §63–66) ----------
+  /** ส่งงานอัปโหลด — jobId = ytupload-<contentId> กันซ้ำ; ถ้ามีงานเดิมค้าง (ไม่ active) แทนที่ */
+  async enqueueYtUpload(contentId: string, requestId: string, runAt?: Date): Promise<string> {
+    const id = ytUploadJobId(contentId);
+    await this.cancelYtUpload(contentId);
+    const delay = runAt ? Math.max(0, runAt.getTime() - Date.now()) : 0;
+    const job = await this.ytUpload.add(JOBS.ytUpload, { contentId, requestId }, { jobId: id, delay, attempts: 3, backoff: { type: 'exponential', delay: 120_000 } });
+    return job.id ?? id;
+  }
+
+  async cancelYtUpload(contentId: string): Promise<boolean> {
+    const job = await this.ytUpload.getJob(ytUploadJobId(contentId));
+    if (!job) return false;
+    if ((await job.getState()) === 'active') return false;
+    await job.remove(); return true;
+  }
+
+  async ytUploadJobState(contentId: string): Promise<{ state: string; processedOn: number | null; failedReason: string | null } | null> {
+    const job = await this.ytUpload.getJob(ytUploadJobId(contentId));
+    if (!job) return null;
+    return { state: await job.getState(), processedOn: job.processedOn ?? null, failedReason: job.failedReason ?? null };
+  }
+
+  /** ตรวจสถานะ processing ของวิดีโอที่อัปโหลดแล้ว (ทุก 5 นาที จนกว่าจะ processed/failed — worker เป็นผู้ re-enqueue) */
+  async scheduleYtProcessingCheck(contentId: string, requestId: string, attempt = 1): Promise<void> {
+    await this.ytUpload.add(JOBS.ytCheckProcessing, { contentId, requestId, attempt }, { jobId: `ytproc-${contentId}-${attempt}`, delay: 5 * 60_000, attempts: 2 });
+  }
+
+  /** เก็บ metric ตามหน้าต่างอายุเท่ากัน (§42) — +1h/+24h/+72h/+7d/+28d */
+  async scheduleYtMetricCollection(videoId: string, requestId: string): Promise<void> {
+    for (const h of [1, 24, 72, 24 * 7, 24 * 28]) await this.ytAnalytics.add(JOBS.ytCollectVideoMetrics, { videoId, requestId, afterHours: h }, { jobId: `ytmetrics-${videoId}-${h}h`, delay: h * 3_600_000, attempts: 3, backoff: { type: 'exponential', delay: 600_000 } });
+  }
+
+  async enqueueYtSync(channelId: string, stage: string, requestId: string): Promise<void> {
+    await this.ytSync.add(JOBS.ytSyncChannel, { channelId, stage, requestId }, { jobId: `ytsync-${channelId}-${stage}-${Math.floor(Date.now() / 60_000)}`, attempts: 2 });
+  }
+
+  async enqueueYtComments(channelId: string, requestId: string): Promise<void> {
+    await this.ytComments.add(JOBS.ytSyncComments, { channelId, requestId }, { jobId: `ytcomments-${channelId}-${Math.floor(Date.now() / 60_000)}`, attempts: 2 });
+  }
+
+  async onModuleDestroy(): Promise<void> { await Promise.all([this.publish, this.sync, this.analytics, this.ytUpload, this.ytSync, this.ytAnalytics, this.ytComments].map((q) => q.close())); }
 }

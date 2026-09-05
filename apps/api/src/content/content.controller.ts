@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ZodPipe } from '../common/zod.pipe';
 import { CurrentUser, RequestId, Tenant, type AuthUser, type TenantContext } from '../common/request-context';
@@ -78,6 +78,7 @@ export class ContentController {
   @Post('content/:id/generate') @HttpCode(200) @RequirePermission('content.edit', 'ai.use')
   async regenerate(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) {
     const c = await this.content.get(t.workspaceId, id);
+    if (!c.pageId) throw new ConflictException('คอนเทนต์นี้เป็นของ YouTube — ใช้ Content Lab ของ YouTube');
     return this.agents.generate(t.workspaceId, u.id, c.pageId, undefined, rid, id);
   }
 }

@@ -25,6 +25,7 @@ model User {
   sessions    Session[]
   memberships WorkspaceMember[]
   connections FacebookConnection[]
+  googleConnections GoogleConnection[]
   auditLogs   AuditLog[]
   approvalsRequested ApprovalRequest[] @relation("ApprovalRequestedBy")
   approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewedBy")
@@ -124,9 +125,12 @@ model PageComment {
 model Lead {
   id            String    @id @default(cuid())
   workspaceId   String
-  pageId        String
+  pageId        String?
   commentId     String?   @unique
+  youtubeCommentId String? @unique
   source        String    @default("comment")
+  /// FACEBOOK | YOUTUBE (AGENTS_YOUTUBE.md §112)
+  sourcePlatform String   @default("FACEBOOK")
   name          String?
   intent        String?
   product       String?
@@ -147,8 +151,9 @@ model Lead {
   updatedAt     DateTime  @updatedAt
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  page      FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  page      FacebookPage? @relation(fields: [pageId], references: [id], onDelete: Cascade)
   comment   PageComment? @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  youtubeComment YouTubeComment? @relation(fields: [youtubeCommentId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, status, createdAt])
 }
@@ -192,6 +197,8 @@ model Workspace {
   notifications  Notification[]
   invites        WorkspaceInvite[]
   leads          Lead[]
+  googleConnections GoogleConnection[]
+  youtubeApiUsage YouTubeApiUsage[]
   members     WorkspaceMember[]
   clients     Client[]
   connections FacebookConnection[]
@@ -264,6 +271,9 @@ model Brand {
   client    Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   knowledge BrandKnowledgeItem[]
   pages     FacebookPage[]
+  youtubeChannels YouTubeChannel[]
+  topics    Topic[]
+  insights  BrandInsight[]
 
   @@index([clientId])
 }
@@ -422,8 +432,13 @@ enum ContentStatus {
 
 model ContentItem {
   id             String        @id @default(cuid())
-  pageId         String
+  /// FACEBOOK | YOUTUBE (AGENTS_YOUTUBE.md §24)
+  platform       String        @default("FACEBOOK")
+  pageId         String?
+  youtubeChannelId String?
   status         ContentStatus @default(DRAFT)
+  /// สถานะละเอียดของ YouTube (§26) — status หลักยังใช้ ContentStatus ร่วมกันสำหรับคิวอนุมัติ/ปฏิทิน
+  ytStatus       String?
   contentType    String        @default("post")
   title          String?
   caption        String?
@@ -456,11 +471,16 @@ model ContentItem {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  page          FacebookPage      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  page          FacebookPage?     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  youtubeChannel YouTubeChannel?  @relation(fields: [youtubeChannelId], references: [id], onDelete: Cascade)
   publishedPost FacebookPost?     @relation(fields: [publishedPostId], references: [id])
   plan          ContentPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
   revisions     ContentRevision[]
   approvals     ApprovalRequest[]
+  youtubeMeta   YouTubeContentMetadata?
+  uploadOps     YouTubeUploadOperation[]
+  relationsFrom ContentRelation[] @relation("RelationParent")
+  relationsTo   ContentRelation[] @relation("RelationChild")
 
   @@index([pageId, status])
   @@index([scheduledAt])
@@ -688,4 +708,468 @@ model AiTaskLog {
 
   @@index([workspaceId, createdAt])
   @@index([provider, model])
+}
+
+// =====================================================================
+// YouTube module (AGENTS_YOUTUBE.md) — platform-specific entities; shared Core อยู่ด้านบน
+// =====================================================================
+
+/// Google OAuth ต่อ workspace (§11, §7) — token เข้ารหัสด้วย AUTH_SECRET ห้าม log/ส่งหน้าเว็บ
+model GoogleConnection {
+  id                    String    @id @default(cuid())
+  workspaceId           String
+  userId                String
+  providerUserId        String
+  email                 String?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]  @default([])
+  /// ACTIVE | REVOKED | ERROR
+  status                String    @default("ACTIVE")
+  lastRefreshedAt       DateTime?
+  lastValidatedAt       DateTime?
+  lastError             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id])
+  channels  YouTubeChannel[]
+
+  @@unique([workspaceId, providerUserId])
+}
+
+/// ช่องที่เชื่อมกับแบรนด์ (§11) — accessMode PUBLIC_API_KEY (อ่านข้อมูลสาธารณะ) หรือ OAUTH (เจ้าของช่อง: analytics/อัปโหลด/ตอบ)
+model YouTubeChannel {
+  id                 String    @id @default(cuid())
+  brandId            String
+  googleConnectionId String?
+  youtubeChannelId   String
+  /// PUBLIC_API_KEY | OAUTH
+  accessMode         String    @default("PUBLIC_API_KEY")
+  title              String
+  customUrl          String?
+  description        String?
+  country            String?
+  defaultLanguage    String?
+  thumbnailUrl       String?
+  publishedAt        DateTime?
+  uploadsPlaylistId  String?
+  subscriberCount    Int?
+  videoCount         Int?
+  viewCount          BigInt?
+  timezone           String?
+  /// 1 ANALYZE_ONLY | 2 CONTENT_DRAFT | 3 APPROVAL_PUBLISHING | 4 FULL_AUTO (§135) — เก็บเป็น AutomationLevel เดิม
+  automationLevel    AutomationLevel @default(APPROVAL_REQUIRED)
+  automationPaused   Boolean   @default(false)
+  uploadsPaused      Boolean   @default(false)
+  /// YouTubeChannelPolicy (§64) + settings (§137) เป็น JSON
+  policy             Json?
+  connectedAt        DateTime  @default(now())
+  lastSyncedAt       DateTime?
+  /// IDLE | SYNCING | OK | ERROR | NO_ACCESS
+  syncStatus         String    @default("IDLE")
+  syncError          String?
+  commentsStatus     String    @default("UNKNOWN")
+  analyticsStatus    String    @default("UNKNOWN")
+  status             String    @default("ACTIVE")
+  disconnectedAt     DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  brand      Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection GoogleConnection? @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
+  videos     YouTubeVideo[]
+  snapshots  YouTubeChannelMetricSnapshot[]
+  comments   YouTubeComment[]
+  playlists  YouTubePlaylist[]
+  syncRuns   YouTubeSyncRun[]
+  content    ContentItem[]
+  recommendations YouTubeRecommendation[]
+  clusters   CommentCluster[]
+  analyses   YouTubeChannelAnalysis[]
+  reports    YouTubeReport[]
+
+  @@unique([brandId, youtubeChannelId])
+  @@index([googleConnectionId])
+}
+
+/// วิดีโอ (§12) — type จำแนกโดย classifier ที่แก้ได้ (§12) + manual pillar override (§29)
+model YouTubeVideo {
+  id                   String    @id @default(cuid())
+  channelId            String
+  youtubeVideoId       String
+  title                String
+  description          String?
+  publishedAt          DateTime?
+  scheduledPublishAt   DateTime?
+  privacyStatus        String?
+  uploadStatus         String?
+  durationSeconds      Int?
+  categoryId           String?
+  defaultLanguage      String?
+  defaultAudioLanguage String?
+  tags                 String[]  @default([])
+  thumbnailUrl         String?
+  madeForKids          Boolean?
+  liveBroadcastContent String?
+  /// LONG_FORM | SHORT | LIVE | PREMIERE | UNKNOWN
+  videoType            String    @default("UNKNOWN")
+  classifierVersion    String?
+  contentPillar        String?
+  pillarConfidence     Float?
+  pillarManual         Boolean   @default(false)
+  /// imported | app
+  source               String    @default("imported")
+  /// AVAILABLE | PRIVATE | DELETED | UNAVAILABLE (§127)
+  availability         String    @default("AVAILABLE")
+  commentsDisabled     Boolean   @default(false)
+  // ค่าล่าสุดจาก statistics สาธารณะ (Data API) เพื่อเรียงตาราง — ประวัติอยู่ใน snapshots
+  viewCount            BigInt?
+  likeCount            Int?
+  commentCount         Int?
+  rawData              Json?
+  lastSyncedAt         DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  channel   YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  snapshots YouTubeVideoMetricSnapshot[]
+  comments  YouTubeComment[]
+  playlistItems YouTubePlaylistItem[]
+  recommendations YouTubeRecommendation[]
+
+  @@unique([channelId, youtubeVideoId])
+  @@index([channelId, publishedAt])
+  @@index([channelId, videoType])
+}
+
+/// Snapshot metric วิดีโอ (§13) — metricsJson = { key: { value|null, unit, sourceMetric, source } }
+model YouTubeVideoMetricSnapshot {
+  id               String   @id @default(cuid())
+  videoId          String
+  capturedAt       DateTime @default(now())
+  metricSetVersion String
+  metricsJson      Json
+  /// DATA_API | ANALYTICS_API | REPORTING_API
+  source           String
+  /// FIRST_24H | FIRST_72H | FIRST_7D | FIRST_28D | LIFETIME | RANGE
+  window           String   @default("LIFETIME")
+  dateRangeStart   DateTime?
+  dateRangeEnd     DateTime?
+
+  video YouTubeVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId, capturedAt])
+  @@index([videoId, window])
+}
+
+model YouTubeChannelMetricSnapshot {
+  id               String   @id @default(cuid())
+  channelId        String
+  capturedAt       DateTime @default(now())
+  rangeStart       DateTime?
+  rangeEnd         DateTime?
+  metricsJson      Json
+  metricSetVersion String
+  source           String
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, capturedAt])
+}
+
+/// คอมเมนต์ YouTube (§47) — เก็บเท่าที่จำเป็น (§150)
+model YouTubeComment {
+  id                String    @id @default(cuid())
+  channelId         String
+  videoId           String?
+  youtubeCommentId  String
+  parentCommentId   String?
+  authorChannelId   String?
+  authorDisplayName String?
+  text              String
+  likeCount         Int       @default(0)
+  publishedAt       DateTime
+  updatedAt         DateTime?
+  isReply           Boolean   @default(false)
+  classification    String?
+  sentiment         String?
+  riskFlag          Boolean   @default(false)
+  aiSummary         String?
+  draftReply        String?
+  /// NONE | DRAFTED | APPROVED | SENT | FAILED | SKIPPED
+  replyStatus       String    @default("NONE")
+  replyExternalId   String?
+  repliedAt         DateTime?
+  resolvedAt        DateTime?
+  clusterId         String?
+  rawData           Json?
+  lastSyncedAt      DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  video   YouTubeVideo?  @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  cluster CommentCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  lead    Lead?
+
+  @@unique([channelId, youtubeCommentId])
+  @@index([channelId, publishedAt])
+  @@index([videoId])
+}
+
+/// กลุ่มคำถาม/คำขอซ้ำ (§85) → ไอเดียวิดีโอ (§50)
+model CommentCluster {
+  id                       String   @id @default(cuid())
+  channelId                String
+  topicId                  String?
+  label                    String
+  description              String?
+  count                    Int      @default(0)
+  representativeCommentIds String[] @default([])
+  /// CONTENT_REQUEST | QUESTION | COMPLAINT | MISUNDERSTANDING | PRAISE | OTHER
+  kind                     String   @default("QUESTION")
+  confidence               Float?
+  firstSeen                DateTime @default(now())
+  lastSeen                 DateTime @default(now())
+  createdAt                DateTime @default(now())
+
+  channel  YouTubeChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  topic    Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  comments YouTubeComment[]
+
+  @@index([channelId, count])
+}
+
+model YouTubePlaylist {
+  id                String   @id @default(cuid())
+  channelId         String
+  youtubePlaylistId String
+  title             String
+  description       String?
+  privacyStatus     String?
+  itemCount         Int?
+  rawData           Json?
+  lastSyncedAt      DateTime @default(now())
+
+  channel YouTubeChannel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  items   YouTubePlaylistItem[]
+
+  @@unique([channelId, youtubePlaylistId])
+}
+
+model YouTubePlaylistItem {
+  id         String  @id @default(cuid())
+  playlistId String
+  videoId    String
+  position   Int     @default(0)
+
+  playlist YouTubePlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  video    YouTubeVideo    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, videoId])
+}
+
+/// การใช้ quota (§21) — ประเมินหน่วยต่อ method
+model YouTubeApiUsage {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  channelId           String?
+  api                 String
+  method              String
+  quotaUnitsEstimated Int
+  calledAt            DateTime @default(now())
+  success             Boolean
+  requestId           String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, calledAt])
+}
+
+/// รอบซิงก์ (§125) — progressive sync แสดงความคืบหน้าใน UI (§17)
+model YouTubeSyncRun {
+  id            String    @id @default(cuid())
+  channelId     String
+  /// QUICK | VIDEOS | HISTORY | ANALYTICS | COMMENTS | PLAYLISTS
+  type          String
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  /// RUNNING | OK | ERROR | PARTIAL
+  status        String    @default("RUNNING")
+  totalExpected Int?
+  processed     Int       @default(0)
+  errors        Int       @default(0)
+  cursorState   Json?
+  message       String?
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, startedAt])
+}
+
+/// metadata ของ ContentItem ฝั่ง YouTube (§25) + สคริปต์/แพ็กเกจ
+model YouTubeContentMetadata {
+  contentItemId      String    @id
+  title              String?
+  description        String?
+  tags               String[]  @default([])
+  categoryId         String?
+  playlistIds        String[]  @default([])
+  privacyStatus      String    @default("private")
+  scheduledPublishAt DateTime?
+  madeForKids        Boolean?
+  syntheticMedia     Boolean?
+  paidPlacement      Boolean?
+  thumbnailAssetId   String?
+  videoAssetId       String?
+  /// LONG_FORM | SHORT | LIVE
+  format             String    @default("LONG_FORM")
+  targetDurationSec  Int?
+  hook               String?
+  outline            Json?
+  script             String?
+  titleCandidates    Json?
+  thumbnailBrief     Json?
+  research           Json?
+  objective          String?
+  youtubeVideoId     String?
+  updatedAt          DateTime  @updatedAt
+
+  content ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+}
+
+/// อัปโหลดกันซ้ำ (§58) — resumable session state (§59)
+model YouTubeUploadOperation {
+  id                      String    @id @default(cuid())
+  contentItemId           String
+  channelId               String
+  videoAssetId            String
+  idempotencyKey          String    @unique
+  /// PENDING | UPLOADING | UPLOADED | PROCESSING | READY | FAILED
+  status                  String    @default("PENDING")
+  youtubeVideoId          String?
+  resumableSessionUri     String?
+  bytesSent               BigInt    @default(0)
+  totalBytes              BigInt?
+  retryCount              Int       @default(0)
+  error                   String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  content ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@index([contentItemId])
+}
+
+/// คำแนะนำที่ทำได้จริง (§79–81) พร้อมสถานะติดตามผล
+model YouTubeRecommendation {
+  id          String    @id @default(cuid())
+  channelId   String
+  videoId     String?
+  /// YT_RECOMMENDATION_ACTIONS
+  actionType  String
+  title       String
+  why         String
+  evidence    Json
+  /// LOW | MEDIUM | HIGH
+  confidence  String
+  priority    Int       @default(50)
+  /// OPEN | ACCEPTED | IGNORED | DONE
+  status      String    @default("OPEN")
+  outcome     Json?
+  source      String    @default("analyst")
+  promptVersion String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  video   YouTubeVideo?  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, status])
+}
+
+/// ผลวิเคราะห์ช่องโดย YouTube Analyst (§28, §109)
+model YouTubeChannelAnalysis {
+  id          String   @id @default(cuid())
+  channelId   String
+  days        Int
+  result      Json
+  provider    String
+  model       String
+  promptVersion String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+}
+
+/// รายงานรายเดือน YouTube (AGENTS_YOUTUBE §78) — เก็บผลที่คำนวณไว้ ไม่รันใหม่ตอนเปิดดู
+model YouTubeReport {
+  id          String   @id @default(cuid())
+  channelId   String
+  periodStart DateTime
+  periodEnd   DateTime
+  data        Json
+  provider    String?
+  model       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+}
+
+/// Topic ร่วมสองแพลตฟอร์ม (§73)
+model Topic {
+  id            String   @id @default(cuid())
+  brandId       String
+  canonicalName String
+  aliases       String[] @default([])
+  description   String?
+  createdAt     DateTime @default(now())
+
+  brand    Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  clusters CommentCluster[]
+
+  @@unique([brandId, canonicalName])
+}
+
+/// BrandInsight (§72) — observation / inference / recommendation แยกกัน พร้อมแพลตฟอร์มที่มา
+model BrandInsight {
+  id             String    @id @default(cuid())
+  brandId        String
+  type           String
+  platforms      String[]  @default([])
+  title          String
+  observation    String
+  inference      String?
+  recommendation String?
+  evidence       Json?
+  confidence     String    @default("MEDIUM")
+  status         String    @default("OPEN")
+  createdAt      DateTime  @default(now())
+  validUntil     DateTime?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
+}
+
+/// ความสัมพันธ์ระหว่างคอนเทนต์ (§76) เช่น repurposed จาก YouTube → Facebook
+model ContentRelation {
+  id              String   @id @default(cuid())
+  parentContentId String
+  childContentId  String
+  relationType    String
+  createdAt       DateTime @default(now())
+
+  parent ContentItem @relation("RelationParent", fields: [parentContentId], references: [id], onDelete: Cascade)
+  child  ContentItem @relation("RelationChild", fields: [childContentId], references: [id], onDelete: Cascade)
+
+  @@unique([parentContentId, childContentId, relationType])
 }

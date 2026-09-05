@@ -27,6 +27,16 @@ export const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   LITELLM_BASE_URL: z.string().trim().optional().transform(v => v || undefined),
   LITELLM_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  /** YouTube module (AGENTS_YOUTUBE.md §144) — ไม่ใส่ก็เปิดระบบได้ แต่โมดูล YouTube จะขึ้น "ยังไม่ตั้งค่า" */
+  GOOGLE_CLIENT_ID: z.string().trim().optional().transform(v => v || undefined),
+  GOOGLE_CLIENT_SECRET: z.string().trim().optional().transform(v => v || undefined),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().trim().optional().transform(v => v || undefined),
+  YOUTUBE_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  YOUTUBE_UPLOAD_ENABLED: z.string().optional().transform(v => v === 'true' || v === '1'),
+  YOUTUBE_DEFAULT_SYNC_DAYS: z.coerce.number().int().min(7).max(3650).default(90),
+  YOUTUBE_QUOTA_SOFT_LIMIT: z.coerce.number().int().min(100).default(10000),
+  /** override ปลายทาง Google/YouTube สำหรับ mock ใน test */
+  YOUTUBE_MOCK_BASE_URL: z.string().url().optional(),
   /** Media service (§63): โฟลเดอร์เก็บไฟล์ + Chromium สำหรับเรนเดอร์การ์ดภาพ */
   MEDIA_DIR: z.string().min(1).default('./data/media'),
   CHROME_BIN: z.string().trim().optional().transform(v => v || undefined),

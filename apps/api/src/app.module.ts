@@ -16,8 +16,9 @@ import { ReportsModule } from './reports/reports.module';
 import { MediaModule } from './media/media.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CommentsModule } from './comments/comments.module';
+import { YoutubeModule } from './youtube/youtube.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, HealthModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, HealthModule],
 })
 export class AppModule {}
