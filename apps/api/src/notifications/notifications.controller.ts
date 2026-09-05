@@ -22,4 +22,6 @@ export class NotificationsController {
   @Get('webhook') @RequirePermission('workspace.manage') webhook(@Tenant() t: TenantContext) { return this.svc.webhookSettings(t.workspaceId); }
   @Put('webhook') @RequirePermission('workspace.manage') setWebhook(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(webhookSchema)) dto: z.infer<typeof webhookSchema>, @RequestId() rid: string) { return this.svc.setWebhook(t.workspaceId, u.id, dto.url, rid); }
   @Post('webhook/test') @HttpCode(200) @RequirePermission('workspace.manage') test(@Tenant() t: TenantContext) { return this.svc.testWebhook(t.workspaceId); }
+  @Get('email') @RequirePermission('workspace.manage') email() { return this.svc.emailSettings(); }
+  @Post('email/test') @HttpCode(200) @RequirePermission('workspace.manage') testEmail(@CurrentUser() u: AuthUser) { return this.svc.testEmail(u.email); }
 }

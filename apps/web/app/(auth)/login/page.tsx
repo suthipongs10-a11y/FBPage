@@ -26,7 +26,7 @@ export default function LoginPage() {
         <Button type="submit" disabled={busy} className="w-full">{t('auth.login')}</Button>
       </form>
       <p className="mt-4 text-sm text-slate-500">{t('auth.noAccount')} <Link className="text-sky-400" href="/register">{t('auth.register')}</Link></p>
-      <p className="mt-2 text-xs text-slate-600">{t('reset.forgot')}</p>
+      <p className="mt-2 text-xs text-slate-500"><Link className="text-sky-400" href="/forgot">{t('forgot.title')}</Link> · {t('reset.forgot')}</p>
     </main>
   );
 }

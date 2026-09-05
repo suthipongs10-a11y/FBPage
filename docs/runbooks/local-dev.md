@@ -64,3 +64,10 @@ redis-server --daemonize yes
   node test/phase9-smoke.mjs
   ```
 - worker ต้องเห็น env เดียวกัน (`GOOGLE_*`, `YOUTUBE_*`, `MEDIA_DIR`, `AUTH_SECRET`) เพื่ออัปโหลด/ซิงก์ตามรอบ
+
+## E2E ด้วยเบราว์เซอร์จริง (Playwright)
+```bash
+pnpm build                     # ต้องมี dist ของ API และ .next ของ web
+pnpm test:e2e                  # เปิด API/web ให้เอง (หรือใช้ตัวที่เปิดอยู่) + mock Graph/YouTube/AI บนพอร์ต 4998/4997
+```
+ใช้ Chromium ที่มีในเครื่อง (`PLAYWRIGHT_CHROMIUM` หรือ `/opt/pw-browsers/chromium`) — ไม่ต้อง `playwright install` ในเครื่อง dev; CI ติดตั้งเอง

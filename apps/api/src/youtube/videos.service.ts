@@ -53,6 +53,24 @@ export class YtVideosService {
     return ser({ ...withStats, timeline, recommendations: recs, commentCount: comments, packaging: diag });
   }
 
+  /** แนวโน้มรายสัปดาห์ (ไม่ยิง API): วิดีโอที่เผยแพร่/สัปดาห์ + วิวล่าสุดของวิดีโอกลุ่มนั้น, ผู้ติดตาม/วิวรวมจาก snapshot ช่อง (quick sync ทุก 6 ชม.) */
+  async trends(workspaceId: string, channelId: string, weeks = 12) {
+    const ch = await this.prisma.youTubeChannel.findFirst({ where: { id: channelId, ...channelInWorkspace(workspaceId) }, select: { id: true, title: true, subscriberCount: true, accessMode: true } });
+    if (!ch) throw new NotFoundException('ไม่พบช่อง');
+    const w = Math.min(52, Math.max(4, weeks)); const end = new Date(); end.setUTCHours(0, 0, 0, 0); end.setUTCDate(end.getUTCDate() + 1);
+    const start = new Date(end.getTime() - w * 7 * 86_400_000);
+    const [vids, snaps] = await Promise.all([
+      this.prisma.youTubeVideo.findMany({ where: { channelId, publishedAt: { gte: start, lt: end } }, select: { id: true, publishedAt: true, videoType: true, source: true, viewCount: true } }),
+      this.prisma.youTubeChannelMetricSnapshot.findMany({ where: { channelId, capturedAt: { gte: start } }, orderBy: { capturedAt: 'asc' }, select: { capturedAt: true, source: true, metricsJson: true } }),
+    ]);
+    const buckets = Array.from({ length: w }, (_, i) => ({ start: new Date(start.getTime() + i * 7 * 86_400_000).toISOString().slice(0, 10), videos: 0, shorts: 0, bySystem: 0, views: null as number | null }));
+    for (const v of vids) { const i = Math.min(w - 1, Math.floor((v.publishedAt!.getTime() - start.getTime()) / (7 * 86_400_000))); const b = buckets[i]!; b.videos++; if (v.videoType === 'SHORT') b.shorts++; if (v.source === 'app') b.bySystem++; if (v.viewCount !== null) b.views = (b.views ?? 0) + Number(v.viewCount); }
+    // ผู้ติดตาม/วิวรวมของช่อง: จุดล่าสุดต่อวันจาก Data API snapshot
+    const byDay = new Map<string, { at: string; subscribers: number | null; views: number | null }>();
+    for (const s of snaps) { if (s.source !== 'DATA_API') continue; const m = s.metricsJson as YtMetricSnapshot; byDay.set(s.capturedAt.toISOString().slice(0, 10), { at: s.capturedAt.toISOString(), subscribers: metricValue(m, 'subscribers'), views: metricValue(m, 'views') }); }
+    return { channel: { id: ch.id, title: ch.title, subscribers: ch.subscriberCount, accessMode: ch.accessMode }, weeks: buckets, channelSeries: [...byDay.values()], limitations: ['วิวต่อสัปดาห์ = วิวสะสมล่าสุดของวิดีโอที่เผยแพร่ในสัปดาห์นั้น (ไม่ใช่วิวที่เกิดในสัปดาห์นั้น)', ...(byDay.size < 2 ? ['ประวัติผู้ติดตามเริ่มเก็บตั้งแต่เชื่อมช่อง — ต้องรอ quick sync หลายรอบก่อนเห็นเส้นแนวโน้ม'] : [])] };
+  }
+
   /** ค่ากลางของช่อง (§97) แยกตาม format */
   async baselines(channelId: string, videoType?: string) {
     const vids = await this.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', ...(videoType && { videoType }) }, select: { id: true, videoType: true, publishedAt: true } });

@@ -6,7 +6,7 @@
  * - youtube-*: ดู ./youtube.ts · maintenance / youtube-maintenance: ดู ./maintenance.ts
  */
 import { Queue, Worker, type Job } from 'bullmq';
-import { PrismaClient, notify } from '@fbpm/database';
+import { PrismaClient, mailerFromEnv, notify, setNotifyMailer } from '@fbpm/database';
 import { FacebookService, PageNotSyncable, collectPostMetrics, publishContent, syncComments, syncPage, type SyncDeps } from '@fbpm/facebook-core';
 import type { SocialEvent } from '@fbpm/shared';
 import { JOBS, QUEUES, redisConnectionFromUrl } from './queues';
@@ -20,6 +20,7 @@ const connection = redisConnectionFromUrl(REDIS_URL);
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ ts: new Date().toISOString(), svc: 'worker-scheduler', msg, ...extra }));
 
 const prisma = new PrismaClient();
+setNotifyMailer(mailerFromEnv(process.env), process.env.APP_URL ?? 'http://localhost:3000');   // อีเมลเหตุการณ์สำคัญ (ถ้าตั้ง SMTP_*)
 const fb = new FacebookService({ version: process.env.META_GRAPH_API_VERSION, baseUrl: process.env.META_GRAPH_BASE_URL });
 const deps: SyncDeps = { prisma, fb, authSecret: AUTH_SECRET, apiVersion: process.env.META_GRAPH_API_VERSION ?? 'v26.0' };
 const analyticsQueue = new Queue(QUEUES.analytics, { connection });

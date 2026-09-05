@@ -24,3 +24,6 @@ export const resetPasswordSchema = z.object({ password: z.string().min(10, 'ร�
 export type ResetPasswordDto = z.infer<typeof resetPasswordSchema>;
 export const changePasswordSchema = z.object({ current: z.string().min(1).max(200), next: z.string().min(10, 'รหัสผ่านต้องยาวอย่างน้อย 10 ตัวอักษร').max(200) });
 export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;
+
+export const forgotSchema = z.object({ email: z.string().trim().toLowerCase().email().max(200) });
+export type ForgotDto = z.infer<typeof forgotSchema>;

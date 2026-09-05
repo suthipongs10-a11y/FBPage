@@ -24,7 +24,9 @@ export default function YoutubePage() {
       setHealth(h); setQuota(q); setConns(c); setChannels(ch); setRecs(r);
       const details = await Promise.all(cl.map(x => api<ClientDetail>(`/workspaces/${ws.id}/clients/${x.id}`)));
       const bs = details.flatMap(d => d.brands.map(b => ({ ...b, clientName: d.name }))); setBrands(bs);
-      setForm(f => ({ ...f, brandId: f.brandId || bs[0]?.id || '', connectionId: f.connectionId || c.find(x => x.status === 'ACTIVE')?.id || '', mode: f.mode === 'OAUTH' && !c.length && h.apiKeyConfigured ? 'PUBLIC_API_KEY' : f.mode }));
+      const active = c.find(x => x.status === 'ACTIVE');
+      // โหมดเริ่มต้น: มีบัญชี Google → OAuth; ไม่มีแต่มี API key → อ่านสาธารณะ (ผู้ใช้เปลี่ยนเองได้)
+      setForm(f => ({ ...f, brandId: f.brandId || bs[0]?.id || '', connectionId: f.connectionId || active?.id || '', mode: active && f.mode === 'PUBLIC_API_KEY' && !f.handle ? 'OAUTH' : !active && h.apiKeyConfigured ? 'PUBLIC_API_KEY' : f.mode }));
     } catch (e) { setError(e); }
   }, [ws.id]);
   useEffect(() => { void load(); }, [load]);

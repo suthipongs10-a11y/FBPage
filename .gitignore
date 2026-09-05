@@ -23,3 +23,7 @@ packages/database/generated/
 
 # media service output (§63)
 data/
+
+# Playwright
+test-results/
+playwright-report/

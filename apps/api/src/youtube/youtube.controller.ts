@@ -15,6 +15,8 @@ import { YtCommentsService } from './comments.service';
 import { YtContentLabService } from './content-lab.service';
 import { YtReportsService } from './reports.service';
 import { YtPlaylistsService } from './playlists.service';
+import { ShareService } from '../reports/share.service';
+import { shareSchema } from '../reports/reports.controller';
 import * as d from './dto';
 
 const featuresSchema = z.object({ features: z.string().optional() });
@@ -30,7 +32,7 @@ const assetKindSchema = z.enum(['video', 'thumbnail']);
 @Controller('workspaces/:workspaceId/youtube')
 @UseGuards(AuthGuard, TenantGuard)
 export class YoutubeController {
-  constructor(@Inject(YtChannelsService) private readonly channels: YtChannelsService, @Inject(YtVideosService) private readonly videos: YtVideosService, @Inject(YtCommentsService) private readonly comments: YtCommentsService, @Inject(YtContentLabService) private readonly lab: YtContentLabService, @Inject(YtReportsService) private readonly reports: YtReportsService, @Inject(YtPlaylistsService) private readonly playlists: YtPlaylistsService) {}
+  constructor(@Inject(YtChannelsService) private readonly channels: YtChannelsService, @Inject(YtVideosService) private readonly videos: YtVideosService, @Inject(YtCommentsService) private readonly comments: YtCommentsService, @Inject(YtContentLabService) private readonly lab: YtContentLabService, @Inject(YtReportsService) private readonly reports: YtReportsService, @Inject(YtPlaylistsService) private readonly playlists: YtPlaylistsService, @Inject(ShareService) private readonly share: ShareService) {}
 
   // ---------- health / connections (YT-1) ----------
   @Get('health') @RequirePermission('youtube.read')
@@ -63,6 +65,8 @@ export class YoutubeController {
   disconnect(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.channels.disconnect(t.workspaceId, u.id, id, rid); }
   @Post('channels/:id/sync') @HttpCode(200) @RequirePermission('youtube.read')
   sync(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.syncSchema)) dto: d.SyncDto, @RequestId() rid: string) { return this.channels.runSync(t.workspaceId, u.id, id, dto, rid); }
+  @Get('channels/:id/trends') @RequirePermission('youtube.analytics.read')
+  trends(@Tenant() t: TenantContext, @Param('id') id: string, @Query('weeks') weeks?: string) { return this.videos.trends(t.workspaceId, id, Number(weeks) || 12); }
   @Get('channels/:id/baselines') @RequirePermission('youtube.analytics.read')
   async baselines(@Tenant() t: TenantContext, @Param('id') id: string, @Query('type') type?: string) { await this.channels.get(t.workspaceId, id); return this.videos.baselines(id, type || undefined); }
   @Post('channels/:id/analyze') @HttpCode(200) @RequirePermission('youtube.analytics.read', 'ai.use')
@@ -170,6 +174,13 @@ export class YoutubeController {
   listReports(@Tenant() t: TenantContext, @Query('channelId') channelId?: string) { return this.reports.list(t.workspaceId, channelId || undefined); }
   @Get('reports/:id') @RequirePermission('youtube.analytics.read')
   getReport(@Tenant() t: TenantContext, @Param('id') id: string) { return this.reports.get(t.workspaceId, id); }
+  @Get('reports/:id/pdf') @RequirePermission('youtube.analytics.read')
+  async reportPdf(@Tenant() t: TenantContext, @Param('id') id: string, @Res() res: Response) {
+    const { buffer, fileName } = await this.share.pdf('youtube', id, t.workspaceId);
+    res.setHeader('content-type', 'application/pdf'); res.setHeader('content-disposition', `inline; filename="${encodeURIComponent(fileName)}"`); res.end(buffer);
+  }
+  @Post('reports/:id/share') @HttpCode(200) @RequirePermission('youtube.analytics.read')
+  shareReport(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(shareSchema)) b: z.infer<typeof shareSchema>, @RequestId() rid: string) { return this.share.createLink(t.workspaceId, u.id, 'youtube', id, b?.days ?? 30, rid); }
 }
 
 /** callback ของ Google OAuth — เส้นทางสาธารณะ ตัวตนยืนยันด้วย state ที่เซ็นไว้ */

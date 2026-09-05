@@ -7,3 +7,4 @@ export type * from '@prisma/client';
 export * from './tenant';
 export * from './crypto';
 export * from './notify';
+export * from './mail';

@@ -247,6 +247,12 @@ run('youtube module (integration)', () => {
     expect(r.json.data.text).toMatch(/ไม่มีข้อมูล/); expect(r.json.data.summary).toBeNull(); expect(r.json.data.comments.total).toBeGreaterThan(0);
     const list = await a.http('GET', `/workspaces/${ws}/youtube/reports?channelId=${channelId}`); expect(list.json).toHaveLength(1);
     const one = await a.http('GET', `/workspaces/${ws}/youtube/reports/${r.json.id}`); expect(one.status).toBe(200);
+    const pdf = await fetch(`${base}/workspaces/${ws}/youtube/reports/${r.json.id}/pdf`, { headers: { cookie: a.cookie } });
+    expect(pdf.status).toBe(200); expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe('%PDF');
+    const sh = await a.http('POST', `/workspaces/${ws}/youtube/reports/${r.json.id}/share`, {}); const token = (sh.json.url as string).split('/share/r/')[1];
+    const pub = await fetch(`${base}/share/reports/${token}`); const body = await pub.json() as { kind: string; data: { channelMetrics: { revenueUsd: number | null } } };
+    expect(pub.status).toBe(200); expect(body.kind).toBe('youtube'); expect(body.data.channelMetrics.revenueUsd).toBeNull(); expect(JSON.stringify(body)).not.toMatch(SECRETS);
+    expect((await b.http('GET', `/workspaces/${wsB}/youtube/reports/${r.json.id}/pdf`)).status).toBe(404);
   });
 
   // ---------- Playlist Architect (§45) + overview ----------
@@ -276,6 +282,12 @@ run('youtube module (integration)', () => {
     const rec3 = ((await a.http('GET', `/workspaces/${ws}/youtube/recommendations?channelId=${channelId}`)).json as { id: string; actionType: string }[]).find(r => r.actionType === 'ADD_TO_PLAYLIST')!;
     expect((await a.http('POST', `/workspaces/${ws}/youtube/recommendations/${rec3.id}/apply`, {})).status).toBe(409);   // kill switch
     await a.http('PATCH', `/workspaces/${ws}/youtube/channels/${channelId}`, { automationPaused: false });
+  });
+  it('weekly trends: videos/views per publish week + subscriber snapshots, no API calls', async () => {
+    const before = yt.state.requests.length;
+    const r = await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/trends?weeks=12`);
+    expect(r.status, r.text).toBe(200); expect(r.json.weeks).toHaveLength(12); expect(r.json.weeks.reduce((n: number, w: { videos: number }) => n + w.videos, 0)).toBeGreaterThanOrEqual(4);
+    expect(r.json.channelSeries.length).toBeGreaterThanOrEqual(1); expect(r.json.channelSeries[0].subscribers).toBe(12400); expect(yt.state.requests.length).toBe(before);
   });
   it('overview summarises YouTube state for the shared dashboard', async () => {
     const r = await a.http('GET', `/workspaces/${ws}/youtube/overview`);

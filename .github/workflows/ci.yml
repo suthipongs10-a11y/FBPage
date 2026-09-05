@@ -14,6 +14,7 @@ env:
   APP_URL: http://127.0.0.1:3000
   MEDIA_DIR: /tmp/fbpm-media
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PLAYWRIGHT_BROWSERS_PATH: /home/runner/pw-browsers
 
 jobs:
   verify:
@@ -66,6 +67,21 @@ jobs:
           done
           node test/phase6-smoke.mjs
           node test/phase9-smoke.mjs
+      - name: Install Chromium for Playwright (browser only, no deps)
+        run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD= pnpm exec playwright install chromium && echo "PLAYWRIGHT_CHROMIUM=$(ls -d $PLAYWRIGHT_BROWSERS_PATH/chromium-*/chrome-linux/chrome | head -1)" >> $GITHUB_ENV
+      - name: E2E (Playwright, reuses the running API/web)
+        env:
+          META_GRAPH_BASE_URL: http://127.0.0.1:4998
+          YOUTUBE_MOCK_BASE_URL: http://127.0.0.1:4997
+          GOOGLE_CLIENT_ID: gclient
+          GOOGLE_CLIENT_SECRET: gsecret
+          GOOGLE_OAUTH_REDIRECT_URI: http://127.0.0.1:4000/youtube/oauth/callback
+          YOUTUBE_API_KEY: APIKEY_OK
+          YOUTUBE_UPLOAD_ENABLED: 'true'
+        run: pnpm test:e2e
       - name: Server logs on failure
         if: failure()
         run: tail -n 100 api.log web.log || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-traces, path: test-results/, if-no-files-found: ignore }

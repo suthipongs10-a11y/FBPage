@@ -121,6 +121,22 @@ export class ReportsService {
     return { id: saved.id, createdAt: saved.createdAt, pageId, periodStart: start, periodEnd: end, provider, model, data };
   }
 
+  /** แนวโน้มรายสัปดาห์จากข้อมูลที่บันทึกไว้ (ไม่ยิง Graph) — ค่าที่อ่านไม่ได้เป็น null; ไม่มีประวัติผู้ติดตามรายวัน (Graph ไม่ให้) จึงแสดงเฉพาะค่าปัจจุบัน */
+  async trends(workspaceId: string, pageId: string, weeks = 12) {
+    const page = await this.prisma.facebookPage.findFirst({ where: { id: pageId, ...pageInWorkspace(workspaceId) }, select: { id: true, name: true, fanCount: true } });
+    if (!page) throw new NotFoundException('ไม่พบเพจ');
+    const w = Math.min(52, Math.max(4, weeks)); const end = new Date(); end.setUTCHours(0, 0, 0, 0); end.setUTCDate(end.getUTCDate() + 1);
+    const start = new Date(end.getTime() - w * 7 * 86_400_000);
+    const posts = await this.prisma.facebookPost.findMany({ where: { pageId, publishedAt: { gte: start, lt: end } }, select: { publishedAt: true, source: true, snapshots: { orderBy: { capturedAt: 'desc' }, take: 1, select: { metrics: true } } } });
+    const buckets = Array.from({ length: w }, (_, i) => ({ start: new Date(start.getTime() + i * 7 * 86_400_000).toISOString().slice(0, 10), posts: 0, bySystem: 0, shares: null as number | null, reactions: null as number | null, comments: null as number | null }));
+    for (const p of posts) {
+      const i = Math.min(w - 1, Math.floor((p.publishedAt!.getTime() - start.getTime()) / (7 * 86_400_000))); const b = buckets[i]!; b.posts++; if (p.source === 'app') b.bySystem++;
+      const m = (p.snapshots[0]?.metrics ?? null) as MetricSnapshot | null;
+      for (const k of ['shares', 'reactions', 'comments'] as const) { const v = m?.[k]?.value ?? null; if (v !== null) b[k] = (b[k] ?? 0) + v; }
+    }
+    return { page: { id: page.id, name: page.name, followers: page.fanCount }, weeks: buckets, available: { shares: buckets.some(b => b.shares !== null), reactions: buckets.some(b => b.reactions !== null), comments: buckets.some(b => b.comments !== null) }, limitations: ['ไม่มีประวัติจำนวนผู้ติดตาม/การเข้าถึงรายวันจาก Graph ด้วยสิทธิ์ปัจจุบัน — แสดงเฉพาะค่าปัจจุบัน', 'ตัวเลขต่อโพสต์คือ snapshot ล่าสุดที่เก็บได้ ไม่ใช่ค่า ณ สัปดาห์นั้น'] };
+  }
+
   async list(workspaceId: string, pageId: string) {
     const page = await this.prisma.facebookPage.findFirst({ where: { id: pageId, ...pageInWorkspace(workspaceId) }, select: { id: true } });
     if (!page) throw new NotFoundException('ไม่พบเพจ');

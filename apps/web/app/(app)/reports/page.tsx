@@ -18,6 +18,8 @@ export default function ReportsPage() {
   useEffect(() => { void loadPages(); }, [loadPages]); useEffect(() => { void loadRows(); }, [loadRows]);
   const generate = async () => { setBusy(true); setError(null); try { const r = await api<ReportDetail>(`/workspaces/${ws.id}/pages/${pageId}/reports`, { method: 'POST', body: { month, withAi } }); setReport(r); await loadRows(); } catch (e) { setError(e); } finally { setBusy(false); } };
   const open = (id: string) => api<ReportDetail>(`/workspaces/${ws.id}/reports/${id}`).then(setReport).catch(setError);
+  const [shared, setShared] = useState('');
+  const shareLink = async () => { if (!report) return; try { const r = await api<{ url: string }>(`/workspaces/${ws.id}/reports/${report.id}/share`, { method: 'POST', body: { days: 30 } }); await navigator.clipboard.writeText(r.url).catch(() => undefined); setShared(r.url); setTimeout(() => setShared(''), 6000); } catch (e) { setError(e); } };
   const copy = async () => { if (!report) return; try { await navigator.clipboard.writeText(report.data.text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ } };
   if (!pages) return <div><ErrorBox error={error} /><Loading /></div>;
   const d = report?.data;
@@ -38,8 +40,9 @@ export default function ReportsPage() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xl font-semibold">{d.page.name} — {d.period.label}</h2>
-            <div className="flex items-center gap-2 text-xs text-slate-500">{report!.model && <span>AI: {report!.provider}/{report!.model}</span>}<Button variant="ghost" onClick={copy}>{copied ? `✔ ${t('reports.copied')}` : t('reports.copy')}</Button></div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">{report!.model && <span>AI: {report!.provider}/{report!.model}</span>}<Button variant="ghost" onClick={copy}>{copied ? `✔ ${t('reports.copied')}` : t('reports.copy')}</Button><a className="rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800" href={`/api/workspaces/${ws.id}/reports/${report!.id}/pdf`} target="_blank" rel="noreferrer">{t('reports.pdf')}</a><Button variant="ghost" onClick={shareLink}>{shared ? `✔ ${t('reports.shareCopied')}` : t('reports.share')}</Button></div>
           </div>
+          {shared && <p className="break-all text-xs text-sky-300">{shared}</p>}
           {d.summary && <Card title={t('reports.exec')}><p className="whitespace-pre-wrap text-sm">{d.summary.executiveSummary}</p></Card>}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
             <Kpi value={d.page.followers ?? '—'} label={t('pages.followers')} />

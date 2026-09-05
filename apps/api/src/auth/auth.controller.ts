@@ -8,7 +8,7 @@ import { CurrentUser, type AppRequest, type AuthUser } from '../common/request-c
 import { ENV, type Env } from '../config/env';
 import { AuthGuard, SESSION_COOKIE } from './auth.guard';
 import { AuthService, SESSION_TTL_SEC } from './auth.service';
-import { acceptInviteSchema, changePasswordSchema, loginSchema, registerSchema, resetPasswordSchema, type AcceptInviteDto, type ChangePasswordDto, type LoginDto, type RegisterDto, type ResetPasswordDto } from './dto';
+import { acceptInviteSchema, changePasswordSchema, forgotSchema, loginSchema, registerSchema, resetPasswordSchema, type AcceptInviteDto, type ChangePasswordDto, type ForgotDto, type LoginDto, type RegisterDto, type ResetPasswordDto } from './dto';
 import { InvitesService } from './invites.service';
 import { parseCookies } from '../common/cookies';
 
@@ -82,6 +82,10 @@ export class AuthController {
     if (r.token) this.setSession(res, r.token);
     return { workspaceId: r.workspaceId, workspaceName: r.workspaceName, role: r.role };
   }
+
+  /** ลืมรหัสผ่าน — ตอบ 200 เสมอ ไม่เผยว่ามีบัญชีหรือไม่ (ส่งลิงก์ทางอีเมลเมื่อตั้ง SMTP) */
+  @Post('forgot') @HttpCode(200) @UseGuards(AuthRateLimitGuard)
+  forgot(@Body(new ZodPipe(forgotSchema)) dto: ForgotDto, @Req() req: AppRequest) { return this.invites.forgot(dto.email, req.requestId); }
 
   @Get('reset/:token') @UseGuards(AuthRateLimitGuard)
   inspectReset(@Param('token') token: string) { return this.invites.inspectReset(token); }

@@ -39,6 +39,9 @@ export default function SettingsPage() {
   const resetLink = async (userId: string) => { setError(null); try { const r = await api<{ url: string }>(`/workspaces/${ws.id}/members/${userId}/reset-link`, { method: 'POST', body: {} }); setLastLink(r.url); } catch (err) { setError(err); } };
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked */ } };
   const saveHook = async (url: string | null) => { setBusy(true); setHookMsg(''); try { const r = await api<{ configured: boolean; hint: string | null }>(`/workspaces/${ws.id}/notifications/webhook`, { method: 'PUT', body: { url } }); setHook(r); setHookUrl(''); } catch (err) { setError(err); } finally { setBusy(false); } };
+  const [mail, setMail] = useState<{ configured: boolean; host: string | null; from: string | null } | null>(null); const [mailMsg, setMailMsg] = useState('');
+  useEffect(() => { api<{ configured: boolean; host: string | null; from: string | null }>(`/workspaces/${ws.id}/notifications/email`).then(setMail).catch(() => setMail(null)); }, [ws.id]);
+  const testMail = async () => { setMailMsg(''); try { const r = await api<{ ok: boolean; error?: string }>(`/workspaces/${ws.id}/notifications/email/test`, { method: 'POST', body: {} }); setMailMsg(r.ok ? '✔ ส่งแล้ว' : `✖ ${r.error ?? ''}`); } catch (e) { setMailMsg(String((e as Error).message)); } };
   const testHook = async () => { setHookMsg(''); try { const r = await api<{ ok: boolean }>(`/workspaces/${ws.id}/notifications/webhook/test`, { method: 'POST', body: {} }); setHookMsg(r.ok ? t('notif.testOk') : t('notif.testFail')); } catch (err) { setError(err); } };
   const changePw = async (e: FormEvent) => { e.preventDefault(); setBusy(true); setPwMsg(''); setError(null); try { await api('/auth/password', { method: 'POST', body: pw }); setPw({ current: '', next: '' }); setPwMsg(t('password.changed')); } catch (err) { setError(err); } finally { setBusy(false); } };
   const createWs = async (e: FormEvent) => { e.preventDefault(); setBusy(true); setError(null); try { const w = await api<{ id: string }>('/workspaces', { method: 'POST', body: { name: newWs } }); setNewWs(''); await refresh(); setWorkspace(w.id); } catch (err) { setError(err); } finally { setBusy(false); } };
@@ -100,6 +103,8 @@ export default function SettingsPage() {
             <p className="mb-2 text-xs text-slate-500">{t('notif.webhook')} — {t('notif.webhookHint')}</p>
             <div className="flex items-center gap-2 text-sm">{hook?.configured ? <Pill tone="ok">{hook.hint}</Pill> : <Pill>—</Pill>}{hook?.configured && <><Button variant="ghost" onClick={testHook}>{t('notif.test')}</Button><button onClick={() => saveHook(null)} className="text-xs text-rose-400 hover:underline">{t('common.delete')}</button></>}{hookMsg && <span className="text-xs text-emerald-400">{hookMsg}</span>}</div>
             <div className="mt-2 flex gap-2"><Input placeholder="https://discord.com/api/webhooks/…" value={hookUrl} onChange={e => setHookUrl(e.target.value)} /><Button disabled={busy || !hookUrl} onClick={() => saveHook(hookUrl)}>{t('common.save')}</Button></div>
+            <p className="mb-2 mt-4 text-xs text-slate-500">{t('notif.email')} — {t('notif.emailHint')}</p>
+            <div className="flex items-center gap-2 text-sm">{mail?.configured ? <Pill tone="ok">{mail.host} · {mail.from}</Pill> : <Pill>{t('notif.emailOff')}</Pill>}{mail?.configured && <Button variant="ghost" onClick={testMail}>{t('notif.emailTest')}</Button>}{mailMsg && <span className="text-xs">{mailMsg}</span>}</div>
           </Card>
         </div>
       )}

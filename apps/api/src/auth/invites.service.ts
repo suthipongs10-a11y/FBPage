@@ -2,7 +2,8 @@
  * ลิงก์เชิญ + ลิงก์ตั้งรหัสใหม่ (ไม่ต้องมีระบบอีเมล — owner คัดลอกลิงก์ส่งทาง LINE) token อยู่ในลิงก์อย่างเดียว DB เก็บ sha256
  */
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import type { PrismaClient } from '@fbpm/database';
+import type { Mailer, PrismaClient } from '@fbpm/database';
+import { MAILER } from '../notifications/mailer.provider';
 import type { WorkspaceRole } from '@fbpm/shared';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
@@ -12,17 +13,22 @@ import { AuthService, type SessionMeta } from './auth.service';
 import type { AcceptInviteDto } from './dto';
 
 const INVITE_TTL_MS = 7 * 86_400_000; const RESET_TTL_MS = 24 * 3_600_000;
+/** ชื่อ workspace/ผู้ใช้เป็นข้อมูลที่ผู้ใช้กรอก — ต้อง escape ก่อนใส่ HTML ของอีเมล */
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 @Injectable()
 export class InvitesService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env, @Inject(AuditService) private readonly audit: AuditService, @Inject(AuthService) private readonly auth: AuthService) {}
+  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env, @Inject(AuditService) private readonly audit: AuditService, @Inject(AuthService) private readonly auth: AuthService, @Inject(MAILER) private readonly mailer: Mailer | null) {}
 
   async create(workspaceId: string, userId: string, role: WorkspaceRole, email: string | undefined, requestId: string) {
     if (role === 'owner') throw new BadRequestException('เชิญเป็น owner ไม่ได้');
     const token = newSessionToken();
     const inv = await this.prisma.workspaceInvite.create({ data: { workspaceId, email: email ?? null, role, tokenHash: hashToken(token), invitedById: userId, expiresAt: new Date(Date.now() + INVITE_TTL_MS) }, select: { id: true, role: true, email: true, expiresAt: true } });
     await this.audit.log({ workspaceId, userId, action: 'workspace.invite.create', resourceType: 'workspaceInvite', resourceId: inv.id, after: { role, email: email ?? null }, requestId });
-    return { ...inv, url: `${this.env.APP_URL}/invite/${token}` };   // แสดงครั้งเดียว
+    const url = `${this.env.APP_URL}/invite/${token}`;
+    const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } });
+    const emailed = email && this.mailer ? (await this.mailer.send({ to: email, subject: `คำเชิญเข้าร่วม ${ws?.name ?? 'workspace'}`, text: `คุณได้รับเชิญเข้าร่วม "${ws?.name}" ในบทบาท ${role}\n\nเปิดลิงก์เพื่อตอบรับ (ใช้ได้ 7 วัน ครั้งเดียว):\n${url}`, html: `<p>คุณได้รับเชิญเข้าร่วม <b>${esc(ws?.name)}</b> ในบทบาท <b>${esc(role)}</b></p><p><a href="${url}">ตอบรับคำเชิญ</a> (ใช้ได้ 7 วัน ครั้งเดียว)</p>` })).ok : false;
+    return { ...inv, url, emailed };   // แสดงครั้งเดียว
   }
   list(workspaceId: string) {
     return this.prisma.workspaceInvite.findMany({ where: { workspaceId, acceptedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, select: { id: true, role: true, email: true, expiresAt: true, createdAt: true } });
@@ -81,7 +87,22 @@ export class InvitesService {
     const token = newSessionToken();
     const r = await this.prisma.passwordReset.create({ data: { userId: targetUserId, tokenHash: hashToken(token), createdById: adminId, expiresAt: new Date(Date.now() + RESET_TTL_MS) }, select: { id: true, expiresAt: true } });
     await this.audit.log({ workspaceId, userId: adminId, action: 'auth.reset.create', resourceType: 'user', resourceId: targetUserId, requestId });
-    return { ...r, url: `${this.env.APP_URL}/reset/${token}` };
+    const url = `${this.env.APP_URL}/reset/${token}`;
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId }, select: { email: true, name: true } });
+    const emailed = target && this.mailer ? (await this.mailer.send({ to: target.email, subject: 'ลิงก์ตั้งรหัสผ่านใหม่', text: `สวัสดี ${target.name}\n\nผู้ดูแลสร้างลิงก์ตั้งรหัสผ่านใหม่ให้คุณ (ใช้ได้ 24 ชม. ครั้งเดียว):\n${url}`, html: `<p>สวัสดี ${esc(target.name)}</p><p>ผู้ดูแลสร้างลิงก์ตั้งรหัสผ่านใหม่ให้คุณ (ใช้ได้ 24 ชม. ครั้งเดียว)</p><p><a href="${url}">ตั้งรหัสผ่านใหม่</a></p>` })).ok : false;
+    return { ...r, url, emailed };
+  }
+  /** ลืมรหัสผ่านด้วยตัวเอง — ตอบเหมือนกันเสมอ (ไม่เผยว่ามีอีเมลนี้ในระบบ) ส่งลิงก์ทางอีเมลเท่านั้น */
+  async forgot(email: string, _requestId: string): Promise<{ ok: true; emailEnabled: boolean }> {
+    if (!this.mailer) return { ok: true, emailEnabled: false };
+    const u = await this.prisma.user.findUnique({ where: { email }, select: { id: true, name: true } });
+    if (u) {
+      const token = newSessionToken();
+      await this.prisma.passwordReset.create({ data: { userId: u.id, tokenHash: hashToken(token), createdById: u.id, expiresAt: new Date(Date.now() + RESET_TTL_MS) } });
+      const url = `${this.env.APP_URL}/reset/${token}`;
+      await this.mailer.send({ to: email, subject: 'ตั้งรหัสผ่านใหม่ — AI Page Manager', text: `สวัสดี ${u.name}\n\nมีคำขอตั้งรหัสผ่านใหม่สำหรับบัญชีนี้ ถ้าไม่ใช่คุณให้เพิกเฉยอีเมลนี้\n\nลิงก์ (ใช้ได้ 24 ชม. ครั้งเดียว):\n${url}`, html: `<p>สวัสดี ${esc(u.name)}</p><p>มีคำขอตั้งรหัสผ่านใหม่สำหรับบัญชีนี้ ถ้าไม่ใช่คุณให้เพิกเฉยอีเมลนี้</p><p><a href="${url}">ตั้งรหัสผ่านใหม่</a> (ใช้ได้ 24 ชม. ครั้งเดียว)</p>` });
+    }
+    return { ok: true, emailEnabled: true };
   }
   async inspectReset(token: string) {
     const r = await this.prisma.passwordReset.findUnique({ where: { tokenHash: hashToken(token) }, select: { usedAt: true, expiresAt: true, user: { select: { email: true, name: true } } } });

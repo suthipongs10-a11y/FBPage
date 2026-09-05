@@ -1,7 +1,8 @@
 /** Notification service (§65) — in-app + webhook ภายนอก; domain code เรียก notify() เท่านั้น */
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { PrismaClient } from '@fbpm/database';
-import { dispatchWebhook, encryptSecret, notify, type NotifyInput } from '@fbpm/database';
+import { dispatchWebhook, encryptSecret, notify, type Mailer, type NotifyInput } from '@fbpm/database';
+import { MAILER } from './mailer.provider';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
@@ -10,7 +11,7 @@ const SELECT = { id: true, type: true, severity: true, title: true, body: true, 
 
 @Injectable()
 export class NotificationsService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env, @Inject(AuditService) private readonly audit: AuditService) {}
+  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env, @Inject(AuditService) private readonly audit: AuditService, @Inject(MAILER) private readonly mailer: Mailer | null) {}
 
   notify(workspaceId: string, input: NotifyInput) { return notify(this.prisma, this.env.AUTH_SECRET, workspaceId, input).catch(() => ({ id: '', created: false })); }
 
@@ -38,6 +39,12 @@ export class NotificationsService {
     await this.prisma.workspace.update({ where: { id: workspaceId }, data: { notifyWebhookEncrypted: url ? encryptSecret(url, this.env.AUTH_SECRET) : null, notifyWebhookHint: hint } });
     await this.audit.log({ workspaceId, userId, action: url ? 'notifications.webhook.set' : 'notifications.webhook.remove', resourceType: 'workspace', resourceId: workspaceId, after: { hint }, requestId });
     return { configured: !!url, hint };
+  }
+  emailSettings() { return { configured: !!this.mailer, host: this.mailer?.config.host ?? null, from: this.mailer?.config.from ?? null, secure: this.mailer?.config.secure ?? null }; }
+  /** ส่งอีเมลทดสอบถึงผู้กด — ไม่มี SMTP → บอกตรงๆ */
+  async testEmail(to: string) {
+    if (!this.mailer) return { ok: false, error: 'ยังไม่ตั้งค่า SMTP_HOST' };
+    return this.mailer.send({ to, subject: 'ทดสอบอีเมลจาก AI Page Manager', text: 'ถ้าเห็นข้อความนี้ แปลว่าการส่งอีเมลใช้งานได้', html: '<p>ถ้าเห็นข้อความนี้ แปลว่าการส่งอีเมลใช้งานได้</p>' });
   }
   async testWebhook(workspaceId: string) {
     const ok = await dispatchWebhook(this.prisma, this.env.AUTH_SECRET, workspaceId, { type: 'info', title: 'ทดสอบการแจ้งเตือนจาก Facebook AI Page Manager', body: 'ถ้าเห็นข้อความนี้ แปลว่า webhook ใช้งานได้' });

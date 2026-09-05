@@ -51,6 +51,24 @@ run('reports + media (integration)', () => {
     const list = await a.http('GET', `/workspaces/${ws}/pages/${pageA}/reports`); expect(list.json).toHaveLength(1); expect(list.json[0].hasSummary).toBe(false);
     const one = await a.http('GET', `/workspaces/${ws}/reports/${r.json.id}`); expect(one.json.data.publishing.posts).toBe(2);
   });
+  it('weekly trends come from saved data with null for unreadable metrics', async () => {
+    const r = await a.http('GET', `/workspaces/${ws}/pages/${pageA}/trends?weeks=8`);
+    expect(r.status, r.text).toBe(200); expect(r.json.weeks).toHaveLength(8); expect(r.json.weeks.reduce((n: number, w: { posts: number }) => n + w.posts, 0)).toBeGreaterThanOrEqual(2);
+    expect(r.json.limitations.length).toBeGreaterThan(0); expect(JSON.stringify(r.json.weeks)).not.toMatch(/"reactions":0/);   // อ่านไม่ได้ = null ไม่ใช่ 0
+  });
+  it('PDF export renders with Chromium; client share link is public, read-only, expiring and never leaks internals', async () => {
+    const list = await a.http('GET', `/workspaces/${ws}/pages/${pageA}/reports`); const id = list.json[0].id as string;
+    const pdf = await fetch(`${base}/workspaces/${ws}/reports/${id}/pdf`, { headers: { cookie: a.cookie } });
+    expect(pdf.status).toBe(200); expect(pdf.headers.get('content-type')).toContain('application/pdf'); expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe('%PDF');
+    const sh = await a.http('POST', `/workspaces/${ws}/reports/${id}/share`, { days: 7 });
+    expect(sh.status, sh.text).toBe(200); expect(sh.json.url).toMatch(/\/share\/r\//); const token = sh.json.url.split('/share/r/')[1];
+    const pub = await fetch(`${base}/share/reports/${token}`); const body = await pub.json() as { kind: string; data: { publishing: { posts: number } }; brand: string };
+    expect(pub.status).toBe(200); expect(body.kind).toBe('facebook'); expect(body.data.publishing.posts).toBe(2); expect(body.brand).toBeTruthy();
+    expect(JSON.stringify(body)).not.toMatch(/Encrypted|accessToken|pageAccessToken/);
+    const pubPdf = await fetch(`${base}/share/reports/${token}/pdf`); expect(pubPdf.status).toBe(200); expect(pubPdf.headers.get('content-type')).toContain('application/pdf');
+    expect((await fetch(`${base}/share/reports/${token.slice(0, -4)}xxxx`)).status).toBe(404);
+    expect((await fetch(`${base}/share/reports/${token}`, { method: 'POST' })).status).toBe(404);   // อ่านอย่างเดียว
+  });
 
   it('with AI configured, the report stores a structured executive summary (no re-run on read)', async () => {
     await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });

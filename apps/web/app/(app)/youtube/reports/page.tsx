@@ -17,6 +17,8 @@ export default function YtReportsPage() {
   useEffect(() => { void loadChannels(); }, [loadChannels]); useEffect(() => { void loadRows(); }, [loadRows]);
   const generate = async () => { setBusy(true); setError(null); try { setReport(await api<YtReportDetail>(`/workspaces/${ws.id}/youtube/channels/${channelId}/reports`, { method: 'POST', body: { month, withAi } })); await loadRows(); } catch (e) { setError(e); } finally { setBusy(false); } };
   const open = (id: string) => api<YtReportDetail>(`/workspaces/${ws.id}/youtube/reports/${id}`).then(setReport).catch(setError);
+  const [shared, setShared] = useState('');
+  const shareLink = async () => { if (!report) return; try { const r = await api<{ url: string }>(`/workspaces/${ws.id}/youtube/reports/${report.id}/share`, { method: 'POST', body: { days: 30 } }); await navigator.clipboard.writeText(r.url).catch(() => undefined); setShared(r.url); setTimeout(() => setShared(''), 6000); } catch (e) { setError(e); } };
   const copy = async () => { if (!report) return; try { await navigator.clipboard.writeText(report.data.text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ } };
   if (!channels) return <div><ErrorBox error={error} /><Loading /></div>;
   const d = report?.data;
@@ -35,7 +37,8 @@ export default function YtReportsPage() {
       </Card>}
       {!d ? <Empty text={t('reports.none')} /> : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">{d.channel.title} — {d.period.label}</h2><div className="flex items-center gap-2"><Pill tone={d.channel.accessMode === 'OAUTH' ? 'ok' : 'muted'}>{d.channel.accessMode}</Pill><Button variant="ghost" onClick={copy}>{copied ? t('reports.copied' as MessageKey) : t('reports.copy' as MessageKey)}</Button></div></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">{d.channel.title} — {d.period.label}</h2><div className="flex items-center gap-2"><Pill tone={d.channel.accessMode === 'OAUTH' ? 'ok' : 'muted'}>{d.channel.accessMode}</Pill><Button variant="ghost" onClick={copy}>{copied ? t('reports.copied' as MessageKey) : t('reports.copy' as MessageKey)}</Button><a className="rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800" href={`/api/workspaces/${ws.id}/youtube/reports/${report!.id}/pdf`} target="_blank" rel="noreferrer">{t('reports.pdf')}</a><Button variant="ghost" onClick={shareLink}>{shared ? `✔ ${t('reports.shareCopied')}` : t('reports.share')}</Button></div></div>
+          {shared && <p className="break-all text-xs text-sky-300">{shared}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Kpi value={d.publishing.videos} label={`${t('yt.videos')} (ก่อน ${d.publishing.videosPrevPeriod})`} />
             <Kpi value={na(d.channelMetrics.views)} label={t('yt.views')} tone={d.channelMetrics.views === null ? 'warn' : undefined} />

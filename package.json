@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "pnpm -r test",
+    "test:e2e": "playwright test",
     "dev:api": "pnpm --filter @fbpm/api dev",
     "dev:web": "pnpm --filter @fbpm/web dev",
     "dev:worker": "pnpm --filter @fbpm/worker-scheduler dev",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "22.20.1",
     "eslint": "^9.30.0",
     "typescript": "5.9.3",

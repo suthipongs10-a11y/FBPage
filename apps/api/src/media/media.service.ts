@@ -2,11 +2,9 @@
  * Media Service (§63) — สร้างการ์ดภาพจากเทมเพลตด้วย Chromium (ไม่ผูกกับผู้ให้บริการสร้างภาพรายใด), เก็บไฟล์ใน MEDIA_DIR, บันทึก MediaAsset
  * ไฟล์ที่ได้ใช้เป็น mediaPaths ของคอนเทนต์ → publisher อัปโหลดให้ Facebook เอง
  */
-import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { promisify } from 'node:util';
 import { Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@fbpm/database';
 import { contentInWorkspace } from '@fbpm/database';
@@ -15,11 +13,9 @@ import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
 import { AiGatewayService } from '../ai/gateway.service';
 import { CARD_SIZE, CARD_TEMPLATES, THEME_NAMES, buildCardHtml, type CardData, type CardTemplate } from './card-templates';
+import { chromeScreenshot, findChrome, findThaiFonts } from './chromium';
 import type { AiCardDto, RenderCardDto } from './dto';
 
-const execFileP = promisify(execFile);
-const CHROME_CANDIDATES = ['/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell', '/opt/pw-browsers/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'];
-const FONT_DIR_CANDIDATES = ['/usr/share/fonts/opentype/tlwg', '/usr/share/fonts/truetype/tlwg'];
 export const CARD_PROMPT_VERSION = 'card-v1';
 const ASSET_SELECT = { id: true, workspaceId: true, contentId: true, kind: true, template: true, theme: true, path: true, mimeType: true, width: true, height: true, bytes: true, meta: true, createdAt: true } as const;
 
@@ -28,17 +24,12 @@ export class MediaService {
   constructor(@Inject(PRISMA) private readonly prisma: PrismaClient, @Inject(ENV) private readonly env: Env, @Inject(AuditService) private readonly audit: AuditService, @Inject(AiGatewayService) private readonly ai: AiGatewayService) {}
 
   private chrome(): string {
-    const c = [this.env.CHROME_BIN, ...CHROME_CANDIDATES].find(p => p && existsSync(p));
+    const c = findChrome(this.env.CHROME_BIN);
     if (!c) throw new UnprocessableEntityException('ไม่พบ Chromium สำหรับสร้างภาพ — ตั้ง CHROME_BIN');
     return c;
   }
-  private fonts(): { regular: string; bold: string } {
-    const dir = FONT_DIR_CANDIDATES.find(d => existsSync(join(d, 'Loma.otf')) || existsSync(join(d, 'Loma.ttf')));
-    if (!dir) return { regular: '', bold: '' };   // ใช้ฟอนต์ระบบ
-    const ext = existsSync(join(dir, 'Loma.otf')) ? 'otf' : 'ttf';
-    return { regular: `file://${join(dir, `Loma.${ext}`)}`, bold: `file://${join(dir, `Loma-Bold.${ext}`)}` };
-  }
-  capabilities() { return { templates: CARD_TEMPLATES, themes: THEME_NAMES, size: CARD_SIZE, chromium: !!([this.env.CHROME_BIN, ...CHROME_CANDIDATES].find(p => p && existsSync(p))) }; }
+  private fonts() { return findThaiFonts(); }
+  capabilities() { return { templates: CARD_TEMPLATES, themes: THEME_NAMES, size: CARD_SIZE, chromium: !!findChrome(this.env.CHROME_BIN) }; }
 
   /** เรนเดอร์การ์ด → PNG ในดิสก์ + MediaAsset; attach = เพิ่มเข้า mediaPaths ของคอนเทนต์ */
   async renderCard(workspaceId: string, userId: string, contentId: string | null, dto: RenderCardDto, requestId: string, ai?: { provider: string; model: string }) {
@@ -49,7 +40,7 @@ export class MediaService {
     const out = join(dir, `${id}.png`); const tmp = join(dir, `.${id}.html`);
     await writeFile(tmp, buildCardHtml(dto.template, dto.data as CardData, dto.data.theme ?? 'default', this.fonts()));
     try {
-      await execFileP(chrome, ['--headless', '--disable-gpu', '--no-sandbox', '--hide-scrollbars', '--force-device-scale-factor=1', `--window-size=${CARD_SIZE},${CARD_SIZE}`, `--screenshot=${out}`, tmp], { timeout: 60_000 });
+      await chromeScreenshot(chrome, tmp, out, CARD_SIZE);
     } catch (e) { throw new UnprocessableEntityException(`เรนเดอร์ภาพไม่สำเร็จ: ${(e as Error).message.slice(0, 200)}`); }
     finally { await rm(tmp, { force: true }); }
     if (!existsSync(out)) throw new UnprocessableEntityException('เรนเดอร์ภาพไม่สำเร็จ (ไม่มีไฟล์ออก)');

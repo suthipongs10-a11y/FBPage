@@ -4,9 +4,23 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { decryptSecret } from './crypto';
+import type { Mailer } from './mail';
 
 export type NotificationType = 'approval_required' | 'publish_failed' | 'reconnect_required' | 'hot_lead' | 'report_ready' | 'ai_budget' | 'comments_permission' | 'info';
 export interface NotifyInput { type: NotificationType; severity?: 'info' | 'warn' | 'bad'; title: string; body?: string; href?: string; resourceType?: string; resourceId?: string; dedupeKey?: string }
+
+/** อีเมลแจ้งเตือน (ถ้าตั้ง SMTP): เฉพาะ severity 'bad' / approval_required / hot_lead ถึง owner+admin ของ workspace — ตั้งครั้งเดียวตอน boot ของ API/worker */
+let mailHook: { mailer: Mailer; appUrl: string } | null = null;
+export function setNotifyMailer(mailer: Mailer | null, appUrl: string): void { mailHook = mailer ? { mailer, appUrl } : null; }
+export const emailWorthy = (i: NotifyInput): boolean => i.severity === 'bad' || i.type === 'approval_required' || i.type === 'hot_lead';
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+async function emailMembers(prisma: PrismaClient, workspaceId: string, input: NotifyInput): Promise<void> {
+  if (!mailHook || !emailWorthy(input)) return;
+  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true, members: { where: { role: { in: ['owner', 'admin'] } }, select: { user: { select: { email: true } } } } } });
+  const to = ws?.members.map(m => m.user.email).filter(Boolean) ?? []; if (!ws || !to.length) return;
+  const link = input.href ? `${mailHook.appUrl}${input.href}` : mailHook.appUrl;
+  await mailHook.mailer.send({ to, subject: `[${ws.name}] ${input.title}`, text: [input.title, '', input.body ?? '', '', `เปิดระบบ: ${link}`].join('\n'), html: `<p><b>${esc(input.title)}</b></p>${input.body ? `<p>${esc(input.body)}</p>` : ''}<p><a href="${link}">เปิดระบบ</a></p><p style="color:#888;font-size:12px">${esc(ws.name)} · AI Page Manager</p>` });
+}
 
 export async function notify(prisma: PrismaClient, authSecret: string, workspaceId: string, input: NotifyInput): Promise<{ id: string; created: boolean }> {
   const data = { workspaceId, type: input.type, severity: input.severity ?? 'info', title: input.title, body: input.body ?? null, href: input.href ?? null, resourceType: input.resourceType ?? null, resourceId: input.resourceId ?? null, dedupeKey: input.dedupeKey ?? null };
@@ -21,6 +35,7 @@ export async function notify(prisma: PrismaClient, authSecret: string, workspace
     id = (await prisma.notification.create({ data, select: { id: true } })).id;
   } else id = (await prisma.notification.create({ data, select: { id: true } })).id;
   void dispatchWebhook(prisma, authSecret, workspaceId, input).catch(() => undefined);
+  void emailMembers(prisma, workspaceId, input).catch(() => undefined);
   return { id, created };
 }
 
