@@ -25,7 +25,7 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[230px_1fr]">
       <aside className="flex flex-col gap-3 border-b border-slate-800 bg-slate-900 p-4 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r">
-        <div className="text-base font-semibold text-sky-400">{t('app.name')}</div>
+        <div className="brand-gradient text-base font-bold">{t('app.name')}</div>
         <div className="flex items-center gap-2">
           <Select value={ws.id} onChange={e => setWorkspace(e.target.value)} aria-label="workspace">
             {me.workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -34,7 +34,7 @@ function Shell({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex flex-wrap gap-1 md:flex-col">
           {NAV.map(n => n.href ? (
-            <Link key={n.key} href={n.href} className={`rounded-md px-3 py-2 text-sm ${active === n.href ? 'bg-slate-800 text-slate-100 font-semibold' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}>{t(n.key)}</Link>
+            <Link key={n.key} href={n.href} className={`rounded-md px-3 py-2 text-sm ${active === n.href ? 'bg-sky-500/10 text-sky-600 font-semibold' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}>{t(n.key)}</Link>
           ) : (
             <span key={n.key} className="rounded-md px-3 py-2 text-sm text-slate-600" title={t('nav.soon')}>{t(n.key)} <span className="text-[10px]">· {t('nav.soon')}</span></span>
           ))}

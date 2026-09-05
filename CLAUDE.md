@@ -25,6 +25,7 @@
 > META_GRAPH_BASE_URL=http://127.0.0.1:4998 pnpm dev:api  แล้ว  node test/phase6-smoke.mjs   # content loop กับ mock Graph (ไม่แตะเพจจริง)
 > worker ต้องมี AUTH_SECRET เดียวกับ API (ถอดรหัส page token) — `pnpm dev:worker` · worker มีงาน maintenance (cleanup รายวัน / ตรวจ token / upload ค้าง) ใน `workers/scheduler/src/maintenance.ts` — ห้ามเพิ่มการลบ AuditLog/metric snapshot/report
 > CI: `.github/workflows/ci.yml` รัน DoD ทั้งหมดกับ mock — ห้ามใส่ key จริงเป็น secret ของ CI · E2E: `pnpm test:e2e` (Playwright ใช้ Chromium ที่มีอยู่ `/opt/pw-browsers/chromium`)
+> ธีม UI สว่าง กำหนดที่ `apps/web/app/globals.css` (`@theme` กลับสเกล slate) — โค้ดหน้าใช้คลาส slate/sky เดิม ห้ามฮาร์ดโค้ดสี hex ในหน้า ยกเว้นกราฟ (`components/charts.tsx` สีตรวจผ่าน validator แล้ว) · เจ้าของระบบดู `docs/runbooks/go-live-checklist.md`
 > อีเมล: `SMTP_*` ใน env — โค้ดส่งเมลผ่าน `@fbpm/database/mail` เท่านั้น test ใช้ `startMockSmtp()` ห้ามส่งอีเมลจริง · ลิงก์แชร์รายงาน `/share/r/<token>` เป็นสาธารณะ ต้องไม่ใส่ข้อมูลภายใน/token ใน payload
 > กฎที่ต้องรักษาในระบบใหม่: token/API key เข้ารหัสด้วย `common/crypto.ts` เท่านั้น ห้ามอยู่ใน select/response/audit · metric ที่อ่านไม่ได้ = `null` ห้ามแปลงเป็น 0 · test ห้ามยิงเพจจริง/AI จริง ใช้ `startMockGraph()` / `startMockAi()` · โค้ดเรียก AI ต้องผ่าน `AiGatewayService` เท่านั้น (ห้าม import SDK ผู้ให้บริการ)
 >

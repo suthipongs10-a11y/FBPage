@@ -27,7 +27,7 @@ test('register through the UI lands on the overview with the workspace', async (
   await page.getByLabel('อีเมล').fill(USER.email);
   await page.getByLabel('รหัสผ่าน').fill(USER.password);
   await page.getByRole('button', { name: 'สมัครใช้งาน' }).click();
-  await expect(page.getByRole('heading', { name: 'ภาพรวม' })).toBeVisible();
+  await expect(page.locator('h1.brand-gradient')).toBeVisible();   // hero ของหน้าภาพรวม
   await expect(page.getByText('ลูกค้า', { exact: true }).first()).toBeVisible();
 });
 
@@ -99,7 +99,7 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByLabel('อีเมล').fill(USER.email);
   await page.getByLabel('รหัสผ่าน').fill(USER.password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
-  await expect(page.getByRole('heading', { name: 'ภาพรวม' })).toBeVisible();
+  await expect(page.locator('h1.brand-gradient')).toBeVisible();   // hero ของหน้าภาพรวม
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function api(request: APIRequestContext, method: string, path: string, data?: unknown): Promise<any> {

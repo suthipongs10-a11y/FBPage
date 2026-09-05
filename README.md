@@ -66,6 +66,7 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   รายงานส่งลูกค้า: **PDF** (`GET reports/:id/pdf`, Chromium เดียวกับ media) + **ลิงก์แชร์** อ่านอย่างเดียว มีวันหมดอายุ ไม่ต้องล็อกอิน (`POST reports/:id/share` → `/share/r/<token>` เซ็นด้วย AUTH_SECRET) ทั้ง Facebook และ YouTube
   วิเคราะห์แนวโน้ม (หน้า "วิเคราะห์"): กราฟ SVG ล้วนตามหลัก dataviz (series เดียวต่อกราฟ, ไม่มี dual axis, hover/ตาราง, ค่า null เว้นว่าง) — โพสต์/แชร์ต่อสัปดาห์ (FB), วิดีโอ/วิวต่อสัปดาห์ + ผู้ติดตามจาก snapshot (YT) ผ่าน `GET pages/:id/trends`, `GET youtube/channels/:id/trends`
   E2E (Playwright, `pnpm test:e2e`): สมัคร → ล็อกอิน → เพจ → อนุมัติคอนเทนต์ในเบราว์เซอร์ → เชื่อมช่อง YouTube ผ่าน UI (mock Google) → คลังวิดีโอ → กราฟ → ลิงก์แชร์รายงานแบบไม่มี session — ใช้ Chromium ที่ติดตั้งไว้ CI ติดตั้งเอง
+  UI: ธีมสว่างทั้งแอป (กำหนดที่ `apps/web/app/globals.css` ไฟล์เดียวผ่าน Tailwind v4 `@theme`), หน้าภาพรวมแบบแดชบอร์ด (hero, KPI มีสีประจำหัวข้อ, กราฟ 8 สัปดาห์, รายการต้องดู) · เช็กลิสต์เปิดใช้งานจริงสำหรับเจ้าของระบบ: [`docs/runbooks/go-live-checklist.md`](docs/runbooks/go-live-checklist.md)
   ยังไม่ทำ (นอก MVP §165): Live (§68), YouTube Reporting API bulk (§93), thumbnail generation ด้วยภาพ AI (§39 มีแค่บรีฟ), Messenger inbox, Ads agent
 
 ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)

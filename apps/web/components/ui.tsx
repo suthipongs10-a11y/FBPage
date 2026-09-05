@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ');
 
 export function Button({ variant = 'primary', className, ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' | 'danger' }) {
-  const v = { primary: 'bg-sky-500 text-slate-950 hover:bg-sky-400', ghost: 'border border-slate-700 text-slate-200 hover:bg-slate-800', danger: 'bg-rose-500/90 text-white hover:bg-rose-500' }[variant];
+  const v = { primary: 'bg-sky-500 text-white hover:bg-sky-600 shadow-sm', ghost: 'border border-slate-700 text-slate-200 hover:bg-slate-800', danger: 'bg-rose-500/90 text-white hover:bg-rose-500' }[variant];
   return <button {...p} className={cx('rounded-lg px-3.5 py-2 text-sm font-semibold disabled:opacity-50', v, className)} />;
 }
 export function Input(p: InputHTMLAttributes<HTMLInputElement>) {
@@ -29,9 +29,17 @@ export function Card({ title, children, actions, className }: { title?: string; 
     </section>
   );
 }
-export function Kpi({ value, label, tone }: { value: ReactNode; label: string; tone?: 'ok' | 'warn' | 'bad' }) {
-  const c = tone === 'bad' ? 'text-rose-400' : tone === 'warn' ? 'text-amber-400' : tone === 'ok' ? 'text-emerald-400' : '';
-  return <div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className={cx('text-2xl font-bold', c)}>{value}</div><div className="text-xs text-slate-400">{label}</div></div>;
+/** KPI tile — tone = สถานะ (ดี/เตือน/แย่); accent = สีประจำหัวข้อ (แถบซ้าย + ไอคอน) ให้แดชบอร์ดมีสีสันโดยไม่ใช้สีสถานะผิดที่ */
+export const ACCENTS = { blue: '#2563eb', violet: '#7c3aed', pink: '#db2777', emerald: '#059669', amber: '#d97706', teal: '#0d9488', rose: '#e11d48', slate: '#6b7a90' } as const;
+export function Kpi({ value, label, tone, accent, icon, sub }: { value: ReactNode; label: string; tone?: 'ok' | 'warn' | 'bad'; accent?: keyof typeof ACCENTS; icon?: ReactNode; sub?: ReactNode }) {
+  const c = tone === 'bad' ? 'text-rose-400' : tone === 'warn' ? 'text-amber-400' : tone === 'ok' ? 'text-emerald-400' : 'text-slate-100';
+  const a = accent ? ACCENTS[accent] : undefined;
+  return (
+    <div className={cx('rounded-xl border border-slate-800 bg-slate-900 p-4', a && 'accent-stripe pl-5')} style={a ? ({ ['--accent' as string]: a } as React.CSSProperties) : undefined}>
+      <div className="flex items-start justify-between gap-2"><div className={cx('text-2xl font-bold tabular-nums', c)}>{value}</div>{icon && <span className="grid h-8 w-8 place-items-center rounded-lg text-base" style={a ? { background: `${a}1a`, color: a } : undefined}>{icon}</span>}</div>
+      <div className="text-xs text-slate-400">{label}</div>{sub && <div className="mt-1 text-[11px] text-slate-500">{sub}</div>}
+    </div>
+  );
 }
 export function Pill({ children, tone }: { children: ReactNode; tone?: 'ok' | 'warn' | 'bad' | 'muted' }) {
   const c = { ok: 'bg-emerald-950 text-emerald-300', warn: 'bg-amber-950 text-amber-300', bad: 'bg-rose-950 text-rose-300', muted: 'bg-slate-800 text-slate-400' }[tone ?? 'muted'];
