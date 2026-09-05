@@ -14,6 +14,7 @@ import { YtVideosService } from './videos.service';
 import { YtCommentsService } from './comments.service';
 import { YtContentLabService } from './content-lab.service';
 import { YtReportsService } from './reports.service';
+import { YtPlaylistsService } from './playlists.service';
 import * as d from './dto';
 
 const featuresSchema = z.object({ features: z.string().optional() });
@@ -29,11 +30,13 @@ const assetKindSchema = z.enum(['video', 'thumbnail']);
 @Controller('workspaces/:workspaceId/youtube')
 @UseGuards(AuthGuard, TenantGuard)
 export class YoutubeController {
-  constructor(@Inject(YtChannelsService) private readonly channels: YtChannelsService, @Inject(YtVideosService) private readonly videos: YtVideosService, @Inject(YtCommentsService) private readonly comments: YtCommentsService, @Inject(YtContentLabService) private readonly lab: YtContentLabService, @Inject(YtReportsService) private readonly reports: YtReportsService) {}
+  constructor(@Inject(YtChannelsService) private readonly channels: YtChannelsService, @Inject(YtVideosService) private readonly videos: YtVideosService, @Inject(YtCommentsService) private readonly comments: YtCommentsService, @Inject(YtContentLabService) private readonly lab: YtContentLabService, @Inject(YtReportsService) private readonly reports: YtReportsService, @Inject(YtPlaylistsService) private readonly playlists: YtPlaylistsService) {}
 
   // ---------- health / connections (YT-1) ----------
   @Get('health') @RequirePermission('youtube.read')
   health(@Tenant() t: TenantContext) { return this.channels.health(t.workspaceId); }
+  @Get('overview') @RequirePermission('youtube.read')
+  overview(@Tenant() t: TenantContext) { return this.channels.overview(t.workspaceId); }
   @Get('quota') @RequirePermission('youtube.read')
   quota(@Tenant() t: TenantContext) { return this.channels.quotaUsage(t.workspaceId); }
   @Get('connections') @RequirePermission('youtube.read')
@@ -82,6 +85,14 @@ export class YoutubeController {
   recs(@Tenant() t: TenantContext, @Query(new ZodPipe(recsSchema)) q: z.infer<typeof recsSchema>) { return this.videos.listRecommendations(t.workspaceId, q.channelId, q.status ?? 'OPEN'); }
   @Patch('recommendations/:id') @RequirePermission('youtube.content.edit')
   recStatus(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.recStatusSchema)) b: z.infer<typeof d.recStatusSchema>, @RequestId() rid: string) { return this.videos.setRecommendationStatus(t.workspaceId, u.id, id, b.status, b.outcome, rid); }
+
+  // ---------- playlists (§45) ----------
+  @Get('channels/:id/playlists') @RequirePermission('youtube.read')
+  listPlaylists(@Tenant() t: TenantContext, @Param('id') id: string) { return this.playlists.list(t.workspaceId, id); }
+  @Post('channels/:id/playlists/plan') @HttpCode(200) @RequirePermission('youtube.playlists.manage', 'ai.use')
+  planPlaylists(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.playlists.plan(t.workspaceId, u.id, id, rid); }
+  @Post('recommendations/:id/apply') @HttpCode(200) @RequirePermission('youtube.playlists.manage')
+  applyRec(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.playlists.apply(t.workspaceId, u.id, id, rid); }
 
   // ---------- comments (YT-6) ----------
   @Get('comments') @RequirePermission('youtube.comments.read')

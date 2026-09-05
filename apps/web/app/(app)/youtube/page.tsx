@@ -40,6 +40,7 @@ export default function YoutubePage() {
   const analyze = (id: string) => run(`an:${id}`, async () => { const r = await api<{ recommendationsCreated: number; result: { summary: string } }>(`/workspaces/${ws.id}/youtube/channels/${id}/analyze`, { method: 'POST', body: { days: 90 } }); setNotice(`${r.result.summary.slice(0, 200)} · ${r.recommendationsCreated} ${t('yt.recommendations')}`); });
   const revival = (id: string) => run(`rv:${id}`, async () => { const r = await api<{ candidates?: unknown[]; created?: number }>(`/workspaces/${ws.id}/youtube/channels/${id}/revival`, { method: 'POST', body: {} }); setNotice(`${t('yt.revival')}: ${r.created ?? r.candidates?.length ?? 0}`); });
   const rec = (id: string, status: string) => run(`rec:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/recommendations/${id}`, { method: 'PATCH', body: { status } }); });
+  const applyRec = (id: string) => run(`apply:${id}`, async () => { const r = await api<{ added: number; createdPlaylist: boolean; skipped: string[] }>(`/workspaces/${ws.id}/youtube/recommendations/${id}/apply`, { method: 'POST', body: {} }); setNotice(`${t('yt.applyRec')} ✔ ${r.createdPlaylist ? 'สร้าง playlist ใหม่ · ' : ''}เพิ่ม ${r.added} วิดีโอ${r.skipped.length ? ` · ข้าม ${r.skipped.length} (อยู่แล้ว)` : ''}`); });
   if (!health || !channels || !quota) return <div><ErrorBox error={error} /><Loading /></div>;
   const manage = can('youtube.connect'); const settings = can('youtube.settings.manage');
   const cfg = (ok: boolean) => <Pill tone={ok ? 'ok' : 'muted'}>{ok ? t('yt.configured') : t('yt.notConfigured')}</Pill>;
@@ -98,7 +99,7 @@ export default function YoutubePage() {
         {recs.length === 0 ? <Empty /> : <div className="space-y-2 text-sm">{recs.map(r => (
           <div key={r.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-800 p-2">
             <div><div className="font-medium"><Pill tone="muted">{r.actionType}</Pill> {r.title}</div><div className="text-xs text-slate-400">{r.why}</div><div className="text-xs text-slate-500">{t('yt.confidence')}: {r.confidence} · P{r.priority}</div></div>
-            {can('youtube.content.edit') && <div className="flex gap-1"><Button variant="ghost" onClick={() => rec(r.id, 'ACCEPTED')}>{t('yt.recAccept')}</Button><Button variant="ghost" onClick={() => rec(r.id, 'DONE')}>{t('yt.recDone')}</Button><Button variant="ghost" onClick={() => rec(r.id, 'IGNORED')}>{t('yt.recIgnore')}</Button></div>}
+            {can('youtube.content.edit') && <div className="flex gap-1">{['ADD_TO_PLAYLIST', 'CREATE_PLAYLIST'].includes(r.actionType) && can('youtube.playlists.manage') && <Button disabled={busy === `apply:${r.id}`} onClick={() => applyRec(r.id)}>{t('yt.applyRec')}</Button>}<Button variant="ghost" onClick={() => rec(r.id, 'ACCEPTED')}>{t('yt.recAccept')}</Button><Button variant="ghost" onClick={() => rec(r.id, 'DONE')}>{t('yt.recDone')}</Button><Button variant="ghost" onClick={() => rec(r.id, 'IGNORED')}>{t('yt.recIgnore')}</Button></div>}
           </div>))}</div>}
       </Card>
     </div>

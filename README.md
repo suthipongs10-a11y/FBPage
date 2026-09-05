@@ -57,7 +57,12 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   หน้าเว็บ: "YouTube" (สถานะ/โควตา/บัญชี Google/เชื่อมช่อง/kill switch/ข้อเสนอ) · "YT · วิดีโอ" · "YT · Content Lab" · "YT · คอมเมนต์" · "YT · รายงาน" · ปฏิทิน/คิวอนุมัติรวมสองแพลตฟอร์ม (§65, §117)
   RBAC `youtube.*` (§89–91) · env `GOOGLE_*`, `YOUTUBE_*` (§144) · เอกสาร `docs/youtube/` (API changelog §167, Google Cloud setup, first-channel runbook)
   ทดสอบ: unit 11 (youtube-core) + integration 17 (API กับ mock YouTube/mock AI/mock Graph — OAuth, connect, sync, quota 429, analyst, metadata audit, comments→lead→cluster→idea, ideas→script→metadata→policy gate→approve→asset→upload idempotent, repurpose, report, tenant isolation, disconnect/revoke) + `test/phase9-smoke.mjs`
-  ยังไม่ทำ (นอก MVP §165): Live (§68), Playlist Architect อัตโนมัติ (§45 — API มี `syncPlaylists`/`createPlaylist` แล้ว), YouTube Reporting API bulk (§93), thumbnail generation ด้วยภาพ AI (§39 มีแค่บรีฟ), แดชบอร์ดกราฟ
+  Playlist Architect (§45): `POST channels/:id/playlists/plan` → AI เสนอกลุ่มจากข้อมูลที่ซิงก์ไว้เป็น recommendation (ADD_TO_PLAYLIST / CREATE_PLAYLIST) → คนกด "ทำเลย" (`POST recommendations/:id/apply`) ระบบจึงสร้าง/เพิ่มผ่าน OAuth แบบ idempotent แล้วซิงก์กลับ · `GET channels/:id/playlists` แสดง playlist + วิดีโอที่ยังไม่อยู่ใน playlist
+  ภาพรวมรวมสองแพลตฟอร์ม (§36): `GET youtube/overview` → KPI YouTube + รายการ "ต้องดู" บนหน้าแรก (ต้องเชื่อมใหม่ / อัปโหลดล้มเหลว / รออนุมัติ / โควตา ≥ 80% / คอมเมนต์ค้าง / ข้อเสนอรอตัดสิน)
+  Maintenance (worker `maintenance` + `youtube-maintenance`): cleanup รายวัน (session/invite/reset หมดอายุ, notification ที่อ่านแล้ว > 90 วัน, AiTaskLog > 180 วัน, ApiUsage/SyncRun > 90 วัน — **ไม่ลบ** audit/metric snapshot/report) · ตรวจ token ทุก 12 ชม. (Facebook ใกล้หมดอายุ 7 วัน, เพจ INVALID, Google ERROR → แจ้งเตือน dedupe) · upload ค้าง > 6 ชม. → UPLOAD_FAILED + แจ้งเตือน, PROCESSING > 24 ชม. → ตรวจใหม่
+  CI: `.github/workflows/ci.yml` — Postgres/Redis service → migrate → build → typecheck → lint → test ทุก package → smoke phase6 + phase9 ผ่าน Next proxy กับ mock (ไม่มี key จริงใน CI)
+  ทดสอบเพิ่ม: worker integration 5 (sync/upload/processing/metrics/kill switch/missing file/comments/maintenance) · API 19 (playlist plan→apply idempotent + kill switch, overview)
+  ยังไม่ทำ (นอก MVP §165): Live (§68), YouTube Reporting API bulk (§93), thumbnail generation ด้วยภาพ AI (§39 มีแค่บรีฟ), แดชบอร์ดกราฟ, อีเมลจริง (SMTP), export PDF/ลิงก์แชร์รายงาน
 
 ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance

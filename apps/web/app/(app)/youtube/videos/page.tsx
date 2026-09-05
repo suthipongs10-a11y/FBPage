@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { YT_VIDEO_TYPES } from '@fbpm/shared';
-import { api, type YtChannel, type YtVideo, type YtVideoDetail } from '@/lib/api';
+import { api, type YtChannel, type YtPlaylistsView, type YtVideo, type YtVideoDetail } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select, Textarea } from '@/components/ui';
@@ -15,18 +15,20 @@ export default function YtVideosPage() {
   const [channels, setChannels] = useState<YtChannel[] | null>(null); const [rows, setRows] = useState<YtVideo[] | null>(null);
   const [filter, setFilter] = useState({ channelId: '', type: '', sort: 'published', q: '' });
   const [sel, setSel] = useState<YtVideoDetail | null>(null); const [edit, setEdit] = useState<{ title: string; description: string; tags: string; privacyStatus: string } | null>(null); const [pillar, setPillar] = useState('');
-  const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState(''); const [pl, setPl] = useState<YtPlaylistsView | null>(null);
   const load = useCallback(async () => {
     try {
       const q = new URLSearchParams(); Object.entries(filter).forEach(([k, v]) => { if (v) q.set(k, v); });
       const [c, v] = await Promise.all([api<YtChannel[]>(`/workspaces/${ws.id}/youtube/channels`), api<YtVideo[]>(`/workspaces/${ws.id}/youtube/videos?${q}`)]);
       setChannels(c); setRows(v);
+      setPl(filter.channelId ? await api<YtPlaylistsView>(`/workspaces/${ws.id}/youtube/channels/${filter.channelId}/playlists`) : null);
     } catch (e) { setError(e); }
   }, [ws.id, filter]);
   useEffect(() => { void load(); }, [load]);
   const open = async (id: string) => { setError(null); try { const d = await api<YtVideoDetail>(`/workspaces/${ws.id}/youtube/videos/${id}`); setSel(d); setEdit(null); setPillar(d.contentPillar ?? ''); } catch (e) { setError(e); } };
   const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await load(); if (sel) await open(sel.id); } catch (e) { setError(e); } finally { setBusy(''); } };
   const saveMeta = () => sel && edit && run('meta', async () => { await api(`/workspaces/${ws.id}/youtube/videos/${sel.id}/metadata`, { method: 'PATCH', body: { title: edit.title, description: edit.description, tags: edit.tags.split(',').map(x => x.trim()).filter(Boolean), privacyStatus: edit.privacyStatus } }); setNotice(t('common.saved' as MessageKey)); setEdit(null); });
+  const planPlaylists = () => filter.channelId && run('plan', async () => { const r = await api<{ recommendationsCreated: number; proposed: unknown[] }>(`/workspaces/${ws.id}/youtube/channels/${filter.channelId}/playlists/plan`, { method: 'POST', body: {} }); setNotice(`${t('yt.planPlaylists')}: ${r.proposed.length} → ${r.recommendationsCreated} ${t('yt.recommendations')}`); });
   const savePillar = () => sel && run('pillar', async () => { await api(`/workspaces/${ws.id}/youtube/videos/${sel.id}/pillar`, { method: 'PATCH', body: { contentPillar: pillar || null } }); });
   if (!channels || !rows) return <div><ErrorBox error={error} /><Loading /></div>;
   const canEdit = can('youtube.metadata.edit') && sel?.channel.accessMode === 'OAUTH';
@@ -41,6 +43,11 @@ export default function YtVideosPage() {
         <Select className="w-auto" value={filter.sort} onChange={e => setFilter(f => ({ ...f, sort: e.target.value }))}><option value="published">{t('yt.sort')}: {t('yt.sortPublished')}</option><option value="views">{t('yt.sortViews')}</option><option value="subs">{t('yt.sortSubs')}</option><option value="avd">{t('yt.sortAvd')}</option></Select>
         <Input className="w-56" placeholder="ค้นหาชื่อ…" value={filter.q} onChange={e => setFilter(f => ({ ...f, q: e.target.value }))} />
       </div>
+      {pl && <Card title={`${t('yt.playlists')} (${pl.playlists.length})`} actions={can('youtube.playlists.manage') && can('ai.use') ? <Button variant="ghost" disabled={busy === 'plan'} onClick={planPlaylists}>{t('yt.planPlaylists')}</Button> : undefined}>
+        <p className="mb-2 text-xs text-slate-500">{t('yt.playlistHint')}</p>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{pl.playlists.map(p => <details key={p.id} className="rounded-lg border border-slate-800 p-2 text-sm"><summary className="cursor-pointer font-medium">{p.title} <span className="text-xs text-slate-500">· {p.items.length} {t('yt.playlistItems')} · {p.privacyStatus ?? ''}</span></summary><ol className="mt-1 list-decimal pl-5 text-xs text-slate-400">{p.items.map(i => <li key={i.video.id}>{i.video.title}</li>)}</ol></details>)}</div>
+        {pl.unlisted.length > 0 && <p className="mt-2 text-xs text-amber-300">{t('yt.unlisted')}: {pl.unlisted.length} — {pl.unlisted.slice(0, 5).map(v => v.title).join(' · ')}{pl.unlisted.length > 5 ? ' …' : ''}</p>}
+      </Card>}
       <div className="grid gap-3 lg:grid-cols-[1fr_420px]">
         {rows.length === 0 ? <Empty text={t('yt.noVideos')} /> : (
           <div className="overflow-x-auto rounded-xl border border-slate-800"><table className="w-full text-sm">

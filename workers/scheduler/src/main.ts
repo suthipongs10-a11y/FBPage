@@ -3,6 +3,7 @@
  * - facebook-publish: เผยแพร่ ContentItem ตามเวลา (idempotent ผ่าน ExternalOperation, ตรวจ kill switch ทุกครั้ง)
  * - facebook-sync: ซิงก์เพจ + งานรอบ 6 ชม. ซิงก์ทุกเพจที่ยังเชื่อมต่อ
  * - analytics: เก็บ metric โพสต์หลังเผยแพร่ 24/72 ชม.
+ * - youtube-*: ดู ./youtube.ts · maintenance / youtube-maintenance: ดู ./maintenance.ts
  */
 import { Queue, Worker, type Job } from 'bullmq';
 import { PrismaClient, notify } from '@fbpm/database';
@@ -10,6 +11,7 @@ import { FacebookService, PageNotSyncable, collectPostMetrics, publishContent, s
 import type { SocialEvent } from '@fbpm/shared';
 import { JOBS, QUEUES, redisConnectionFromUrl } from './queues';
 import { YT_QUEUES, buildWorkerYtDeps, createYtHandlers, registerYtSchedulers } from './youtube';
+import { createMaintenanceHandlers, registerMaintenanceSchedulers } from './maintenance';
 
 const REDIS_URL = process.env.REDIS_URL; const AUTH_SECRET = process.env.AUTH_SECRET;
 if (!REDIS_URL) { console.error('REDIS_URL is required'); process.exit(1); }
@@ -25,6 +27,8 @@ const syncQueue = new Queue(QUEUES.facebookSync, { connection });
 const ytQueues = { upload: new Queue(YT_QUEUES.upload, { connection }), sync: new Queue(YT_QUEUES.sync, { connection }), analytics: new Queue(YT_QUEUES.analytics, { connection }), comments: new Queue(YT_QUEUES.comments, { connection }) };
 const ytBuilt = buildWorkerYtDeps(prisma, AUTH_SECRET);
 export const yt = createYtHandlers({ prisma, deps: ytBuilt.deps, quota: ytBuilt.quota, authSecret: AUTH_SECRET, queues: ytQueues, log });
+const maintenanceQueue = new Queue(QUEUES.maintenance, { connection }); const ytMaintenanceQueue = new Queue(YT_QUEUES.maintenance, { connection });
+export const maintenance = createMaintenanceHandlers({ prisma, authSecret: AUTH_SECRET, ytUploadQueue: ytQueues.upload, log });
 
 export async function handlePublish(job: Job<{ contentId: string; requestId?: string }>): Promise<unknown> {
   const { contentId, requestId = `job-${job.id}` } = job.data;
@@ -98,6 +102,7 @@ export async function handleWebhook(job: Job<SocialEvent>): Promise<unknown> {
 const ack = async (job: Job): Promise<{ acknowledged: true }> => { log('job received (no processor yet)', { queue: job.queueName, name: job.name, id: job.id }); return { acknowledged: true }; };
 const processors: Record<string, (job: Job) => Promise<unknown>> = {
   [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics, [QUEUES.facebookWebhook]: handleWebhook as (job: Job) => Promise<unknown>,
+  [QUEUES.maintenance]: maintenance.handle, [YT_QUEUES.maintenance]: maintenance.handle,
   [YT_QUEUES.upload]: yt.handleUpload as (job: Job) => Promise<unknown>, [YT_QUEUES.sync]: yt.handleSync as (job: Job) => Promise<unknown>, [YT_QUEUES.analytics]: yt.handleAnalytics as (job: Job) => Promise<unknown>, [YT_QUEUES.comments]: yt.handleComments as (job: Job) => Promise<unknown>,
 };
 const ALL_QUEUES = [...Object.values(QUEUES), ...Object.values(YT_QUEUES)];
@@ -112,6 +117,7 @@ async function main(): Promise<void> {
   // งานรอบ: ซิงก์ทุกเพจทุก 6 ชั่วโมง (retry-safe — แค่เพิ่ม snapshot)
   await syncQueue.upsertJobScheduler('sync-all-pages-6h', { every: 6 * 3_600_000 }, { name: JOBS.syncAllPages, data: {} });
   await registerYtSchedulers(ytQueues.sync);
+  await registerMaintenanceSchedulers(maintenanceQueue, ytMaintenanceQueue);
   log('worker started', { queues: ALL_QUEUES, graph: process.env.META_GRAPH_BASE_URL ?? 'graph.facebook.com', youtube: process.env.YOUTUBE_MOCK_BASE_URL ?? 'googleapis.com', youtubeUpload: ytBuilt.deps.uploadEnabled });
   const shutdown = async (signal: string): Promise<void> => { log('shutting down', { signal }); await Promise.all(workers.map(w => w.close())); await prisma.$disconnect(); process.exit(0); };
   process.on('SIGINT', () => void shutdown('SIGINT')); process.on('SIGTERM', () => void shutdown('SIGTERM'));

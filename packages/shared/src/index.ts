@@ -136,7 +136,8 @@ export const QUEUES = {
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 /** ชื่องานในคิว — jobId ต้องกำหนดจากทรัพยากรเพื่อกันงานซ้ำ (§48) */
 export const JOBS = { publishContent: 'publish-content', syncPage: 'sync-page', syncAllPages: 'sync-all-pages', collectPostMetrics: 'collect-post-metrics', syncComments: 'sync-comments', webhookEvent: 'webhook-event',
-  ytSyncChannel: 'yt-sync-channel', ytSyncAll: 'yt-sync-all', ytCollectVideoMetrics: 'yt-collect-video-metrics', ytSyncComments: 'yt-sync-comments', ytUpload: 'yt-upload', ytCheckProcessing: 'yt-check-processing' } as const;
+  ytSyncChannel: 'yt-sync-channel', ytSyncAll: 'yt-sync-all', ytCollectVideoMetrics: 'yt-collect-video-metrics', ytSyncComments: 'yt-sync-comments', ytUpload: 'yt-upload', ytCheckProcessing: 'yt-check-processing',
+  maintenanceCleanup: 'maintenance-cleanup', maintenanceTokenCheck: 'maintenance-token-check', ytStaleUploads: 'yt-stale-uploads' } as const;
 export const YT_QUEUES = { sync: 'youtube-sync', analytics: 'youtube-analytics', reporting: 'youtube-reporting', upload: 'youtube-upload', comments: 'youtube-comments', live: 'youtube-live', maintenance: 'youtube-maintenance' } as const;
 export const ytUploadJobId = (contentId: string) => `ytupload-${contentId}`;
 /** BullMQ ห้ามมี ':' ใน jobId */

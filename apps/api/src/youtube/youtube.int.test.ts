@@ -249,6 +249,41 @@ run('youtube module (integration)', () => {
     const one = await a.http('GET', `/workspaces/${ws}/youtube/reports/${r.json.id}`); expect(one.status).toBe(200);
   });
 
+  // ---------- Playlist Architect (§45) + overview ----------
+  it('playlist architect proposes (AI) → recommendations; apply creates/adds via OAuth idempotently and syncs back', async () => {
+    const before = await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/playlists`);
+    expect(before.status).toBe(200); expect(before.json.playlists).toHaveLength(1); expect(before.json.unlisted.length).toBeGreaterThanOrEqual(2);   // PL1 มี v1,v2 → v3,v4 (+ วิดีโอที่อัปโหลด) ยังไม่อยู่ใน playlist
+    ai.state.replies.push({ text: JSON.stringify({ playlists: [
+      { playlistId: 'PL1', title: 'ปุ๋ยพื้นฐาน', description: '', videoIds: ['v4', 'v1'], why: 'เรื่องดิน/ปุ๋ยต่อเนื่องกัน', confidence: 'HIGH', priority: 80 },
+      { playlistId: null, title: 'Shorts โรคพืช', description: 'คลิปสั้นเรื่องโรคพืช', videoIds: ['v3', 'ไม่มีจริง'], why: 'แยก Shorts ออกจากวิดีโอยาว', confidence: 'MEDIUM', priority: 60 },
+    ], notes: ['เสนอ 2 กลุ่ม'] }) });
+    const plan = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/playlists/plan`, {});
+    expect(plan.status, plan.text).toBe(200); expect(plan.json.recommendationsCreated).toBe(2); expect(plan.json.proposed[1].videoIds).toEqual(['v3']);   // วิดีโอที่ไม่มีจริงถูกตัด
+    const recs = (await a.http('GET', `/workspaces/${ws}/youtube/recommendations?channelId=${channelId}`)).json as { id: string; actionType: string }[];
+    const create = recs.find(r => r.actionType === 'CREATE_PLAYLIST')!; const add = recs.find(r => r.actionType === 'ADD_TO_PLAYLIST')!;
+    expect(yt.state.playlists).toHaveLength(1);
+    const ap1 = await a.http('POST', `/workspaces/${ws}/youtube/recommendations/${create.id}/apply`, {});
+    expect(ap1.status, ap1.text).toBe(200); expect(ap1.json.createdPlaylist).toBe(true); expect(ap1.json.added).toBe(1); expect(yt.state.playlists).toHaveLength(2); expect(yt.state.playlists[1]!.items).toEqual(['v3']);
+    const ap2 = await a.http('POST', `/workspaces/${ws}/youtube/recommendations/${add.id}/apply`, {});
+    expect(ap2.status, ap2.text).toBe(200); expect(ap2.json.added).toBe(1); expect(ap2.json.skipped).toEqual(['v1']);   // v1 อยู่แล้ว → ข้าม (idempotent)
+    expect((await a.http('POST', `/workspaces/${ws}/youtube/recommendations/${add.id}/apply`, {})).status).toBe(409);   // ทำแล้ว
+    const after = await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/playlists`);
+    expect(after.json.playlists).toHaveLength(2); expect(after.json.playlists.find((p: { youtubePlaylistId: string }) => p.youtubePlaylistId === 'PL1').items).toHaveLength(3);
+    const audit = await prisma.auditLog.count({ where: { workspaceId: ws, action: 'YOUTUBE_PLAYLIST_APPLIED' } }); expect(audit).toBe(2);
+    await a.http('PATCH', `/workspaces/${ws}/youtube/channels/${channelId}`, { automationPaused: true });
+    ai.state.replies.push({ text: JSON.stringify({ playlists: [{ playlistId: 'PL1', title: 'x', description: '', videoIds: ['v2'], why: 'y', confidence: 'LOW', priority: 10 }], notes: [] }) });
+    await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/playlists/plan`, {});
+    const rec3 = ((await a.http('GET', `/workspaces/${ws}/youtube/recommendations?channelId=${channelId}`)).json as { id: string; actionType: string }[]).find(r => r.actionType === 'ADD_TO_PLAYLIST')!;
+    expect((await a.http('POST', `/workspaces/${ws}/youtube/recommendations/${rec3.id}/apply`, {})).status).toBe(409);   // kill switch
+    await a.http('PATCH', `/workspaces/${ws}/youtube/channels/${channelId}`, { automationPaused: false });
+  });
+  it('overview summarises YouTube state for the shared dashboard', async () => {
+    const r = await a.http('GET', `/workspaces/${ws}/youtube/overview`);
+    expect(r.status).toBe(200); expect(r.json.configured).toBe(true); expect(r.json.channels).toBe(1); expect(r.json.videosMonth).toBeGreaterThanOrEqual(1);
+    expect(r.json.openRecommendations).toBeGreaterThanOrEqual(1); expect(r.json.quota.used).toBeGreaterThan(0); expect(r.json.unresolvedComments).toBeGreaterThanOrEqual(1);
+    expect((await b.http('GET', `/workspaces/${wsB}/youtube/overview`)).json.channels).toBe(0);
+  });
+
   // ---------- tenant isolation + RBAC ----------
   it('another workspace cannot see channels, videos, content, comments or reports', async () => {
     expect((await b.http('GET', `/workspaces/${wsB}/youtube/channels/${channelId}`)).status).toBe(404);

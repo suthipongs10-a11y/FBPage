@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type PageRow, type WorkspaceDetail } from '@/lib/api';
+import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type PageRow, type WorkspaceDetail, type YtOverview } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Card, Kpi, Loading } from '@/components/ui';
@@ -13,7 +13,7 @@ export default function OverviewPage() {
   const [pages, setPages] = useState<PageRow[] | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [usage, setUsage] = useState<AiUsage | null>(null);
-  const [aiReady, setAiReady] = useState(true);
+  const [aiReady, setAiReady] = useState(true); const [yt, setYt] = useState<YtOverview | null>(null);
   useEffect(() => {
     setDetail(null); setClients(null); setPages(null);
     api<PageRow[]>(`/workspaces/${ws.id}/pages`).then(setPages).catch(() => setPages([]));
@@ -22,6 +22,7 @@ export default function OverviewPage() {
     api<AiProviderRow[]>(`/workspaces/${ws.id}/ai/providers`).then(p => setAiReady(p.some(x => x.configured || x.platformKey))).catch(() => setAiReady(true));
     api<WorkspaceDetail>(`/workspaces/${ws.id}`).then(setDetail).catch(() => setDetail(null));
     api<Client[]>(`/workspaces/${ws.id}/clients`).then(setClients).catch(() => setClients([]));
+    api<YtOverview>(`/workspaces/${ws.id}/youtube/overview`).then(setYt).catch(() => setYt(null));
   }, [ws.id]);
   if (!detail || !clients || !pages) return <Loading />;
   const activePages = pages.filter(p => !p.disconnectedAt);
@@ -43,6 +44,14 @@ export default function OverviewPage() {
   if (activePages.length > 0 && !scheduled.some(c => c.scheduledAt && new Date(c.scheduledAt) >= tomorrow && new Date(c.scheduledAt) < dayAfter)) attention.push({ text: t('needsAttention.noTomorrow'), href: '/calendar', tone: 'warn' });
   if (usage?.monthlyBudgetUsd && usage.monthToDate.costUsd / usage.monthlyBudgetUsd >= 0.85) attention.push({ text: `${t('needsAttention.aiBudget')} ${Math.round((usage.monthToDate.costUsd / usage.monthlyBudgetUsd) * 100)}%`, href: '/ai-models', tone: 'warn' });
   if (!aiReady) attention.push({ text: t('needsAttention.noAi'), href: '/ai-models', tone: 'warn' });
+  if (yt && yt.channels > 0) {
+    if (yt.needReconnect > 0) attention.push({ text: `${yt.needReconnect} ${t('needsAttention.ytReconnect')}`, href: '/youtube', tone: 'bad' });
+    if (yt.uploadFailed > 0) attention.push({ text: `${yt.uploadFailed} ${t('needsAttention.ytUploadFailed')}`, href: '/youtube/content', tone: 'bad' });
+    if (yt.pendingApproval > 0) attention.push({ text: `${yt.pendingApproval} ${t('needsAttention.ytPending')}`, href: '/youtube/content', tone: 'warn' });
+    if (yt.quota.softLimit && yt.quota.used / yt.quota.softLimit >= 0.8) attention.push({ text: `${t('needsAttention.ytQuota')} ${Math.round((yt.quota.used / yt.quota.softLimit) * 100)}%`, href: '/youtube', tone: 'warn' });
+    if (yt.unresolvedComments > 0) attention.push({ text: `${yt.unresolvedComments} ${t('needsAttention.ytComments')}`, href: '/youtube/comments', tone: 'warn' });
+    if (yt.openRecommendations > 0) attention.push({ text: `${yt.openRecommendations} ${t('needsAttention.ytRecs')}`, href: '/youtube', tone: 'warn' });
+  }
 
   return (
     <div className="space-y-6">
@@ -59,6 +68,14 @@ export default function OverviewPage() {
         <Kpi value={usage ? `$${usage.monthToDate.costUsd.toFixed(2)}` : '—'} label={t('overview.aiSpend')} />
         <Kpi value={detail._count.members} label={t('overview.members')} />
       </div>
+      {yt && yt.channels > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Kpi value={yt.channels} label={t('yt.overviewChannels')} tone={yt.needReconnect ? 'bad' : undefined} />
+        <Kpi value={yt.videosMonth} label={t('yt.overviewVideosMonth')} />
+        <Kpi value={yt.pendingApproval} label={t('yt.overviewPending')} tone={yt.pendingApproval ? 'warn' : undefined} />
+        <Kpi value={yt.processing + yt.scheduled} label={`${t('yt.overviewProcessing')} / ${t('yts.SCHEDULED')}`} />
+        <Kpi value={yt.uploadFailed} label={t('yt.overviewFailed')} tone={yt.uploadFailed ? 'bad' : undefined} />
+        <Kpi value={yt.unresolvedComments} label={t('yt.overviewComments')} tone={yt.unresolvedComments ? 'warn' : undefined} />
+      </div>}
       <Card title={t('needsAttention.title')}>
         <ul className="space-y-2 text-sm">
           {attention.map((a, i) => (

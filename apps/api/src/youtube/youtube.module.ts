@@ -7,7 +7,8 @@ import { YtVideosService } from './videos.service';
 import { YtCommentsService } from './comments.service';
 import { YtContentLabService } from './content-lab.service';
 import { YtReportsService } from './reports.service';
+import { YtPlaylistsService } from './playlists.service';
 
 /** YouTube AI Channel Manager (AGENTS_YOUTUBE.md) — โมดูลใน monorepo เดียว ใช้ auth/tenant/AI gateway/queue/notification ร่วมกับ Facebook */
-@Module({ imports: [AiModule], controllers: [YoutubeController, GoogleOAuthCallbackController], providers: [quotaProvider, ytProvider, YtChannelsService, YtVideosService, YtCommentsService, YtContentLabService, YtReportsService], exports: [YtChannelsService, YtContentLabService] })
+@Module({ imports: [AiModule], controllers: [YoutubeController, GoogleOAuthCallbackController], providers: [quotaProvider, ytProvider, YtChannelsService, YtVideosService, YtCommentsService, YtContentLabService, YtReportsService, YtPlaylistsService], exports: [YtChannelsService, YtContentLabService] })
 export class YoutubeModule {}

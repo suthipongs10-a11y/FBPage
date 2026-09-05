@@ -162,6 +162,26 @@ export class YtChannelsService {
     return serialize(out);
   }
 
+  /** สรุปสำหรับหน้าภาพรวม (§36 รวมสองแพลตฟอร์ม) — อ่านจากฐานข้อมูลอย่างเดียว */
+  async overview(workspaceId: string) {
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(-7, 0, 0, 0);
+    const chWhere = { ...channelInWorkspace(workspaceId), disconnectedAt: null };
+    const [channels, needReconnect, videosMonth, pendingApproval, uploadFailed, processing, scheduled, unresolvedComments, openRecs, usage] = await Promise.all([
+      this.prisma.youTubeChannel.count({ where: chWhere }),
+      this.prisma.youTubeChannel.count({ where: { ...chWhere, OR: [{ syncStatus: { in: ['ERROR', 'NO_ACCESS'] } }, { connection: { status: 'ERROR' } }] } }),
+      this.prisma.youTubeVideo.count({ where: { channel: chWhere, publishedAt: { gte: monthStart } } }),
+      this.prisma.contentItem.count({ where: { platform: 'YOUTUBE', youtubeChannel: chWhere, ytStatus: 'READY_FOR_APPROVAL' } }),
+      this.prisma.contentItem.count({ where: { platform: 'YOUTUBE', youtubeChannel: chWhere, ytStatus: { in: ['UPLOAD_FAILED', 'PROCESSING_FAILED', 'PUBLISH_FAILED'] } } }),
+      this.prisma.contentItem.count({ where: { platform: 'YOUTUBE', youtubeChannel: chWhere, ytStatus: { in: ['UPLOAD_PENDING', 'UPLOADING', 'PROCESSING'] } } }),
+      this.prisma.contentItem.count({ where: { platform: 'YOUTUBE', youtubeChannel: chWhere, ytStatus: 'SCHEDULED' } }),
+      this.prisma.youTubeComment.count({ where: { channel: chWhere, resolvedAt: null, classification: { in: ['QUESTION', 'FOLLOW_UP_QUESTION', 'CRITICISM', 'FACT_CHALLENGE', 'PRODUCT_INTEREST', 'SERVICE_INTEREST'] } } }),
+      this.prisma.youTubeRecommendation.count({ where: { channel: chWhere, status: 'OPEN' } }),
+      this.prisma.youTubeApiUsage.aggregate({ where: { workspaceId, calledAt: { gte: quotaDayStart() } }, _sum: { quotaUnitsEstimated: true } }),
+    ]);
+    const used = usage._sum.quotaUnitsEstimated ?? 0;
+    return { configured: !!this.yt.google || !!this.yt.apiKey, channels, needReconnect, videosMonth, pendingApproval, uploadFailed, processing, scheduled, unresolvedComments, openRecommendations: openRecs, quota: { ...quotaState(used, this.env.YOUTUBE_QUOTA_SOFT_LIMIT), used, softLimit: this.env.YOUTUBE_QUOTA_SOFT_LIMIT } };
+  }
+
   async quotaUsage(workspaceId: string) {
     const since = quotaDayStart();
     const rows = await this.prisma.youTubeApiUsage.groupBy({ by: ['method'], where: { workspaceId, calledAt: { gte: since } }, _sum: { quotaUnitsEstimated: true }, _count: { _all: true } });

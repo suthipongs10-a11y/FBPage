@@ -1,0 +1,71 @@
+# CI ตาม Definition of Done (AGENTS.md §76, AGENTS_YOUTUBE.md §170) — ทุกอย่างรันกับ mock เท่านั้น ห้ามแตะเพจ/ช่อง/AI จริง
+name: ci
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+
+env:
+  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/fbpm?schema=public
+  REDIS_URL: redis://127.0.0.1:6379
+  AUTH_SECRET: ci-only-secret-at-least-32-characters-long!!
+  APP_URL: http://127.0.0.1:3000
+  MEDIA_DIR: /tmp/fbpm-media
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: fbpm }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.33.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Migrate (prisma migrate deploy) + generate
+        run: pnpm --filter @fbpm/database exec prisma migrate deploy && pnpm --filter @fbpm/database build
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - name: Unit + integration tests (mock Graph / mock AI / mock YouTube)
+        run: pnpm -r --workspace-concurrency=1 test
+      - name: Smoke through Next proxy (Facebook content loop + YouTube module)
+        env:
+          META_GRAPH_BASE_URL: http://127.0.0.1:4998
+          YOUTUBE_MOCK_BASE_URL: http://127.0.0.1:4997
+          GOOGLE_CLIENT_ID: gclient
+          GOOGLE_CLIENT_SECRET: gsecret
+          GOOGLE_OAUTH_REDIRECT_URI: http://127.0.0.1:4000/youtube/oauth/callback
+          YOUTUBE_API_KEY: APIKEY_OK
+          YOUTUBE_UPLOAD_ENABLED: 'true'
+          API_PORT: '4000'
+        run: |
+          mkdir -p "$MEDIA_DIR"
+          node apps/api/dist/main.js > api.log 2>&1 &
+          (cd apps/web && pnpm exec next start -p 3000 > ../../web.log 2>&1) &
+          for i in $(seq 1 60); do
+            if node -e "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
+               && node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then break; fi
+            sleep 2
+          done
+          node test/phase6-smoke.mjs
+          node test/phase9-smoke.mjs
+      - name: Server logs on failure
+        if: failure()
+        run: tail -n 100 api.log web.log || true

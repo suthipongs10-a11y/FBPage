@@ -30,7 +30,7 @@ export async function runUpload(d: YtDeps, contentId: string, requestId: string)
   const c = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, youtubeChannelId: true, youtubeMeta: true, retryCount: true } });
   const m = c.youtubeMeta!; const channelId = c.youtubeChannelId!;
   const asset = await d.prisma.mediaAsset.findUnique({ where: { id: m.videoAssetId! }, select: { path: true, mimeType: true, bytes: true } });
-  if (!asset || !existsSync(asset.path)) return { status: 'FAILED', error: 'ไม่พบไฟล์วิดีโอบนดิสก์', retryable: false };
+  if (!asset || !existsSync(asset.path)) { const error = 'ไม่พบไฟล์วิดีโอบนดิสก์ — แนบไฟล์ใหม่แล้วอัปโหลดอีกครั้ง'; await d.prisma.contentItem.update({ where: { id: c.id }, data: { ytStatus: 'UPLOAD_FAILED', status: 'PUBLISH_FAILED', lastError: error } }); return { status: 'FAILED', error, retryable: false }; }
   const total = statSync(asset.path).size;
   const idempotencyKey = `ytupload:${contentId}`;
   let op = await d.prisma.youTubeUploadOperation.findUnique({ where: { idempotencyKey } });
