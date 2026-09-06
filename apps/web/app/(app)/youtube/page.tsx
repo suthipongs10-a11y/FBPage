@@ -32,7 +32,7 @@ export default function YoutubePage() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (sp.get('gConnected')) setNotice(t('yt.connectedOk')); if (sp.get('gError')) setError(new Error(`${t('yt.connectError')}: ${sp.get('gError')}`)); }, [sp]);
   const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await load(); } catch (e) { setError(e); } finally { setBusy(''); } };
-  const oauth = () => run('oauth', async () => { const r = await api<{ url: string }>(`/workspaces/${ws.id}/youtube/connections/oauth/start`, { method: 'POST', body: { features: 'read,analytics,manage,upload' } }); window.location.href = r.url; });
+  const oauth = () => run('oauth', async () => { const r = await api<{ url: string }>(`/workspaces/${ws.id}/youtube/connections/oauth/start`, { method: 'POST', body: { features: 'read,analytics,manage,upload,search' } }); window.location.href = r.url; });
   const paste = () => run('paste', async () => { await api(`/workspaces/${ws.id}/youtube/connections/token`, { method: 'POST', body: { refreshToken: token } }); setToken(''); setShowToken(false); setNotice(t('yt.connectedOk')); });
   const revoke = (id: string) => run(`revoke:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/connections/${id}`, { method: 'DELETE' }); });
   const connect = () => run('connect', async () => { const r = await api<YtChannel>(`/workspaces/${ws.id}/youtube/channels`, { method: 'POST', body: { brandId: form.brandId, mode: form.mode, ...(form.mode === 'OAUTH' ? { connectionId: form.connectionId } : form.handle.startsWith('UC') && form.handle.length > 20 ? { channelId: form.handle } : { handle: form.handle }) } }); setNotice(`✔ ${r.title}`); });

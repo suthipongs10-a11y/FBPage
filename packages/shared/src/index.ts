@@ -21,6 +21,7 @@ export const PERMISSIONS = [
   'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.revenue.read',
   'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit',
   'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.live.manage', 'youtube.automation.manage', 'youtube.settings.manage',
+  'web.read', 'web.manage', 'web.analytics.read',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -29,12 +30,12 @@ export const ROLE_PERMISSIONS: Record<WorkspaceRole, readonly Permission[]> = {
   owner: PERMISSIONS,
   admin: PERMISSIONS.filter(p => p !== 'billing.manage'),
   manager: ['client.read', 'client.manage', 'page.read', 'page.connect', 'page.manage', 'content.read', 'content.create', 'content.edit', 'content.approve', 'content.publish', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'automation.manage', 'ai.use',
-    'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit', 'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.automation.manage', 'youtube.settings.manage'],
+    'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit', 'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.automation.manage', 'youtube.settings.manage', 'web.read', 'web.manage', 'web.analytics.read'],
   editor: ['client.read', 'page.read', 'content.read', 'content.create', 'content.edit', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'ai.use',
-    'youtube.read', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.comments.read', 'youtube.comments.reply'],
-  reviewer: ['client.read', 'page.read', 'content.read', 'content.approve', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.content.approve', 'youtube.comments.read'],
-  analyst: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'ai.use', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read'],
-  viewer: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read'],
+    'youtube.read', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.comments.read', 'youtube.comments.reply', 'web.read', 'web.analytics.read'],
+  reviewer: ['client.read', 'page.read', 'content.read', 'content.approve', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.content.approve', 'youtube.comments.read', 'web.read', 'web.analytics.read'],
+  analyst: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'ai.use', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read'],
+  viewer: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read'],
 };
 export const hasPermission = (role: WorkspaceRole, permission: Permission): boolean =>
   ROLE_PERMISSIONS[role].includes(permission);
@@ -140,6 +141,13 @@ export const JOBS = { publishContent: 'publish-content', syncPage: 'sync-page', 
   maintenanceCleanup: 'maintenance-cleanup', maintenanceTokenCheck: 'maintenance-token-check', ytStaleUploads: 'yt-stale-uploads' } as const;
 export const YT_QUEUES = { sync: 'youtube-sync', analytics: 'youtube-analytics', reporting: 'youtube-reporting', upload: 'youtube-upload', comments: 'youtube-comments', live: 'youtube-live', maintenance: 'youtube-maintenance' } as const;
 export const ytUploadJobId = (contentId: string) => `ytupload-${contentId}`;
+/** Website Care (AGENTS_WEB.md §4) */
+export const WEB_QUEUES = { monitor: 'web-monitor', daily: 'web-daily' } as const;
+export const WEB_JOBS = { checkSite: 'web-check-site', checkAll: 'web-check-all', dailySite: 'web-daily-site', dailyAll: 'web-daily-all' } as const;
+export const SITE_CHECK_KINDS = ['UPTIME', 'SSL', 'SEO', 'LINKS', 'PAGESPEED'] as const;
+export const SITE_STATUSES = ['UP', 'DOWN', 'DEGRADED', 'UNKNOWN'] as const;
+export const SITE_PLATFORMS = ['WORDPRESS', 'SHOPIFY', 'CUSTOM', 'UNKNOWN'] as const;
+export const WEB_RECOMMENDATION_ACTIONS = ['FIX_META', 'FIX_PERFORMANCE', 'CREATE_CONTENT', 'FIX_BROKEN_LINK', 'IMPROVE_PAGE', 'TECHNICAL', 'OTHER'] as const;
 /** BullMQ ห้ามมี ':' ใน jobId */
 export const publishJobId = (contentId: string) => `publish-${contentId}`;
 

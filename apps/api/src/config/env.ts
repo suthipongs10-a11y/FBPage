@@ -37,6 +37,10 @@ export const envSchema = z.object({
   YOUTUBE_QUOTA_SOFT_LIMIT: z.coerce.number().int().min(100).default(10000),
   /** override ปลายทาง Google/YouTube สำหรับ mock ใน test */
   YOUTUBE_MOCK_BASE_URL: z.string().url().optional(),
+  /** Website Care (AGENTS_WEB.md §7) */
+  PAGESPEED_API_KEY: z.string().trim().optional().transform(v => v || undefined),
+  WEB_MOCK_BASE_URL: z.string().url().optional(),
+  WEB_ALLOW_PRIVATE_TARGETS: z.string().optional().transform(v => v === 'true' || v === '1'),
   /** อีเมล (§65) — ไม่ตั้ง SMTP_HOST = ปิดอีเมล (ลิงก์เชิญ/รีเซ็ตยังคัดลอกส่งเองได้) */
   SMTP_HOST: z.string().trim().optional().transform(v => v || undefined),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),

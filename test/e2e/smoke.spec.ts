@@ -7,17 +7,18 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import { startMockGraph } from '../../packages/facebook-core/dist/mock-graph.js';
 import { startMockYouTube } from '../../packages/youtube-core/dist/mock-youtube.js';
 import { startMockAi } from '../../packages/ai-core/dist/mock-ai.js';
+import { startMockWeb } from '../../packages/web-core/dist/mock-web.js';
 
 const stamp = Date.now();
 const USER = { email: `e2e-${stamp}@test.local`, name: 'E2E User', password: 'e2e-password-12345' };
-let graph: Awaited<ReturnType<typeof startMockGraph>>; let yt: Awaited<ReturnType<typeof startMockYouTube>>; let ai: Awaited<ReturnType<typeof startMockAi>>;
+let graph: Awaited<ReturnType<typeof startMockGraph>>; let yt: Awaited<ReturnType<typeof startMockYouTube>>; let ai: Awaited<ReturnType<typeof startMockAi>>; let web: Awaited<ReturnType<typeof startMockWeb>>;
 let ws = ''; let pageId = ''; let channelId = ''; let contentId = '';
 
 test.beforeAll(async () => {
-  graph = await startMockGraph(4998); yt = await startMockYouTube(4997); ai = await startMockAi();
+  graph = await startMockGraph(4998); yt = await startMockYouTube(4997); ai = await startMockAi(); web = await startMockWeb(4996);
   graph.state.validUserTokens.add('USER_OK_E2E_TOKEN_1234567890');
 });
-test.afterAll(async () => { graph.server.close(); yt.server.close(); ai.server.close(); });
+test.afterAll(async () => { graph.server.close(); yt.server.close(); ai.server.close(); web.server.close(); });
 
 test.describe.configure({ mode: 'serial' });
 
@@ -80,6 +81,21 @@ test('YouTube: connect via pasted refresh token (mock Google), channel and video
   await expect(page.getByText('โพสต์ต่อสัปดาห์').first()).toBeVisible();
   await expect(page.getByText('วิดีโอต่อสัปดาห์').first()).toBeVisible();
   await expect(page.locator('svg[role="img"]').first()).toBeVisible();
+});
+
+test('Websites: add a site in the UI, see status/SEO issues, connect Search Console and see top queries', async ({ page }) => {
+  await login(page);
+  await page.goto('/web');
+  await page.getByRole('button', { name: 'เพิ่มเว็บไซต์' }).click();
+  await page.getByPlaceholder('https://www.example.com').fill(web.siteUrl);
+  await page.getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.getByText('ปกติ').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/รูป 1\/2 ไม่มี alt/).first()).toBeVisible();
+  await page.getByRole('button', { name: 'เชื่อม Search Console', exact: true }).click();
+  await expect(page.getByText('ทำความสะอาดบ้าน ภูเก็ต').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('sc-domain:127.0.0.1').first()).toBeVisible();
+  await page.goto('/');
+  await expect(page.getByText('เว็บไซต์', { exact: true }).first()).toBeVisible();
 });
 
 test('report share link opens without a session and offers PDF', async ({ page, browser }) => {

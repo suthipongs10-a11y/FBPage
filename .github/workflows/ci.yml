@@ -55,6 +55,9 @@ jobs:
           GOOGLE_OAUTH_REDIRECT_URI: http://127.0.0.1:4000/youtube/oauth/callback
           YOUTUBE_API_KEY: APIKEY_OK
           YOUTUBE_UPLOAD_ENABLED: 'true'
+          WEB_MOCK_BASE_URL: http://127.0.0.1:4996
+          WEB_ALLOW_PRIVATE_TARGETS: 'true'
+          PAGESPEED_API_KEY: PSI_OK
           API_PORT: '4000'
         run: |
           mkdir -p "$MEDIA_DIR"
@@ -78,6 +81,9 @@ jobs:
           GOOGLE_OAUTH_REDIRECT_URI: http://127.0.0.1:4000/youtube/oauth/callback
           YOUTUBE_API_KEY: APIKEY_OK
           YOUTUBE_UPLOAD_ENABLED: 'true'
+          WEB_MOCK_BASE_URL: http://127.0.0.1:4996
+          WEB_ALLOW_PRIVATE_TARGETS: 'true'
+          PAGESPEED_API_KEY: PSI_OK
         run: pnpm test:e2e
       - name: Server logs on failure
         if: failure()

@@ -15,6 +15,7 @@
     "@fbpm/database": "workspace:*",
     "@fbpm/facebook-core": "workspace:*",
     "@fbpm/youtube-core": "workspace:*",
+    "@fbpm/web-core": "workspace:*",
     "@fbpm/shared": "workspace:*",
     "bullmq": "6.3.4"
   },

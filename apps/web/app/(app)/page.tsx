@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type PageRow, type WorkspaceDetail, type YtOverview } from '@/lib/api';
+import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type PageRow, type WorkspaceDetail, type WebOverview, type YtOverview } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Bars, SERIES, type Point } from '@/components/charts';
@@ -19,7 +19,7 @@ export default function OverviewPage() {
   const [pages, setPages] = useState<PageRow[] | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [usage, setUsage] = useState<AiUsage | null>(null);
-  const [aiReady, setAiReady] = useState(true); const [yt, setYt] = useState<YtOverview | null>(null);
+  const [aiReady, setAiReady] = useState(true); const [yt, setYt] = useState<YtOverview | null>(null); const [web, setWeb] = useState<WebOverview | null>(null);
   const [fbTrend, setFbTrend] = useState<FbTrends | null>(null); const [ytTrend, setYtTrend] = useState<YtTrends | null>(null);
   useEffect(() => {
     setDetail(null); setClients(null); setPages(null); setFbTrend(null); setYtTrend(null);
@@ -29,6 +29,7 @@ export default function OverviewPage() {
     api<AiProviderRow[]>(`/workspaces/${ws.id}/ai/providers`).then(p => setAiReady(p.some(x => x.configured || x.platformKey))).catch(() => setAiReady(true));
     api<WorkspaceDetail>(`/workspaces/${ws.id}`).then(setDetail).catch(() => setDetail(null));
     api<Client[]>(`/workspaces/${ws.id}/clients`).then(setClients).catch(() => setClients([]));
+    api<WebOverview>(`/workspaces/${ws.id}/web/overview`).then(setWeb).catch(() => setWeb(null));
     api<YtOverview>(`/workspaces/${ws.id}/youtube/overview`).then(o => { setYt(o); if (o.channels > 0) api<{ id: string; disconnectedAt: string | null }[]>(`/workspaces/${ws.id}/youtube/channels`).then(cs => { const c = cs.find(x => !x.disconnectedAt); if (c) api<YtTrends>(`/workspaces/${ws.id}/youtube/channels/${c.id}/trends?weeks=8`).then(setYtTrend).catch(() => setYtTrend(null)); }).catch(() => undefined); }).catch(() => setYt(null));
   }, [ws.id]);
   if (!detail || !clients || !pages) return <Loading />;
@@ -58,6 +59,12 @@ export default function OverviewPage() {
     if (yt.quota.softLimit && yt.quota.used / yt.quota.softLimit >= 0.8) attention.push({ text: `${t('needsAttention.ytQuota')} ${Math.round((yt.quota.used / yt.quota.softLimit) * 100)}%`, href: '/youtube', tone: 'warn' });
     if (yt.unresolvedComments > 0) attention.push({ text: `${yt.unresolvedComments} ${t('needsAttention.ytComments')}`, href: '/youtube/comments', tone: 'warn' });
     if (yt.openRecommendations > 0) attention.push({ text: `${yt.openRecommendations} ${t('needsAttention.ytRecs')}`, href: '/youtube', tone: 'warn' });
+  }
+  if (web && web.sites > 0) {
+    if (web.down > 0) attention.push({ text: `${web.down} ${t('needsAttention.webDown')}`, href: '/web', tone: 'bad' });
+    if (web.sslExpiring > 0) attention.push({ text: `${web.sslExpiring} ${t('needsAttention.webSsl')}`, href: '/web', tone: 'bad' });
+    if (web.degraded > 0) attention.push({ text: `${web.degraded} ${t('needsAttention.webDegraded')}`, href: '/web', tone: 'warn' });
+    if (web.gscNoAccess > 0) attention.push({ text: `${web.gscNoAccess} ${t('needsAttention.webGsc')}`, href: '/web', tone: 'warn' });
   }
   const pts = <T,>(rows: T[], label: (r: T) => string, value: (r: T) => number | null): Point[] => rows.map(r => ({ label: label(r), value: value(r) }));
   const hour = new Date().getHours(); const greet = hour < 12 ? 'สวัสดีตอนเช้า' : hour < 18 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น';
@@ -95,6 +102,14 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {web && web.sites > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Kpi value={web.sites} label={t('web.overviewSites')} accent="teal" icon="🌐" tone={web.down ? 'bad' : undefined} />
+          <Kpi value={web.down} label={t('web.overviewDown')} accent="rose" icon="⛔" tone={web.down ? 'bad' : 'ok'} />
+          <Kpi value={web.openIncidents} label={t('web.overviewIncidents')} accent="amber" icon="⚠" tone={web.openIncidents ? 'warn' : undefined} />
+          <Kpi value={web.search.clicks ?? '—'} label={t('web.overviewClicks')} accent="teal" icon="🔎" />
+        </div>
+      )}
       {/* ---- charts + attention ---- */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">

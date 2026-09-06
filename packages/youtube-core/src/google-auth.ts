@@ -8,8 +8,9 @@ export const GOOGLE_SCOPES = {
   analytics: 'https://www.googleapis.com/auth/yt-analytics.readonly',
   revenue: 'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
   email: 'https://www.googleapis.com/auth/userinfo.email',
+  search: 'https://www.googleapis.com/auth/webmasters.readonly',   // Search Console (AGENTS_WEB W-2)
 } as const;
-export type ScopeFeature = 'read' | 'analytics' | 'upload' | 'manage' | 'revenue';
+export type ScopeFeature = 'read' | 'analytics' | 'upload' | 'manage' | 'revenue' | 'search';
 /** feature → scope matrix (§8) */
 export function scopesForFeatures(features: ScopeFeature[]): string[] {
   const s = new Set<string>([GOOGLE_SCOPES.email, GOOGLE_SCOPES.readonly]);
@@ -17,6 +18,7 @@ export function scopesForFeatures(features: ScopeFeature[]): string[] {
   if (features.includes('upload')) s.add(GOOGLE_SCOPES.upload);
   if (features.includes('manage')) s.add(GOOGLE_SCOPES.manage);
   if (features.includes('revenue')) s.add(GOOGLE_SCOPES.revenue);
+  if (features.includes('search')) s.add(GOOGLE_SCOPES.search);
   return [...s];
 }
 export const featuresFromScopes = (scopes: string[]): ScopeFeature[] => {
@@ -25,6 +27,7 @@ export const featuresFromScopes = (scopes: string[]): ScopeFeature[] => {
   if (scopes.includes(GOOGLE_SCOPES.upload)) f.push('upload');
   if (scopes.includes(GOOGLE_SCOPES.manage)) f.push('manage');
   if (scopes.includes(GOOGLE_SCOPES.revenue)) f.push('revenue');
+  if (scopes.includes(GOOGLE_SCOPES.search)) f.push('search');
   return f;
 };
 

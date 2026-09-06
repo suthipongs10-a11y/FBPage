@@ -269,6 +269,7 @@ model Brand {
   updatedAt           DateTime @updatedAt
 
   client    Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sites     Site[]
   knowledge BrandKnowledgeItem[]
   pages     FacebookPage[]
   youtubeChannels YouTubeChannel[]
@@ -736,6 +737,7 @@ model GoogleConnection {
   workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User             @relation(fields: [userId], references: [id])
   channels  YouTubeChannel[]
+  sites     Site[]
 
   @@unique([workspaceId, providerUserId])
 }
@@ -1172,4 +1174,107 @@ model ContentRelation {
   child  ContentItem @relation("RelationChild", fields: [childContentId], references: [id], onDelete: Cascade)
 
   @@unique([parentContentId, childContentId, relationType])
+}
+
+// ---------- Website Care (AGENTS_WEB.md §3) ----------
+model Site {
+  id                    String    @id @default(cuid())
+  brandId               String
+  url                   String
+  name                  String
+  /// WORDPRESS | SHOPIFY | CUSTOM | UNKNOWN
+  platform              String    @default("UNKNOWN")
+  monitorEnabled        Boolean   @default(true)
+  checkIntervalMin      Int       @default(15)
+  expectedText          String?
+  /// UP | DOWN | DEGRADED | UNKNOWN
+  lastStatus            String    @default("UNKNOWN")
+  lastHttpStatus        Int?
+  lastLatencyMs         Int?
+  lastCheckedAt         DateTime?
+  sslExpiresAt          DateTime?
+  sslIssuer             String?
+  googleConnectionId    String?
+  searchConsoleProperty String?
+  /// UNKNOWN | OK | NO_ACCESS | ERROR
+  gscStatus             String    @default("UNKNOWN")
+  gscSyncedAt           DateTime?
+  settings              Json?
+  disconnectedAt        DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  brand      Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection GoogleConnection? @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
+  checks     SiteCheck[]
+  incidents  SiteIncident[]
+  search     SearchSnapshot[]
+  analyses   SiteAnalysis[]
+
+  @@unique([brandId, url])
+}
+
+model SiteCheck {
+  id         String   @id @default(cuid())
+  siteId     String
+  /// UPTIME | SSL | SEO | LINKS | PAGESPEED
+  kind       String
+  /// OK | WARN | FAIL | SKIPPED
+  status     String
+  httpStatus Int?
+  latencyMs  Int?
+  details    Json?
+  error      String?
+  checkedAt  DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, kind, checkedAt])
+}
+
+model SiteIncident {
+  id         String    @id @default(cuid())
+  siteId     String
+  /// DOWN | DEGRADED | SSL_EXPIRING | SSL_EXPIRED | GSC_ACCESS
+  kind       String
+  startedAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  summary    String
+  notifiedAt DateTime?
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, kind, resolvedAt])
+}
+
+model SearchSnapshot {
+  id          String   @id @default(cuid())
+  siteId      String
+  date        DateTime
+  clicks      Int?
+  impressions Int?
+  ctr         Float?
+  position    Float?
+  topQueries  Json?
+  topPages    Json?
+  capturedAt  DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, date])
+}
+
+model SiteAnalysis {
+  id            String   @id @default(cuid())
+  siteId        String
+  result        Json
+  provider      String
+  model         String
+  promptVersion String
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
 }

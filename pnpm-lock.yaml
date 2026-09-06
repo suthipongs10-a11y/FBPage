@@ -41,6 +41,9 @@ importers:
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@fbpm/web-core':
+        specifier: workspace:*
+        version: link:../../packages/web-core
       '@fbpm/youtube-core':
         specifier: workspace:*
         version: link:../../packages/youtube-core
@@ -182,6 +185,28 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
 
+  packages/web-core:
+    dependencies:
+      '@fbpm/database':
+        specifier: workspace:*
+        version: link:../database
+      '@fbpm/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@fbpm/youtube-core':
+        specifier: workspace:*
+        version: link:../youtube-core
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+
   packages/youtube-core:
     dependencies:
       '@fbpm/database':
@@ -212,6 +237,9 @@ importers:
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@fbpm/web-core':
+        specifier: workspace:*
+        version: link:../../packages/web-core
       '@fbpm/youtube-core':
         specifier: workspace:*
         version: link:../../packages/youtube-core

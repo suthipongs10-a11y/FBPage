@@ -2,12 +2,12 @@
 /**
  * กราฟ SVG ล้วน (ไม่มีไลบรารี) ตามหลัก dataviz: series เดียวต่อกราฟ (ไม่มี dual axis), แท่งบาง ปลายมน, เส้น 2px จุด ≥ 8px,
  * hover tooltip ทุกกราฟ, สลับดูเป็นตาราง, ค่าที่ไม่มี (null) เว้นว่างพร้อมบอกว่า "ไม่มีข้อมูล" — ไม่วาดเป็น 0
- * สี: ผูกกับแพลตฟอร์ม (Facebook = blue-600 #2563eb, YouTube = pink-600 #db2777) บนพื้นสว่าง #ffffff
+ * สี: ผูกกับแพลตฟอร์ม (Facebook = blue-600 #2563eb, YouTube = pink-600 #db2777, เว็บ = amber-700 #b45309) บนพื้นสว่าง #ffffff
  */
 import { useId, useState } from 'react';
 
 /** ตรวจผ่าน validate_palette (--mode light, พื้น #ffffff) แล้ว */
-export const SERIES = { facebook: '#2563eb', youtube: '#db2777', neutral: '#6b7a90' } as const;
+export const SERIES = { facebook: '#2563eb', youtube: '#db2777', web: '#b45309', neutral: '#6b7a90' } as const;
 const INK = { grid: '#e8edf5', axis: '#d3dbe7', text: '#6b7a90', label: '#1f2a3c', halo: '#ffffff', none: '#d3dbe7' } as const;
 export interface Point { label: string; value: number | null; hint?: string }
 const fmt = (v: number | null) => (v === null ? 'ไม่มีข้อมูล' : v.toLocaleString('th-TH', { maximumFractionDigits: 1 }));

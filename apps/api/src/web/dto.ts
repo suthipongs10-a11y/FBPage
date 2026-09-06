@@ -1,0 +1,10 @@
+import { z } from 'zod';
+import { SITE_CHECK_KINDS, SITE_PLATFORMS } from '@fbpm/shared';
+const opt = (max: number) => z.string().trim().max(max).optional().transform(v => v || undefined);
+export const createSiteSchema = z.object({ brandId: z.string().min(1), url: z.string().trim().min(3).max(500), name: opt(120), platform: z.enum(SITE_PLATFORMS).optional(), expectedText: opt(200), checkIntervalMin: z.coerce.number().int().min(5).max(1440).optional() });
+export type CreateSiteDto = z.infer<typeof createSiteSchema>;
+export const updateSiteSchema = z.object({ name: opt(120), platform: z.enum(SITE_PLATFORMS).optional(), expectedText: z.string().trim().max(200).nullable().optional(), checkIntervalMin: z.coerce.number().int().min(5).max(1440).optional(), monitorEnabled: z.boolean().optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
+export type UpdateSiteDto = z.infer<typeof updateSiteSchema>;
+export const runChecksSchema = z.object({ kinds: z.array(z.enum(SITE_CHECK_KINDS)).min(1).max(5).default(['UPTIME', 'SSL', 'SEO']) }).optional();
+export const connectGscSchema = z.object({ connectionId: z.string().min(1), property: z.string().trim().max(300).optional() });
+export const syncGscSchema = z.object({ days: z.coerce.number().int().min(7).max(90).default(28) }).optional();

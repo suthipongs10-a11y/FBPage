@@ -69,12 +69,20 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   UI: ธีมสว่างทั้งแอป (กำหนดที่ `apps/web/app/globals.css` ไฟล์เดียวผ่าน Tailwind v4 `@theme`), หน้าภาพรวมแบบแดชบอร์ด (hero, KPI มีสีประจำหัวข้อ, กราฟ 8 สัปดาห์, รายการต้องดู) · เช็กลิสต์เปิดใช้งานจริงสำหรับเจ้าของระบบ: [`docs/runbooks/go-live-checklist.md`](docs/runbooks/go-live-checklist.md)
   ยังไม่ทำ (นอก MVP §165): Live (§68), YouTube Reporting API bulk (§93), thumbnail generation ด้วยภาพ AI (§39 มีแค่บรีฟ), Messenger inbox, Ads agent
 
+- **Phase 10 — Website Care W-1/W-2 (โมดูลใน monorepo ตาม [`AGENTS_WEB.md`](AGENTS_WEB.md))** ✔
+  `packages/web-core`: uptime (HTTP + คำที่ต้องพบ + latency > 3 วิ = DEGRADED), SSL (node:tls, ≤ 14 วัน = WARN), SEO audit หน้าแรก (title/description/h1/canonical/robots/og/lang/viewport/alt/word count), ลิงก์เสียภายใน (≤ 50, เคารพ robots.txt, ≤ 1 คำขอ/วิ), Core Web Vitals ผ่าน PageSpeed Insights (ไม่มี key = SKIPPED), Search Console client (ใช้บัญชี Google เดิม scope `webmasters.readonly`), กัน SSRF (ปฏิเสธ IP ภายใน), `mock-web.ts` — ไม่มี dependency
+  `apps/api/src/web`: เว็บผูกแบรนด์ (เพิ่มแล้วตรวจทันที), ตรวจตามชนิด, incident (DOWN ต้องล้ม 2 ครั้งติด → แจ้งเตือน; ฟื้นตัว → แจ้งเตือน info), เชื่อม Search Console (จับคู่ property อัตโนมัติ, ไม่มีสิทธิ์ = NO_ACCESS ตรงไปตรงมา), snapshot รายวัน 28 วัน + คำค้น/หน้ายอดนิยม, trends รายสัปดาห์, overview, **SEO Analyst** (observed/inference/recommendation/content ideas อิง evidence เท่านั้น) · RBAC `web.read/manage/analytics.read`
+  worker: คิว `web-monitor` (ทุก 5 นาที หาเว็บที่ถึงรอบตาม `checkIntervalMin`) และ `web-daily` (SSL/SEO/ลิงก์/PageSpeed/Search Console วันละครั้ง กระจายเวลา)
+  หน้าเว็บ "เว็บไซต์": รายการ+เพิ่มเว็บ, KPI (uptime %, latency, SSL, คะแนนความเร็ว), กราฟ 12 สัปดาห์, ปัญหา SEO, ลิงก์เสีย, Search Console (เชื่อม/ซิงก์/คำค้น/หน้า), ผลวิเคราะห์ AI, incident/ประวัติ · KPI + รายการต้องดูบนภาพรวม
+  ทดสอบ: unit 7 (web-core) + integration API 6 + worker 3 กับ mock ทั้งหมด
+  ถัดไป (W-3/W-4 ตามสเปก): ContentItem `platform=WEB` → WordPress publisher ผ่านอนุมัติ · Email marketing (consent/unsubscribe/ผู้ให้บริการส่งจำนวนมาก)
+
 ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
 
 ## โครงสร้าง
 ```
-apps/api            NestJS REST API        →  :4000  /health  /docs  (+ /workspaces/:id/youtube/*)
+apps/api            NestJS REST API        →  :4000  /health  /docs  (+ /workspaces/:id/youtube/*, /web/*)
 apps/web            Next.js dashboard      →  :3000
 workers/scheduler   BullMQ worker (คิวตาม §46)
 packages/shared     enum + กฎโดเมนล้วน (state machine, RBAC, risk level)
