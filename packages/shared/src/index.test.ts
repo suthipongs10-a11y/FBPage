@@ -52,3 +52,15 @@ describe('RBAC (§58)', () => {
     expect(hasPermission('editor', 'content.approve')).toBe(false);
   });
 });
+
+describe('email campaign state machine (AGENTS_WEB.md W-4)', () => {
+  it('cannot send without approval and terminal states have no exits', async () => {
+    const { canTransitionCampaign, EMAIL_CAMPAIGN_STATUSES } = await import('./index');
+    expect(canTransitionCampaign('DRAFT', 'SENDING')).toBe(false);
+    expect(canTransitionCampaign('READY_FOR_APPROVAL', 'SENDING')).toBe(false);
+    expect(canTransitionCampaign('APPROVED', 'SENDING')).toBe(true);
+    expect(canTransitionCampaign('SEND_FAILED', 'SENDING')).toBe(true);
+    expect(canTransitionCampaign('SENT', 'DRAFT')).toBe(false);
+    for (const s of EMAIL_CAMPAIGN_STATUSES) expect(typeof canTransitionCampaign(s, 'CANCELLED')).toBe('boolean');
+  });
+});

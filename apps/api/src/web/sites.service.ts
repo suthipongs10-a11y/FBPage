@@ -14,7 +14,7 @@ import type { CreateSiteDto, UpdateSiteDto } from './dto';
 
 export const WEB_ANALYSIS_PROMPT_VERSION = 'web-seo-analyst-v1';
 export const siteInWorkspace = (workspaceId: string) => ({ brand: { client: { workspaceId } } });
-const SITE_SELECT = { id: true, brandId: true, url: true, name: true, platform: true, monitorEnabled: true, checkIntervalMin: true, expectedText: true, lastStatus: true, lastHttpStatus: true, lastLatencyMs: true, lastCheckedAt: true, sslExpiresAt: true, sslIssuer: true, googleConnectionId: true, searchConsoleProperty: true, gscStatus: true, gscSyncedAt: true, disconnectedAt: true, createdAt: true, brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } }, _count: { select: { incidents: { where: { resolvedAt: null } } } } } as const;
+const SITE_SELECT = { id: true, brandId: true, url: true, name: true, platform: true, monitorEnabled: true, checkIntervalMin: true, expectedText: true, lastStatus: true, lastHttpStatus: true, lastLatencyMs: true, lastCheckedAt: true, sslExpiresAt: true, sslIssuer: true, googleConnectionId: true, searchConsoleProperty: true, gscStatus: true, gscSyncedAt: true, wpUsername: true, wpStatus: true, wpUserName: true, wpCheckedAt: true, wpLastError: true, publishingPaused: true, disconnectedAt: true, createdAt: true, brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } }, _count: { select: { incidents: { where: { resolvedAt: null } }, contents: { where: { status: { in: ['DRAFT', 'READY_FOR_APPROVAL', 'APPROVED', 'SCHEDULED'] as ('DRAFT' | 'READY_FOR_APPROVAL' | 'APPROVED' | 'SCHEDULED')[] } } } } } } as const;
 
 function rethrow(e: unknown): never {
   if (e instanceof WebError) {

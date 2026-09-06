@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type PageRow, type WorkspaceDetail, type WebOverview, type YtOverview } from '@/lib/api';
+import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type EmailSummary, type PageRow, type WorkspaceDetail, type WebContentSummary, type WebOverview, type YtOverview } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Bars, SERIES, type Point } from '@/components/charts';
@@ -19,7 +19,7 @@ export default function OverviewPage() {
   const [pages, setPages] = useState<PageRow[] | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [usage, setUsage] = useState<AiUsage | null>(null);
-  const [aiReady, setAiReady] = useState(true); const [yt, setYt] = useState<YtOverview | null>(null); const [web, setWeb] = useState<WebOverview | null>(null);
+  const [aiReady, setAiReady] = useState(true); const [yt, setYt] = useState<YtOverview | null>(null); const [web, setWeb] = useState<WebOverview | null>(null); const [wc, setWc] = useState<WebContentSummary | null>(null); const [em, setEm] = useState<EmailSummary | null>(null);
   const [fbTrend, setFbTrend] = useState<FbTrends | null>(null); const [ytTrend, setYtTrend] = useState<YtTrends | null>(null);
   useEffect(() => {
     setDetail(null); setClients(null); setPages(null); setFbTrend(null); setYtTrend(null);
@@ -30,6 +30,8 @@ export default function OverviewPage() {
     api<WorkspaceDetail>(`/workspaces/${ws.id}`).then(setDetail).catch(() => setDetail(null));
     api<Client[]>(`/workspaces/${ws.id}/clients`).then(setClients).catch(() => setClients([]));
     api<WebOverview>(`/workspaces/${ws.id}/web/overview`).then(setWeb).catch(() => setWeb(null));
+    api<WebContentSummary>(`/workspaces/${ws.id}/web/content/summary`).then(setWc).catch(() => setWc(null));
+    api<EmailSummary>(`/workspaces/${ws.id}/email/summary`).then(setEm).catch(() => setEm(null));
     api<YtOverview>(`/workspaces/${ws.id}/youtube/overview`).then(o => { setYt(o); if (o.channels > 0) api<{ id: string; disconnectedAt: string | null }[]>(`/workspaces/${ws.id}/youtube/channels`).then(cs => { const c = cs.find(x => !x.disconnectedAt); if (c) api<YtTrends>(`/workspaces/${ws.id}/youtube/channels/${c.id}/trends?weeks=8`).then(setYtTrend).catch(() => setYtTrend(null)); }).catch(() => undefined); }).catch(() => setYt(null));
   }, [ws.id]);
   if (!detail || !clients || !pages) return <Loading />;
@@ -66,6 +68,8 @@ export default function OverviewPage() {
     if (web.degraded > 0) attention.push({ text: `${web.degraded} ${t('needsAttention.webDegraded')}`, href: '/web', tone: 'warn' });
     if (web.gscNoAccess > 0) attention.push({ text: `${web.gscNoAccess} ${t('needsAttention.webGsc')}`, href: '/web', tone: 'warn' });
   }
+  if (wc && wc.pendingApproval > 0) attention.push({ text: `${wc.pendingApproval} ${t('needsAttention.webContent')}`, href: '/web/content', tone: 'warn' });
+  if (em && em.pendingApproval > 0) attention.push({ text: `${em.pendingApproval} ${t('needsAttention.emailPending')}`, href: '/email', tone: 'warn' });
   const pts = <T,>(rows: T[], label: (r: T) => string, value: (r: T) => number | null): Point[] => rows.map(r => ({ label: label(r), value: value(r) }));
   const hour = new Date().getHours(); const greet = hour < 12 ? 'สวัสดีตอนเช้า' : hour < 18 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น';
   const quotaPct = yt?.quota.softLimit ? Math.min(100, Math.round((yt.quota.used / yt.quota.softLimit) * 100)) : 0;
@@ -108,6 +112,15 @@ export default function OverviewPage() {
           <Kpi value={web.down} label={t('web.overviewDown')} accent="rose" icon="⛔" tone={web.down ? 'bad' : 'ok'} />
           <Kpi value={web.openIncidents} label={t('web.overviewIncidents')} accent="amber" icon="⚠" tone={web.openIncidents ? 'warn' : undefined} />
           <Kpi value={web.search.clicks ?? '—'} label={t('web.overviewClicks')} accent="teal" icon="🔎" />
+        </div>
+      )}
+
+      {((wc && wc.total > 0) || (em && (em.lists > 0 || em.sent > 0))) && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {wc && wc.total > 0 && <Kpi value={wc.pendingApproval} label={t('wc.overviewArticles')} accent="amber" icon="📝" tone={wc.pendingApproval ? 'warn' : undefined} sub={`${wc.published} ${t('wc.published')}`} />}
+          {wc && wc.total > 0 && <Kpi value={wc.published} label={t('wc.published')} accent="emerald" icon="🌐" />}
+          {em && <Kpi value={em.pendingApproval} label={t('em.overviewCampaigns')} accent="violet" icon="✉️" tone={em.pendingApproval ? 'warn' : undefined} sub={`${em.sent} ${t('em.sent')}`} />}
+          {em && <Kpi value={em.subscribers.toLocaleString('th-TH')} label={t('em.subscribed')} accent="blue" icon="👥" />}
         </div>
       )}
       {/* ---- charts + attention ---- */}

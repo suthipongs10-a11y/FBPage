@@ -206,6 +206,8 @@ model Workspace {
   auditLogs   AuditLog[]
   aiTaskLogs  AiTaskLog[]
   externalOps ExternalOperation[]
+  emailProvider EmailProviderAccount?
+  emailCampaigns EmailCampaign[]
 }
 
 enum WorkspaceRole {
@@ -277,6 +279,7 @@ model Brand {
   insights  BrandInsight[]
 
   @@index([clientId])
+  emailLists EmailList[]
 }
 
 model BrandKnowledgeItem {
@@ -433,10 +436,11 @@ enum ContentStatus {
 
 model ContentItem {
   id             String        @id @default(cuid())
-  /// FACEBOOK | YOUTUBE (AGENTS_YOUTUBE.md §24)
+  /// FACEBOOK | YOUTUBE | WEB (AGENTS_YOUTUBE.md §24, AGENTS_WEB.md W-3)
   platform       String        @default("FACEBOOK")
   pageId         String?
   youtubeChannelId String?
+  siteId         String?
   status         ContentStatus @default(DRAFT)
   /// สถานะละเอียดของ YouTube (§26) — status หลักยังใช้ ContentStatus ร่วมกันสำหรับคิวอนุมัติ/ปฏิทิน
   ytStatus       String?
@@ -474,6 +478,9 @@ model ContentItem {
 
   page          FacebookPage?     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   youtubeChannel YouTubeChannel?  @relation(fields: [youtubeChannelId], references: [id], onDelete: Cascade)
+  site          Site?             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  webMeta       WebContentMetadata?
+  emailCampaigns EmailCampaign[]
   publishedPost FacebookPost?     @relation(fields: [publishedPostId], references: [id])
   plan          ContentPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
   revisions     ContentRevision[]
@@ -1200,12 +1207,23 @@ model Site {
   gscStatus             String    @default("UNKNOWN")
   gscSyncedAt           DateTime?
   settings              Json?
+  /// W-3: WordPress REST + application password — รหัสผ่านเข้ารหัสด้วย common/crypto เท่านั้น ห้ามอยู่ใน select/response/audit
+  wpUsername            String?
+  wpAppPasswordEnc      String?
+  /// UNKNOWN | OK | AUTH_FAILED | ERROR | NOT_WORDPRESS
+  wpStatus              String    @default("UNKNOWN")
+  wpUserName            String?
+  wpCheckedAt           DateTime?
+  wpLastError           String?
+  /// สวิตช์หยุดโพสต์ขึ้นเว็บนี้ (kill switch ระดับเว็บ)
+  publishingPaused      Boolean   @default(false)
   disconnectedAt        DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   brand      Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
   connection GoogleConnection? @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
+  contents   ContentItem[]
   checks     SiteCheck[]
   incidents  SiteIncident[]
   search     SearchSnapshot[]
@@ -1277,4 +1295,188 @@ model SiteAnalysis {
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId, createdAt])
+}
+
+/// W-3 Web content (AGENTS_WEB.md) — บทความสำหรับเว็บ (ContentItem platform=WEB) ผูกกับ Site
+model WebContentMetadata {
+  contentItemId   String   @id
+  title           String?
+  slug            String?
+  excerpt         String?
+  /// เนื้อหา HTML ที่จะส่งขึ้น WordPress (AI ร่าง → คนแก้)
+  bodyHtml        String?
+  metaTitle       String?
+  metaDescription String?
+  targetQuery     String?
+  tags            String[] @default([])
+  categories      String[] @default([])
+  featuredImageUrl String?
+  outline         Json?
+  /// แหล่งที่ใช้ร่าง: { youtubeContentIds[], facebookPostIds[], topic, notes }
+  sources         Json?
+  /// draft | publish | future (สถานะบน WordPress หลังเผยแพร่)
+  wpStatus        String?
+  wpPostId        Int?
+  wpLink          String?
+  updatedAt       DateTime @updatedAt
+
+  content ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+}
+
+// ---------- W-4 Email marketing (AGENTS_WEB.md) ----------
+/// บัญชีผู้ให้บริการส่งอีเมลจำนวนมากของ workspace (Brevo/Resend) — API key เข้ารหัสด้วย common/crypto เท่านั้น
+model EmailProviderAccount {
+  id             String    @id @default(cuid())
+  workspaceId    String    @unique
+  /// brevo | resend
+  provider       String
+  apiKeyEnc      String
+  keyHint        String?
+  /// secret สำหรับตรวจลายเซ็น webhook (เข้ารหัส)
+  webhookSecretEnc String?
+  /// UNKNOWN | OK | AUTH_FAILED | ERROR
+  status         String    @default("UNKNOWN")
+  accountEmail   String?
+  lastError      String?
+  verifiedAt     DateTime?
+  /// สวิตช์หยุดส่งทั้ง workspace (kill switch)
+  sendingPaused  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+/// รายชื่อผู้รับของแบรนด์ — ต้องมี consent (PDPA) ทุกคน
+model EmailList {
+  id             String    @id @default(cuid())
+  brandId        String
+  name           String
+  description    String?
+  fromEmail      String
+  fromName       String
+  replyTo        String?
+  /// ข้อความยินยอมที่ผู้รับเห็นตอนสมัคร (เก็บไว้เป็นหลักฐาน)
+  consentText    String?
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  brand       Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  subscribers EmailSubscriber[]
+  campaigns   EmailCampaign[]
+
+  @@index([brandId])
+}
+
+model EmailSubscriber {
+  id               String    @id @default(cuid())
+  listId           String
+  email            String
+  name             String?
+  /// SUBSCRIBED | UNSUBSCRIBED | BOUNCED | COMPLAINED
+  status           String    @default("SUBSCRIBED")
+  /// import | form | manual | api
+  source           String    @default("manual")
+  consentAt        DateTime
+  consentSource    String?
+  consentNote      String?
+  unsubscribeToken String    @unique
+  unsubscribedAt   DateTime?
+  bouncedAt        DateTime?
+  attributes       Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  list  EmailList   @relation(fields: [listId], references: [id], onDelete: Cascade)
+  sends EmailSend[]
+
+  @@unique([listId, email])
+  @@index([listId, status])
+}
+
+/// แคมเปญ/จดหมายข่าว — ร่างโดย AI → อนุมัติ → ส่งผ่านผู้ให้บริการ (กันซ้ำต่อผู้รับด้วย EmailSend)
+model EmailCampaign {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  listId          String
+  name            String
+  subject         String?
+  preheader       String?
+  bodyHtml        String?
+  bodyText        String?
+  /// DRAFT | AI_REVIEW | NEEDS_REVISION | READY_FOR_APPROVAL | APPROVED | SCHEDULED | SENDING | SENT | SEND_FAILED | REJECTED | CANCELLED
+  status          String    @default("DRAFT")
+  scheduledLocal  String?
+  scheduledTz     String?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  sentAt          DateTime?
+  recipientCount  Int?
+  sentCount       Int       @default(0)
+  failedCount     Int       @default(0)
+  /// ตัวเลขจาก webhook ของผู้ให้บริการ — null = ยังไม่มีข้อมูล/ผู้ให้บริการไม่รายงาน ห้ามเป็น 0
+  deliveredCount  Int?
+  openedCount     Int?
+  clickedCount    Int?
+  bouncedCount    Int?
+  complainedCount Int?
+  unsubscribedCount Int?
+  sourceContentId String?
+  createdById     String?
+  aiProvider      String?
+  aiModel         String?
+  promptVersion   String?
+  editedByHuman   Boolean   @default(false)
+  reviewResult    Json?
+  aiNotes         Json?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  list          EmailList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  sourceContent ContentItem? @relation(fields: [sourceContentId], references: [id], onDelete: SetNull)
+  sends         EmailSend[]
+  events        EmailEvent[]
+
+  @@index([workspaceId, status])
+  @@index([scheduledAt])
+}
+
+/// การส่ง 1 ฉบับต่อผู้รับ — unique (campaignId, subscriberId) กันส่งซ้ำเมื่องานถูก retry
+model EmailSend {
+  id                String    @id @default(cuid())
+  campaignId        String
+  subscriberId      String
+  /// QUEUED | SENT | DELIVERED | OPENED | CLICKED | BOUNCED | COMPLAINED | FAILED | SKIPPED
+  status            String    @default("QUEUED")
+  providerMessageId String?
+  error             String?
+  sentAt            DateTime?
+  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime  @default(now())
+
+  campaign   EmailCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  subscriber EmailSubscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, subscriberId])
+  @@index([providerMessageId])
+}
+
+/// เหตุการณ์จาก webhook ผู้ให้บริการ (delivered/opened/clicked/bounce/spam/unsubscribe) — เก็บดิบที่ normalize แล้ว
+model EmailEvent {
+  id                String   @id @default(cuid())
+  campaignId        String?
+  provider          String
+  type              String
+  email             String?
+  providerMessageId String?
+  payload           Json?
+  occurredAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  campaign EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, type])
 }

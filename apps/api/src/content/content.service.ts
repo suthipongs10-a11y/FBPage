@@ -15,7 +15,7 @@ import { isValidTimeZone, localToUtc } from './tz';
 import type { CalendarDto, CreateContentDto, ListContentDto, ScheduleDto, UpdateContentDto } from './dto';
 
 export const CONTENT_SELECT = {
-  id: true, pageId: true, platform: true, ytStatus: true, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true, privacyStatus: true, scheduledPublishAt: true } }, status: true, contentType: true, title: true, caption: true, cta: true, hashtags: true, mediaBrief: true, mediaPaths: true, objective: true, contentPillar: true,
+  id: true, pageId: true, platform: true, ytStatus: true, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true, privacyStatus: true, scheduledPublishAt: true } }, siteId: true, site: { select: { id: true, name: true, url: true } }, webMeta: { select: { title: true, slug: true, wpLink: true, wpStatus: true } }, status: true, contentType: true, title: true, caption: true, cta: true, hashtags: true, mediaBrief: true, mediaPaths: true, objective: true, contentPillar: true,
   scheduledLocal: true, scheduledTz: true, scheduledAt: true, retryCount: true, createdById: true, aiProvider: true, aiModel: true, promptVersion: true, editedByHuman: true,
   publishedPostId: true, externalPostId: true, publishedAt: true, planId: true, aiNotes: true, reviewResult: true, lastError: true, createdAt: true, updatedAt: true,
   page: { select: { id: true, name: true, pictureUrl: true, timezone: true, automationLevel: true, publishingPaused: true, tokenStatus: true, brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } } } },

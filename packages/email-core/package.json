@@ -1,0 +1,11 @@
+{
+  "name": "@fbpm/email-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Email marketing (AGENTS_WEB.md W-4) — bulk provider adapters (Brevo/Resend), idempotent campaign sender, webhook normalizer, mock provider",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run" },
+  "dependencies": { "@fbpm/database": "workspace:*", "@fbpm/shared": "workspace:*" },
+  "devDependencies": { "@types/node": "22.20.1", "typescript": "5.9.3", "vitest": "5.0.0" }
+}

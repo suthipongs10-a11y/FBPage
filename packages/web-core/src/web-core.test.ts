@@ -68,3 +68,30 @@ describe('web-core checks (mock site)', () => {
     mock.state.scForbidden = true; await expect(sc.listSites('ACCESS_OK')).rejects.toMatchObject({ code: 'forbidden' }); mock.state.scForbidden = false;
   });
 });
+
+describe('WordPress client (W-3) against the mock', () => {
+  it('authenticates with an application password, dedupes terms, creates and finds posts by slug; bad credentials → forbidden; no REST → notFound', async () => {
+    const { WordPressClient, slugify, MOCK_WP_USER, MOCK_WP_APP_PASSWORD, WebError } = await import('./index');
+    const m = await startMockWeb();
+    try {
+      const wp = new WordPressClient({ baseUrl: m.siteUrl, username: MOCK_WP_USER, appPassword: MOCK_WP_APP_PASSWORD }, { allowInsecure: true });
+      const me = await wp.me(); expect(me.roles).toContain('editor'); expect(me.capabilities.publish_posts).toBe(true);
+      const tags = await wp.ensureTerms('tags', ['ภูเก็ต', 'แม่บ้าน', 'ภูเก็ต']); expect(tags[0]).toBe(11); expect(tags).toHaveLength(3); expect(m.state.wp.tags).toHaveLength(2);
+      const slug = slugify('ราคาแม่บ้านรายวัน ภูเก็ต 2026!'); expect(slug).toBe('ราคาแม่บ้านรายวัน-ภูเก็ต-2026');
+      const post = await wp.createPost({ title: 'ราคาแม่บ้านรายวัน', content: '<p>x</p>', slug, status: 'publish', tags: tags.slice(0, 2) });
+      expect(post.id).toBeGreaterThan(0); expect(post.link).toContain(slug); expect((await wp.findPostBySlug(slug))?.id).toBe(post.id); expect(await wp.findPostBySlug('nope')).toBeNull();
+      expect(() => new WordPressClient({ baseUrl: m.siteUrl, username: 'u', appPassword: 'p' })).toThrow(/https/);
+      const bad = new WordPressClient({ baseUrl: m.siteUrl, username: MOCK_WP_USER, appPassword: 'wrong' }, { allowInsecure: true });
+      await expect(bad.me()).rejects.toMatchObject({ code: 'forbidden' });
+      m.state.wp.disabled = true; await expect(wp.me()).rejects.toBeInstanceOf(WebError); await expect(wp.me()).rejects.toMatchObject({ code: 'notFound' });
+    } finally { m.server.close(); }
+  });
+});
+
+describe('sanitizeArticleHtml (W-3)', () => {
+  it('strips scripts, event handlers and javascript: URLs but keeps article markup', async () => {
+    const { sanitizeArticleHtml } = await import('./wordpress');
+    const out = sanitizeArticleHtml('<h2>หัวข้อ</h2><p onclick="x()">ข้อความ <a href="javascript:alert(1)">ลิงก์</a> <a href="https://ok.test">ดี</a></p><script>alert(1)</script><iframe src="x"></iframe><img src="/a.jpg" alt="a">');
+    expect(out).toBe('<h2>หัวข้อ</h2><p>ข้อความ <a>ลิงก์</a> <a href="https://ok.test">ดี</a></p><img src="/a.jpg" alt="a">');
+  });
+});

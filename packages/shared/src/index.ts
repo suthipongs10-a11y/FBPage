@@ -22,6 +22,9 @@ export const PERMISSIONS = [
   'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit',
   'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.live.manage', 'youtube.automation.manage', 'youtube.settings.manage',
   'web.read', 'web.manage', 'web.analytics.read',
+  // W-3 web content + W-4 email marketing (AGENTS_WEB.md)
+  'web.content.create', 'web.content.edit', 'web.content.approve', 'web.content.publish',
+  'email.read', 'email.manage', 'email.approve', 'email.send',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -30,12 +33,13 @@ export const ROLE_PERMISSIONS: Record<WorkspaceRole, readonly Permission[]> = {
   owner: PERMISSIONS,
   admin: PERMISSIONS.filter(p => p !== 'billing.manage'),
   manager: ['client.read', 'client.manage', 'page.read', 'page.connect', 'page.manage', 'content.read', 'content.create', 'content.edit', 'content.approve', 'content.publish', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'automation.manage', 'ai.use',
-    'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit', 'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.automation.manage', 'youtube.settings.manage', 'web.read', 'web.manage', 'web.analytics.read'],
+    'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit', 'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.automation.manage', 'youtube.settings.manage', 'web.read', 'web.manage', 'web.analytics.read',
+    'web.content.create', 'web.content.edit', 'web.content.approve', 'web.content.publish', 'email.read', 'email.manage', 'email.approve', 'email.send'],
   editor: ['client.read', 'page.read', 'content.read', 'content.create', 'content.edit', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'ai.use',
-    'youtube.read', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.comments.read', 'youtube.comments.reply', 'web.read', 'web.analytics.read'],
-  reviewer: ['client.read', 'page.read', 'content.read', 'content.approve', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.content.approve', 'youtube.comments.read', 'web.read', 'web.analytics.read'],
-  analyst: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'ai.use', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read'],
-  viewer: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read'],
+    'youtube.read', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.comments.read', 'youtube.comments.reply', 'web.read', 'web.analytics.read', 'web.content.create', 'web.content.edit', 'email.read', 'email.manage'],
+  reviewer: ['client.read', 'page.read', 'content.read', 'content.approve', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.content.approve', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'web.content.approve', 'email.read', 'email.approve'],
+  analyst: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'ai.use', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'email.read'],
+  viewer: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'email.read'],
 };
 export const hasPermission = (role: WorkspaceRole, permission: Permission): boolean =>
   ROLE_PERMISSIONS[role].includes(permission);
@@ -142,8 +146,31 @@ export const JOBS = { publishContent: 'publish-content', syncPage: 'sync-page', 
 export const YT_QUEUES = { sync: 'youtube-sync', analytics: 'youtube-analytics', reporting: 'youtube-reporting', upload: 'youtube-upload', comments: 'youtube-comments', live: 'youtube-live', maintenance: 'youtube-maintenance' } as const;
 export const ytUploadJobId = (contentId: string) => `ytupload-${contentId}`;
 /** Website Care (AGENTS_WEB.md §4) */
-export const WEB_QUEUES = { monitor: 'web-monitor', daily: 'web-daily' } as const;
-export const WEB_JOBS = { checkSite: 'web-check-site', checkAll: 'web-check-all', dailySite: 'web-daily-site', dailyAll: 'web-daily-all' } as const;
+export const WEB_QUEUES = { monitor: 'web-monitor', daily: 'web-daily', publish: 'web-publish' } as const;
+export const WEB_JOBS = { checkSite: 'web-check-site', checkAll: 'web-check-all', dailySite: 'web-daily-site', dailyAll: 'web-daily-all', publishContent: 'web-publish-content' } as const;
+/** W-3: งานโพสต์บทความขึ้น WordPress — jobId ต่อคอนเทนต์ กันซ้ำ (BullMQ ห้ามมี ':') */
+export const webPublishJobId = (contentId: string) => `webpublish-${contentId}`;
+export const WP_STATUSES = ['UNKNOWN', 'OK', 'AUTH_FAILED', 'ERROR', 'NOT_WORDPRESS'] as const;
+export const WEB_CONTENT_SOURCE_KINDS = ['YOUTUBE', 'FACEBOOK', 'TOPIC', 'SEO_IDEA'] as const;
+
+// ---------- W-4 Email marketing (AGENTS_WEB.md) ----------
+export const EMAIL_QUEUES = { send: 'email-send' } as const;
+export const EMAIL_JOBS = { sendCampaign: 'email-send-campaign' } as const;
+export const emailSendJobId = (campaignId: string) => `emailsend-${campaignId}`;
+export const EMAIL_PROVIDERS = ['brevo', 'resend'] as const;
+export type EmailProviderId = (typeof EMAIL_PROVIDERS)[number];
+export const EMAIL_SUBSCRIBER_STATUSES = ['SUBSCRIBED', 'UNSUBSCRIBED', 'BOUNCED', 'COMPLAINED'] as const;
+export const EMAIL_CAMPAIGN_STATUSES = ['DRAFT', 'AI_REVIEW', 'NEEDS_REVISION', 'READY_FOR_APPROVAL', 'APPROVED', 'SCHEDULED', 'SENDING', 'SENT', 'SEND_FAILED', 'REJECTED', 'CANCELLED'] as const;
+export type EmailCampaignStatus = (typeof EMAIL_CAMPAIGN_STATUSES)[number];
+const CAMPAIGN_TRANSITIONS: Record<EmailCampaignStatus, readonly EmailCampaignStatus[]> = {
+  DRAFT: ['AI_REVIEW', 'READY_FOR_APPROVAL', 'CANCELLED'], AI_REVIEW: ['NEEDS_REVISION', 'READY_FOR_APPROVAL', 'CANCELLED'], NEEDS_REVISION: ['DRAFT', 'CANCELLED'],
+  READY_FOR_APPROVAL: ['APPROVED', 'REJECTED', 'NEEDS_REVISION', 'CANCELLED'], APPROVED: ['SCHEDULED', 'SENDING', 'DRAFT', 'CANCELLED'], SCHEDULED: ['SENDING', 'APPROVED', 'CANCELLED'],
+  SENDING: ['SENT', 'SEND_FAILED'], SENT: [], SEND_FAILED: ['SENDING', 'APPROVED', 'CANCELLED'], REJECTED: ['DRAFT', 'CANCELLED'], CANCELLED: [],
+};
+export const canTransitionCampaign = (from: EmailCampaignStatus, to: EmailCampaignStatus): boolean => CAMPAIGN_TRANSITIONS[from].includes(to);
+/** เหตุการณ์จาก webhook ที่ระบบเข้าใจ (normalize จาก Brevo/Resend) */
+export const EMAIL_EVENT_TYPES = ['delivered', 'opened', 'clicked', 'bounced', 'complained', 'unsubscribed', 'failed'] as const;
+export type EmailEventType = (typeof EMAIL_EVENT_TYPES)[number];
 export const SITE_CHECK_KINDS = ['UPTIME', 'SSL', 'SEO', 'LINKS', 'PAGESPEED'] as const;
 export const SITE_STATUSES = ['UP', 'DOWN', 'DEGRADED', 'UNKNOWN'] as const;
 export const SITE_PLATFORMS = ['WORDPRESS', 'SHOPIFY', 'CUSTOM', 'UNKNOWN'] as const;

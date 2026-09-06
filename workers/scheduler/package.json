@@ -13,10 +13,11 @@
   },
   "dependencies": {
     "@fbpm/database": "workspace:*",
+    "@fbpm/email-core": "workspace:*",
     "@fbpm/facebook-core": "workspace:*",
-    "@fbpm/youtube-core": "workspace:*",
-    "@fbpm/web-core": "workspace:*",
     "@fbpm/shared": "workspace:*",
+    "@fbpm/web-core": "workspace:*",
+    "@fbpm/youtube-core": "workspace:*",
     "bullmq": "6.3.4"
   },
   "devDependencies": {

@@ -14,7 +14,8 @@ const env = {
   MEDIA_DIR: process.env.MEDIA_DIR ?? '/tmp/fbpm-e2e-media',
   META_GRAPH_BASE_URL: 'http://127.0.0.1:4998',
   YOUTUBE_MOCK_BASE_URL: 'http://127.0.0.1:4997', GOOGLE_CLIENT_ID: 'gclient', GOOGLE_CLIENT_SECRET: 'gsecret', GOOGLE_OAUTH_REDIRECT_URI: 'http://127.0.0.1:4000/youtube/oauth/callback', YOUTUBE_API_KEY: 'APIKEY_OK', YOUTUBE_UPLOAD_ENABLED: 'true',
-  WEB_MOCK_BASE_URL: 'http://127.0.0.1:4996', WEB_ALLOW_PRIVATE_TARGETS: 'true', PAGESPEED_API_KEY: 'PSI_OK',
+  WEB_MOCK_BASE_URL: 'http://127.0.0.1:4996', WEB_ALLOW_PRIVATE_TARGETS: 'true', PAGESPEED_API_KEY: 'PSI_OK', WEB_PUBLISH_ENABLED: 'true', WEB_WP_ALLOW_INSECURE: 'true',
+  EMAIL_MOCK_BASE_URL: 'http://127.0.0.1:4995', EMAIL_SEND_ENABLED: 'true',
 } as Record<string, string>;
 
 export default defineConfig({

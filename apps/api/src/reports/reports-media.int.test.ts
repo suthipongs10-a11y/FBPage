@@ -68,7 +68,7 @@ run('reports + media (integration)', () => {
     const pubPdf = await fetch(`${base}/share/reports/${token}/pdf`); expect(pubPdf.status).toBe(200); expect(pubPdf.headers.get('content-type')).toContain('application/pdf');
     expect((await fetch(`${base}/share/reports/${token.slice(0, -4)}xxxx`)).status).toBe(404);
     expect((await fetch(`${base}/share/reports/${token}`, { method: 'POST' })).status).toBe(404);   // อ่านอย่างเดียว
-  });
+  }, 30_000);   // Chromium render ช้าได้เมื่อรัน test ขนานกัน
 
   it('with AI configured, the report stores a structured executive summary (no re-run on read)', async () => {
     await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });

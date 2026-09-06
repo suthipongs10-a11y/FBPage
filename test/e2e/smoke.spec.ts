@@ -7,18 +7,19 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import { startMockGraph } from '../../packages/facebook-core/dist/mock-graph.js';
 import { startMockYouTube } from '../../packages/youtube-core/dist/mock-youtube.js';
 import { startMockAi } from '../../packages/ai-core/dist/mock-ai.js';
-import { startMockWeb } from '../../packages/web-core/dist/mock-web.js';
+import { MOCK_WP_APP_PASSWORD, MOCK_WP_USER, startMockWeb } from '../../packages/web-core/dist/mock-web.js';
+import { startMockEmailProvider, MOCK_BREVO_KEY } from '../../packages/email-core/dist/mock-provider.js';
 
 const stamp = Date.now();
 const USER = { email: `e2e-${stamp}@test.local`, name: 'E2E User', password: 'e2e-password-12345' };
-let graph: Awaited<ReturnType<typeof startMockGraph>>; let yt: Awaited<ReturnType<typeof startMockYouTube>>; let ai: Awaited<ReturnType<typeof startMockAi>>; let web: Awaited<ReturnType<typeof startMockWeb>>;
+let graph: Awaited<ReturnType<typeof startMockGraph>>; let yt: Awaited<ReturnType<typeof startMockYouTube>>; let ai: Awaited<ReturnType<typeof startMockAi>>; let web: Awaited<ReturnType<typeof startMockWeb>>; let mail: Awaited<ReturnType<typeof startMockEmailProvider>>;
 let ws = ''; let pageId = ''; let channelId = ''; let contentId = '';
 
 test.beforeAll(async () => {
-  graph = await startMockGraph(4998); yt = await startMockYouTube(4997); ai = await startMockAi(); web = await startMockWeb(4996);
+  graph = await startMockGraph(4998); yt = await startMockYouTube(4997); ai = await startMockAi(); web = await startMockWeb(4996); mail = await startMockEmailProvider(4995);
   graph.state.validUserTokens.add('USER_OK_E2E_TOKEN_1234567890');
 });
-test.afterAll(async () => { graph.server.close(); yt.server.close(); ai.server.close(); web.server.close(); });
+test.afterAll(async () => { graph.server.close(); yt.server.close(); ai.server.close(); web.server.close(); mail.server.close(); });
 
 test.describe.configure({ mode: 'serial' });
 
@@ -96,6 +97,70 @@ test('Websites: add a site in the UI, see status/SEO issues, connect Search Cons
   await expect(page.getByText('sc-domain:127.0.0.1').first()).toBeVisible();
   await page.goto('/');
   await expect(page.getByText('เว็บไซต์', { exact: true }).first()).toBeVisible();
+});
+
+test('web articles: connect WordPress, AI drafts, approve and publish to the client site', async ({ page }) => {
+  await login(page);
+  await page.goto('/web/content');
+  await page.getByRole('button', { name: 'เชื่อม WordPress' }).click();
+  await page.getByLabel('ชื่อผู้ใช้ WordPress').fill(MOCK_WP_USER);
+  await page.getByLabel('Application Password').fill(MOCK_WP_APP_PASSWORD);
+  await page.getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.getByText('Somchai Editor').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(MOCK_WP_APP_PASSWORD)).toHaveCount(0);   // รหัสผ่านไม่หลุดกลับมาหน้าเว็บ
+  await page.getByRole('button', { name: 'บทความใหม่' }).click();
+  await page.getByLabel('หัวข้อ').fill('ราคาแม่บ้านรายวัน ภูเก็ต');
+  await page.getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.getByText('ราคาแม่บ้านรายวัน ภูเก็ต').first()).toBeVisible({ timeout: 20_000 });
+  ai.state.replies.push({ text: JSON.stringify({ title: 'ราคาแม่บ้านรายวัน ภูเก็ต คิดอย่างไร', slug: 'ราคาแม่บ้านรายวัน-ภูเก็ต', excerpt: 'สรุปวิธีคิดราคา', metaTitle: 'ราคาแม่บ้านรายวัน', metaDescription: 'สรุปปัจจัยราคา', targetQuery: 'แม่บ้านรายวัน', outline: [], bodyHtml: `<p>${'เนื้อหาบทความตัวอย่างสำหรับการทดสอบระบบ '.repeat(12)}</p>`, tags: ['ภูเก็ต'], categories: [], internalLinkIdeas: [], missingInfo: [], aiInterpretation: [] }) });
+  await page.getByRole('button', { name: 'ให้ AI ร่าง' }).click();
+  await expect(page.getByText('เนื้อหาบทความตัวอย่าง').first()).toBeVisible({ timeout: 30_000 });
+  ai.state.replies.push({ text: JSON.stringify({ result: 'PASS', summary: 'ok', issues: [] }) });
+  await page.getByRole('button', { name: 'ส่งขออนุมัติ' }).click();
+  await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+  await page.getByRole('button', { name: 'เผยแพร่ขึ้นเว็บ', exact: true }).click();
+  await expect(page.getByRole('link', { name: /ดูหน้าจริง/ })).toBeVisible({ timeout: 30_000 });
+  expect(web.state.wp.posts).toHaveLength(1);
+});
+
+test('email marketing: provider, consented list, AI newsletter, approve and send with unsubscribe link', async ({ page }) => {
+  await login(page);
+  await page.goto('/email');
+  await page.getByRole('button', { name: 'ผู้ให้บริการส่งอีเมล' }).first().click();
+  await page.getByLabel('API key').fill(MOCK_BREVO_KEY);
+  await page.getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.getByText('agency@example.com').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(MOCK_BREVO_KEY)).toHaveCount(0);
+  await page.getByRole('button', { name: 'สร้างรายชื่อ' }).click();
+  await page.getByLabel('ชื่อรายชื่อ').fill('ลูกค้า E2E');
+  await page.getByLabel('อีเมลผู้ส่ง').fill('news@e2e.test');
+  await page.getByLabel('ชื่อผู้ส่ง').fill('ทีม E2E');
+  await page.getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.getByText('ลูกค้า E2E').first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'นำเข้าผู้รับ' }).first().click();
+  await page.getByPlaceholder('somchai@example.com').fill('somchai@e2e.test, สมชาย');
+  await page.getByLabel('ที่มาของความยินยอม').fill('ฟอร์มหน้าร้าน');
+  await page.getByText('ยืนยันว่าผู้รับทุกคนให้ความยินยอม').click();
+  await page.getByRole('button', { name: 'นำเข้าผู้รับ' }).last().click();
+  await expect(page.getByText('somchai@e2e.test').first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'แคมเปญใหม่' }).click();
+  await page.getByLabel('ชื่อภายใน').fill('ข่าว E2E');
+  await page.getByRole('button', { name: 'บันทึก' }).click();
+  ai.state.replies.push({ text: JSON.stringify({ subject: 'ข่าวสารเดือนนี้จากทีม E2E', subjectAlternatives: [], preheader: 'อ่านสรุป', bodyHtml: '<p>สวัสดี {{name}}</p><p>เนื้อหาอีเมลทดสอบ</p><p><a href="{{unsubscribe_url}}">ยกเลิกรับ</a></p>', bodyText: 'สวัสดี', missingInfo: [], notes: [] }) });
+  await page.getByRole('button', { name: 'ให้ AI ร่าง' }).click();
+  await expect(page.getByText('เนื้อหาอีเมลทดสอบ').first()).toBeVisible({ timeout: 30_000 });
+  ai.state.replies.push({ text: JSON.stringify({ result: 'PASS', summary: 'ok', issues: [] }) });
+  await page.getByRole('button', { name: 'ส่งขออนุมัติ' }).click();
+  await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+  await page.getByRole('button', { name: 'ส่งตอนนี้' }).click();
+  await expect(page.getByText(/ส่งตอนนี้: 1\/1/).first()).toBeVisible({ timeout: 30_000 });
+  const msg = mail.state.messages.find(m => m.subject.startsWith('ข่าวสารเดือนนี้'))!;
+  expect(msg.to).toBe('somchai@e2e.test');
+  const token = /\/api\/email\/u\/([A-Za-z0-9_-]+)/.exec(msg.html)![1]!;
+  const anon = await page.context().browser()!.newContext(); const p2 = await anon.newPage();
+  await p2.goto(`http://127.0.0.1:3000/api/email/u/${token}`);
+  await expect(p2.getByText('ยกเลิกรับอีเมลเรียบร้อย')).toBeVisible();
+  await anon.close();
 });
 
 test('report share link opens without a session and offers PDF', async ({ page, browser }) => {

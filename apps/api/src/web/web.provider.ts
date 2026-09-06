@@ -2,7 +2,7 @@
 import type { Provider } from '@nestjs/common';
 import type { PrismaClient } from '@fbpm/database';
 import { GoogleAuth } from '@fbpm/youtube-core';
-import { SearchConsoleClient, type WebDeps } from '@fbpm/web-core';
+import { SearchConsoleClient, type WebDeps, type WebPublishDeps } from '@fbpm/web-core';
 import { ENV, type Env } from '../config/env';
 import { PRISMA } from '../database/prisma.service';
 
@@ -14,3 +14,7 @@ export function buildWebDeps(env: Env, prisma: PrismaClient): WebDeps {
   return { prisma, google, authSecret: env.AUTH_SECRET, pagespeedKey: env.PAGESPEED_API_KEY, pagespeedBaseUrl: mock ? `${mock}/pagespeed` : undefined, searchConsole: new SearchConsoleClient({ baseUrl: mock ? `${mock}/webmasters/v3` : undefined }), check: { allowPrivate: env.WEB_ALLOW_PRIVATE_TARGETS, timeoutMs: 15_000 }, linkDelayMs: mock ? 0 : 1000 };
 }
 export const webProvider: Provider = { provide: WEB, inject: [ENV, PRISMA], useFactory: buildWebDeps };
+/** W-3: deps สำหรับ WordPress publisher — เปิดโพสต์จริงเมื่อ WEB_PUBLISH_ENABLED=true เท่านั้น */
+export const WEB_PUBLISH = Symbol('WEB_PUBLISH');
+export function buildWebPublishDeps(env: Env, prisma: PrismaClient): WebPublishDeps { return { prisma, authSecret: env.AUTH_SECRET, webPublishEnabled: env.WEB_PUBLISH_ENABLED, wpAllowInsecure: env.WEB_WP_ALLOW_INSECURE }; }
+export const webPublishProvider: Provider = { provide: WEB_PUBLISH, inject: [ENV, PRISMA], useFactory: buildWebPublishDeps };

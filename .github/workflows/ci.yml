@@ -58,6 +58,10 @@ jobs:
           WEB_MOCK_BASE_URL: http://127.0.0.1:4996
           WEB_ALLOW_PRIVATE_TARGETS: 'true'
           PAGESPEED_API_KEY: PSI_OK
+          WEB_PUBLISH_ENABLED: 'true'
+          WEB_WP_ALLOW_INSECURE: 'true'
+          EMAIL_MOCK_BASE_URL: http://127.0.0.1:4995
+          EMAIL_SEND_ENABLED: 'true'
           API_PORT: '4000'
         run: |
           mkdir -p "$MEDIA_DIR"
@@ -84,6 +88,10 @@ jobs:
           WEB_MOCK_BASE_URL: http://127.0.0.1:4996
           WEB_ALLOW_PRIVATE_TARGETS: 'true'
           PAGESPEED_API_KEY: PSI_OK
+          WEB_PUBLISH_ENABLED: 'true'
+          WEB_WP_ALLOW_INSECURE: 'true'
+          EMAIL_MOCK_BASE_URL: http://127.0.0.1:4995
+          EMAIL_SEND_ENABLED: 'true'
         run: pnpm test:e2e
       - name: Server logs on failure
         if: failure()

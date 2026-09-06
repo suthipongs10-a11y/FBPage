@@ -21,7 +21,7 @@ import * as d from './dto';
 
 const featuresSchema = z.object({ features: z.string().optional() });
 const listContentSchema = z.object({ channelId: z.string().optional(), ytStatus: z.string().optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
-const calendarSchema = z.object({ from: z.string().datetime(), to: z.string().datetime(), platform: z.enum(['FACEBOOK', 'YOUTUBE']).optional() });
+const calendarSchema = z.object({ from: z.string().datetime(), to: z.string().datetime(), platform: z.enum(['FACEBOOK', 'YOUTUBE', 'WEB']).optional() });
 const recsSchema = z.object({ channelId: z.string().optional(), status: z.enum(['OPEN', 'ACCEPTED', 'IGNORED', 'DONE']).optional() });
 const insightStatusSchema = z.object({ status: z.enum(['OPEN', 'APPLIED', 'DISMISSED']) });
 const reviewSchema = z.object({ comment: z.string().trim().max(2000).optional() }).optional();

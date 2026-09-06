@@ -35,6 +35,9 @@ importers:
       '@fbpm/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@fbpm/email-core':
+        specifier: workspace:*
+        version: link:../../packages/email-core
       '@fbpm/facebook-core':
         specifier: workspace:*
         version: link:../../packages/facebook-core
@@ -157,6 +160,25 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/email-core:
+    dependencies:
+      '@fbpm/database':
+        specifier: workspace:*
+        version: link:../database
+      '@fbpm/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+
   packages/facebook-core:
     dependencies:
       '@fbpm/database':
@@ -231,6 +253,9 @@ importers:
       '@fbpm/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@fbpm/email-core':
+        specifier: workspace:*
+        version: link:../../packages/email-core
       '@fbpm/facebook-core':
         specifier: workspace:*
         version: link:../../packages/facebook-core

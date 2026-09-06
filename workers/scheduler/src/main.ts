@@ -4,6 +4,7 @@
  * - facebook-sync: ซิงก์เพจ + งานรอบ 6 ชม. ซิงก์ทุกเพจที่ยังเชื่อมต่อ
  * - analytics: เก็บ metric โพสต์หลังเผยแพร่ 24/72 ชม.
  * - youtube-*: ดู ./youtube.ts · maintenance / youtube-maintenance: ดู ./maintenance.ts
+ * - web-monitor / web-daily / web-publish: ดู ./web.ts (AGENTS_WEB.md W-1–W-3) · email-send: ดู ./email.ts (W-4)
  */
 import { Queue, Worker, type Job } from 'bullmq';
 import { PrismaClient, mailerFromEnv, notify, setNotifyMailer } from '@fbpm/database';
@@ -13,7 +14,8 @@ import { JOBS, QUEUES, redisConnectionFromUrl } from './queues';
 import { YT_QUEUES, buildWorkerYtDeps, createYtHandlers, registerYtSchedulers } from './youtube';
 import { createMaintenanceHandlers, registerMaintenanceSchedulers } from './maintenance';
 import { buildWorkerWebDeps, createWebHandlers, registerWebSchedulers } from './web';
-import { WEB_QUEUES } from '@fbpm/shared';
+import { buildWorkerEmailDeps, createEmailHandlers } from './email';
+import { EMAIL_QUEUES, WEB_QUEUES } from '@fbpm/shared';
 
 const REDIS_URL = process.env.REDIS_URL; const AUTH_SECRET = process.env.AUTH_SECRET;
 if (!REDIS_URL) { console.error('REDIS_URL is required'); process.exit(1); }
@@ -34,6 +36,7 @@ const maintenanceQueue = new Queue(QUEUES.maintenance, { connection }); const yt
 export const maintenance = createMaintenanceHandlers({ prisma, authSecret: AUTH_SECRET, ytUploadQueue: ytQueues.upload, log });
 const webQueues = { monitor: new Queue(WEB_QUEUES.monitor, { connection }), daily: new Queue(WEB_QUEUES.daily, { connection }) };
 export const web = createWebHandlers({ prisma, deps: buildWorkerWebDeps(prisma, AUTH_SECRET), authSecret: AUTH_SECRET, queues: webQueues, log });
+export const email = createEmailHandlers({ prisma, deps: buildWorkerEmailDeps(prisma, AUTH_SECRET), authSecret: AUTH_SECRET, log });
 
 export async function handlePublish(job: Job<{ contentId: string; requestId?: string }>): Promise<unknown> {
   const { contentId, requestId = `job-${job.id}` } = job.data;
@@ -108,14 +111,15 @@ const ack = async (job: Job): Promise<{ acknowledged: true }> => { log('job rece
 const processors: Record<string, (job: Job) => Promise<unknown>> = {
   [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics, [QUEUES.facebookWebhook]: handleWebhook as (job: Job) => Promise<unknown>,
   [QUEUES.maintenance]: maintenance.handle, [YT_QUEUES.maintenance]: maintenance.handle,
-  [WEB_QUEUES.monitor]: web.handleMonitor as (job: Job) => Promise<unknown>, [WEB_QUEUES.daily]: web.handleDaily as (job: Job) => Promise<unknown>,
+  [WEB_QUEUES.monitor]: web.handleMonitor as (job: Job) => Promise<unknown>, [WEB_QUEUES.daily]: web.handleDaily as (job: Job) => Promise<unknown>, [WEB_QUEUES.publish]: web.handlePublish as (job: Job) => Promise<unknown>,
+  [EMAIL_QUEUES.send]: email.handleSend as (job: Job) => Promise<unknown>,
   [YT_QUEUES.upload]: yt.handleUpload as (job: Job) => Promise<unknown>, [YT_QUEUES.sync]: yt.handleSync as (job: Job) => Promise<unknown>, [YT_QUEUES.analytics]: yt.handleAnalytics as (job: Job) => Promise<unknown>, [YT_QUEUES.comments]: yt.handleComments as (job: Job) => Promise<unknown>,
 };
-const ALL_QUEUES = [...Object.values(QUEUES), ...Object.values(YT_QUEUES), ...Object.values(WEB_QUEUES)];
+const ALL_QUEUES = [...Object.values(QUEUES), ...Object.values(YT_QUEUES), ...Object.values(WEB_QUEUES), ...Object.values(EMAIL_QUEUES)];
 
 async function main(): Promise<void> {
   const workers = ALL_QUEUES.map(name => {
-    const w = new Worker(name, processors[name] ?? ack, { connection, concurrency: name === QUEUES.facebookPublish || name === YT_QUEUES.upload ? 1 : 4 });
+    const w = new Worker(name, processors[name] ?? ack, { connection, concurrency: name === QUEUES.facebookPublish || name === YT_QUEUES.upload || name === WEB_QUEUES.publish || name === EMAIL_QUEUES.send ? 1 : 4 });
     w.on('failed', (job, err) => log('job failed', { queue: name, id: job?.id, name: job?.name, attempt: job?.attemptsMade, error: err.message }));
     w.on('error', err => log('worker error', { queue: name, error: err.message }));
     return w;

@@ -295,8 +295,8 @@ export class YtContentLabService {
   }
   listInsights(workspaceId: string, brandId?: string) { return this.prisma.brandInsight.findMany({ where: { brand: { client: { workspaceId } }, ...(brandId && { brandId }), status: 'OPEN' }, orderBy: { createdAt: 'desc' }, take: 50, include: { brand: { select: { id: true, name: true } } } }); }
   async setInsightStatus(workspaceId: string, id: string, status: string) { const r = await this.prisma.brandInsight.updateMany({ where: { id, brand: { client: { workspaceId } } }, data: { status } }); if (!r.count) throw new NotFoundException('ไม่พบ insight'); return { ok: true }; }
-  /** ปฏิทินรวม (§65, §117) — ทั้งสองแพลตฟอร์ม */
+  /** ปฏิทินรวม (§65, §117) — ทุกแพลตฟอร์ม (Facebook / YouTube / เว็บ) */
   calendar(workspaceId: string, from: Date, to: Date, platform?: string) {
-    return this.prisma.contentItem.findMany({ where: { ...contentInWorkspace(workspaceId), ...(platform && { platform }), OR: [{ scheduledAt: { gte: from, lte: to } }, { publishedAt: { gte: from, lte: to } }] }, orderBy: { scheduledAt: 'asc' }, select: { id: true, platform: true, status: true, ytStatus: true, title: true, caption: true, scheduledAt: true, scheduledTz: true, publishedAt: true, page: { select: { id: true, name: true } }, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true } } } }).then(ser);
+    return this.prisma.contentItem.findMany({ where: { ...contentInWorkspace(workspaceId), ...(platform && { platform }), OR: [{ scheduledAt: { gte: from, lte: to } }, { publishedAt: { gte: from, lte: to } }] }, orderBy: { scheduledAt: 'asc' }, select: { id: true, platform: true, status: true, ytStatus: true, title: true, caption: true, scheduledAt: true, scheduledTz: true, publishedAt: true, page: { select: { id: true, name: true } }, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true } }, site: { select: { id: true, name: true } }, webMeta: { select: { title: true, wpLink: true } } } }).then(ser);
   }
 }

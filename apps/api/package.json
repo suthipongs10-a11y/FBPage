@@ -14,10 +14,11 @@
   "dependencies": {
     "@fbpm/ai-core": "workspace:*",
     "@fbpm/database": "workspace:*",
+    "@fbpm/email-core": "workspace:*",
     "@fbpm/facebook-core": "workspace:*",
-    "@fbpm/youtube-core": "workspace:*",
-    "@fbpm/web-core": "workspace:*",
     "@fbpm/shared": "workspace:*",
+    "@fbpm/web-core": "workspace:*",
+    "@fbpm/youtube-core": "workspace:*",
     "@nestjs/common": "12.0.1",
     "@nestjs/core": "12.0.1",
     "@nestjs/platform-express": "12.0.1",

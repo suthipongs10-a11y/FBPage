@@ -11,6 +11,7 @@ COPY packages/facebook-core/package.json packages/facebook-core/
 COPY packages/ai-core/package.json packages/ai-core/
 COPY packages/youtube-core/package.json packages/youtube-core/
 COPY packages/web-core/package.json packages/web-core/
+COPY packages/email-core/package.json packages/email-core/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --filter @fbpm/api...
 
@@ -21,6 +22,7 @@ COPY packages/facebook-core packages/facebook-core
 COPY packages/ai-core packages/ai-core
 COPY packages/youtube-core packages/youtube-core
 COPY packages/web-core packages/web-core
+COPY packages/email-core packages/email-core
 COPY apps/api apps/api
 RUN pnpm --filter @fbpm/shared build \
  && pnpm --filter @fbpm/database build \
@@ -28,6 +30,7 @@ RUN pnpm --filter @fbpm/shared build \
  && pnpm --filter @fbpm/facebook-core build \
  && pnpm --filter @fbpm/youtube-core build \
  && pnpm --filter @fbpm/web-core build \
+ && pnpm --filter @fbpm/email-core build \
  && pnpm --filter @fbpm/api build \
  && pnpm --filter @fbpm/api... deploy --prod /out
 

@@ -41,6 +41,12 @@ export const envSchema = z.object({
   PAGESPEED_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   WEB_MOCK_BASE_URL: z.string().url().optional(),
   WEB_ALLOW_PRIVATE_TARGETS: z.string().optional().transform(v => v === 'true' || v === '1'),
+  /** W-3: เปิดให้โพสต์บทความขึ้น WordPress ของลูกค้าจริง (ค่าเริ่มต้นปิด — เปิดเมื่อพร้อม) · WEB_WP_ALLOW_INSECURE = ยอม http:// (mock/test เท่านั้น) */
+  WEB_PUBLISH_ENABLED: z.string().optional().transform(v => v === 'true' || v === '1'),
+  WEB_WP_ALLOW_INSECURE: z.string().optional().transform(v => v === 'true' || v === '1'),
+  /** W-4: เปิดให้ส่งอีเมลการตลาดจริงผ่าน Brevo/Resend (ค่าเริ่มต้นปิด) · EMAIL_MOCK_BASE_URL = mock ผู้ให้บริการ (test เท่านั้น) */
+  EMAIL_SEND_ENABLED: z.string().optional().transform(v => v === 'true' || v === '1'),
+  EMAIL_MOCK_BASE_URL: z.string().url().optional(),
   /** อีเมล (§65) — ไม่ตั้ง SMTP_HOST = ปิดอีเมล (ลิงก์เชิญ/รีเซ็ตยังคัดลอกส่งเองได้) */
   SMTP_HOST: z.string().trim().optional().transform(v => v || undefined),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),

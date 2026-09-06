@@ -10,6 +10,7 @@ COPY packages/database/package.json packages/database/
 COPY packages/facebook-core/package.json packages/facebook-core/
 COPY packages/youtube-core/package.json packages/youtube-core/
 COPY packages/web-core/package.json packages/web-core/
+COPY packages/email-core/package.json packages/email-core/
 COPY workers/scheduler/package.json workers/scheduler/
 RUN pnpm install --frozen-lockfile --filter @fbpm/worker-scheduler...
 
@@ -19,12 +20,14 @@ COPY packages/database packages/database
 COPY packages/facebook-core packages/facebook-core
 COPY packages/youtube-core packages/youtube-core
 COPY packages/web-core packages/web-core
+COPY packages/email-core packages/email-core
 COPY workers/scheduler workers/scheduler
 RUN pnpm --filter @fbpm/shared build \
  && pnpm --filter @fbpm/database build \
  && pnpm --filter @fbpm/facebook-core build \
  && pnpm --filter @fbpm/youtube-core build \
  && pnpm --filter @fbpm/web-core build \
+ && pnpm --filter @fbpm/email-core build \
  && pnpm --filter @fbpm/worker-scheduler build \
  && pnpm --filter @fbpm/worker-scheduler... deploy --prod /out
 

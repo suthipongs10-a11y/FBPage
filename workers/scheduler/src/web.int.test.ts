@@ -31,12 +31,12 @@ run('worker web jobs', () => {
   });
 
   it('check-all enqueues due sites once per slot; check-site records UPTIME and updates the site', async () => {
-    const r = await mod.web.handleMonitor(job({}, WEB_JOBS.checkAll)) as { enqueued: number }; expect(r.enqueued).toBeGreaterThanOrEqual(1);
-    const again = await mod.web.handleMonitor(job({}, WEB_JOBS.checkAll)) as { enqueued: number }; expect(again.enqueued).toBeGreaterThanOrEqual(1);   // jobId เดิม → BullMQ ไม่สร้างซ้ำ
+    const r = await mod.web.handleMonitor(job({}, WEB_JOBS.checkAll)) as { siteIds: string[] }; expect(r.siteIds).toContain(siteId);
+    const again = await mod.web.handleMonitor(job({}, WEB_JOBS.checkAll)) as { siteIds: string[] }; expect(again.siteIds).toContain(siteId);   // jobId เดิม → BullMQ ไม่สร้างซ้ำ
     const jobs = await monitorQ.getJobs(['waiting', 'delayed']); expect(jobs.filter(j => j.data.siteId === siteId)).toHaveLength(1);
     const c = await mod.web.handleMonitor(job({ siteId }, WEB_JOBS.checkSite)) as { status: string }; expect(c.status).toBe('UP');
     const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId } }); expect(site.lastStatus).toBe('UP'); expect(site.lastCheckedAt).not.toBeNull();
-    const due = await mod.web.handleMonitor(job({}, WEB_JOBS.checkAll)) as { enqueued: number }; expect(due.enqueued).toBe(0);   // เพิ่งตรวจ ยังไม่ถึงรอบ
+    const due = await mod.web.handleMonitor(job({}, WEB_JOBS.checkAll)) as { siteIds: string[] }; expect(due.siteIds).not.toContain(siteId);   // เพิ่งตรวจ ยังไม่ถึงรอบ
   });
 
   it('two consecutive failures open a DOWN incident and notify; recovery resolves + notifies', async () => {
@@ -50,7 +50,7 @@ run('worker web jobs', () => {
   });
 
   it('daily job runs SSL/SEO/LINKS/PAGESPEED and skips Search Console when not connected', async () => {
-    const all = await mod.web.handleDaily(job({}, WEB_JOBS.dailyAll)) as { enqueued: number }; expect(all.enqueued).toBe(1);
+    const all = await mod.web.handleDaily(job({}, WEB_JOBS.dailyAll)) as { siteIds: string[] }; expect(all.siteIds).toContain(siteId);
     const r = await mod.web.handleDaily(job({ siteId }, WEB_JOBS.dailySite)) as { results: Record<string, { status: string }>; search: unknown };
     expect(r.results.SSL!.status).toBe('SKIPPED'); expect(r.results.SEO!.status).toBe('WARN'); expect(r.results.LINKS!.status).toBe('WARN'); expect(r.results.PAGESPEED!.status).toBe('WARN'); expect(r.search).toBeNull();
     expect(await prisma.siteCheck.count({ where: { siteId, kind: 'PAGESPEED' } })).toBe(1);

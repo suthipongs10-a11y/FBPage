@@ -74,8 +74,15 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   `apps/api/src/web`: เว็บผูกแบรนด์ (เพิ่มแล้วตรวจทันที), ตรวจตามชนิด, incident (DOWN ต้องล้ม 2 ครั้งติด → แจ้งเตือน; ฟื้นตัว → แจ้งเตือน info), เชื่อม Search Console (จับคู่ property อัตโนมัติ, ไม่มีสิทธิ์ = NO_ACCESS ตรงไปตรงมา), snapshot รายวัน 28 วัน + คำค้น/หน้ายอดนิยม, trends รายสัปดาห์, overview, **SEO Analyst** (observed/inference/recommendation/content ideas อิง evidence เท่านั้น) · RBAC `web.read/manage/analytics.read`
   worker: คิว `web-monitor` (ทุก 5 นาที หาเว็บที่ถึงรอบตาม `checkIntervalMin`) และ `web-daily` (SSL/SEO/ลิงก์/PageSpeed/Search Console วันละครั้ง กระจายเวลา)
   หน้าเว็บ "เว็บไซต์": รายการ+เพิ่มเว็บ, KPI (uptime %, latency, SSL, คะแนนความเร็ว), กราฟ 12 สัปดาห์, ปัญหา SEO, ลิงก์เสีย, Search Console (เชื่อม/ซิงก์/คำค้น/หน้า), ผลวิเคราะห์ AI, incident/ประวัติ · KPI + รายการต้องดูบนภาพรวม
-  ทดสอบ: unit 7 (web-core) + integration API 6 + worker 3 กับ mock ทั้งหมด
-  ถัดไป (W-3/W-4 ตามสเปก): ContentItem `platform=WEB` → WordPress publisher ผ่านอนุมัติ · Email marketing (consent/unsubscribe/ผู้ให้บริการส่งจำนวนมาก)
+  ทดสอบ: unit (web-core) + integration API + worker กับ mock ทั้งหมด
+
+- **Phase 11 — Website Care W-3 (บทความขึ้นเว็บ) + W-4 (อีเมลการตลาด)** ✔
+  W-3 `packages/web-core`: WordPress REST client (Application Password, https เท่านั้นใน production), `sanitizeArticleHtml`, publisher กันซ้ำด้วย `ExternalOperation` (`web-publish:<contentId>`) + กู้โพสต์เดิมจาก slug เมื่อ retry, `verifyWordPress`, mock WordPress ใน `startMockWeb()`
+  W-3 `apps/api/src/web`: ContentItem `platform=WEB` ผูก Site + `WebContentMetadata` · **Web Content Writer** ร่างบทความจากคลิป YouTube/โพสต์ FB/ข้อมูลแบรนด์/คำค้น Search Console (missingInfo แทนการเดา) → Reviewer → คิวอนุมัติเดียวกับ Facebook/YouTube → เผยแพร่/ตั้งเวลา/อัปเดตโพสต์เดิม · kill switch: `WEB_PUBLISH_ENABLED`, `site.publishingPaused`, `workspace.automationPaused` · RBAC `web.content.create/edit/approve/publish`
+  W-4 `packages/email-core` + `apps/api/src/email`: ผู้ให้บริการส่งจำนวนมาก Brevo/Resend (HTTP ล้วน, key เข้ารหัส), รายชื่อผู้รับต่อแบรนด์ + consent (PDPA) + unsubscribe token, **Newsletter Writer** + Reviewer → อนุมัติ → ส่ง (กันซ้ำต่อผู้รับด้วย `EmailSend`, ข้ามคนที่ยกเลิกรับ), webhook สถิติ delivered/opened/clicked/bounced (ไม่มี webhook = "ไม่มีข้อมูล" ไม่ใช่ 0), หน้ายกเลิกรับสาธารณะ `/api/email/u/<token>` · RBAC `email.read/manage/approve/send`
+  worker: คิว `web-publish` (โพสต์ตามเวลา) และ `email-send` (ส่งตามเวลา) — retry ปลอดภัยเพราะกันซ้ำทั้งคู่
+  หน้าเว็บ: "เว็บ · บทความ" (เชื่อม WordPress, ร่าง/แก้/ตรวจ/อนุมัติ/เผยแพร่, ดูหน้าจริง) และ "อีเมล" (ผู้ให้บริการ, รายชื่อ+import ที่ยืนยัน consent, แคมเปญ, สถิติ) · KPI บนภาพรวม
+  ทดสอบ: web-core 9 · email-core 4 · API integration (W-3 5, W-4 5) · worker 2 · E2E 8 ฉากรวมเส้นทางใหม่ทั้งสอง
 
 ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)
 ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
