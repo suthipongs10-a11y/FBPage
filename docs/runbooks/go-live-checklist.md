@@ -2,6 +2,8 @@
 
 ทุกข้ออยู่นอกโค้ด: ต้องมีบัญชี/สิทธิ์/เครื่องของคุณเอง ทำตามลำดับได้เลย ใช้เวลารวมประมาณครึ่งวัน (ไม่นับรอ Meta/Google อนุมัติ)
 
+> ขั้นตอนขอ key แต่ละตัวแบบละเอียดทีละคลิก (Meta, Google Cloud, PageSpeed, WordPress, Brevo/Resend, SMTP) อยู่ใน [`api-keys.md`](api-keys.md)
+
 ## 0. เตรียมเครื่อง (VPS หรือเครื่องในออฟฟิศ)
 1. Ubuntu 22.04+ มี Docker + Docker Compose (ดู `docs/runbooks/ubuntu-vps.md`)
 2. โดเมน 1 ชื่อชี้มาที่เครื่อง เช่น `app.yourdomain.com` (Caddy ใน `docker-compose.yml` ออก HTTPS ให้เอง)
@@ -41,7 +43,14 @@
 3. ตั้งงบ: **ตั้งค่า** → งบ AI ต่อเดือน + เพดานต่องาน (ระบบหยุดเมื่อถึงงบ)
 4. ทางเลือก: ใส่ key ระดับแพลตฟอร์มใน `.env` (`OPENAI_API_KEY` ฯลฯ) เพื่อให้ทุก workspace ใช้ได้โดยไม่ต้องกรอกเอง
 
-## 4. อีเมล (ไม่บังคับ แต่แนะนำ)
+## 3.5 เว็บไซต์ลูกค้า (โมดูล Website Care)
+1. เพิ่มเว็บในหน้า **เว็บไซต์** — ตรวจ uptime/SSL/SEO/ลิงก์เสียได้ทันที ไม่ต้องมี key ใด ๆ
+2. คะแนนความเร็ว (Core Web Vitals): ใส่ `PAGESPEED_API_KEY` (ดู `api-keys.md` ข้อ 3) ไม่ใส่ = แสดง "ไม่มีข้อมูล"
+3. คำค้นจาก Google: ให้เจ้าของเว็บเพิ่มอีเมล Google ของคุณเป็น user ใน Search Console แล้วกด *เชื่อม Search Console*
+4. โพสต์บทความขึ้นเว็บ (W-3): Application Password ของ WordPress (`api-keys.md` ข้อ 4) + ตั้ง `WEB_PUBLISH_ENABLED=true`
+5. อีเมลการตลาด (W-4): API key ของ Brevo/Resend + ยืนยันโดเมนผู้ส่ง (`api-keys.md` ข้อ 5) + ตั้ง `EMAIL_SEND_ENABLED=true`
+
+## 4. อีเมลแจ้งเตือนภายใน (ไม่บังคับ แต่แนะนำ)
 ใส่ `SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (Gmail ใช้ App Password; หรือ Brevo/Mailgun/SES) → รีสตาร์ท → **ตั้งค่า → อีเมลแจ้งเตือน → ส่งอีเมลทดสอบถึงฉัน**
 ไม่ตั้ง = ระบบยังใช้ลิงก์คัดลอกส่งทาง LINE ได้ครบทุกฟีเจอร์ แต่ "ลืมรหัสผ่าน" ด้วยตัวเองจะไม่ทำงาน
 

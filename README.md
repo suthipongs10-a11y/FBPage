@@ -2,7 +2,7 @@
 
 AI Marketing Manager สำหรับเพจ Facebook — อ่านข้อมูลจริง → วิเคราะห์ → วางแผน → สร้างคอนเทนต์ → ขออนุมัติ → เผยแพร่ → วัดผล → เรียนรู้
 
-**เริ่มใช้งานรับลูกค้า:** [`docs/runbooks/first-client.md`](docs/runbooks/first-client.md) · **อ่านก่อนเขียนโค้ด:** [`AGENTS.md`](AGENTS.md) คือคู่มือหลักของโปรเจกต์ · การตัดสินใจเชิงสถาปัตยกรรมอยู่ใน [`docs/architecture/`](docs/architecture/)
+**ขอ API key ทุกตัว (งานที่ต้องทำเอง):** [`docs/runbooks/api-keys.md`](docs/runbooks/api-keys.md) · **เริ่มใช้งานรับลูกค้า:** [`docs/runbooks/first-client.md`](docs/runbooks/first-client.md) · **อ่านก่อนเขียนโค้ด:** [`AGENTS.md`](AGENTS.md) คือคู่มือหลักของโปรเจกต์ · การตัดสินใจเชิงสถาปัตยกรรมอยู่ใน [`docs/architecture/`](docs/architecture/)
 
 ## สถานะ
 - **Phase 1 — ฐานระบบ** ✔ monorepo · Docker Compose · PostgreSQL + Redis · NestJS API + health + OpenAPI · Next.js · BullMQ worker · Prisma schema
@@ -84,8 +84,10 @@ AI Marketing Manager สำหรับเพจ Facebook — อ่านข้
   หน้าเว็บ: "เว็บ · บทความ" (เชื่อม WordPress, ร่าง/แก้/ตรวจ/อนุมัติ/เผยแพร่, ดูหน้าจริง) และ "อีเมล" (ผู้ให้บริการ, รายชื่อ+import ที่ยืนยัน consent, แคมเปญ, สถิติ) · KPI บนภาพรวม
   ทดสอบ: web-core 9 · email-core 4 · API integration (W-3 5, W-4 5) · worker 2 · E2E 8 ฉากรวมเส้นทางใหม่ทั้งสอง
 
-ยังไม่ทำ: Messenger inbox (§14 MESSAGE_RECEIVED normalize แล้วแต่ยังไม่มีหน้า — ต้องสิทธิ์ pages_messaging) · อีเมลจริง (SMTP) · export PDF รายงาน · client share link · Ads agent (§26)
-ทำภายหลัง: เชิญสมาชิกทางอีเมล (§65), ลืมรหัสผ่าน, rate limit บน Redis เมื่อมีหลาย instance
+ยังไม่ทำ (นอกขอบเขตปัจจุบัน — ต้องสิทธิ์/การอนุมัติเพิ่มจากแพลตฟอร์ม):
+Messenger inbox (§14 normalize MESSAGE_RECEIVED แล้ว แต่ยังไม่มีหน้า — ต้องสิทธิ์ `pages_messaging`) ·
+Ads agent (§26 — ต้อง `ads_read` + Marketing API) · YouTube Live (§68) · YouTube Reporting API bulk (§93) ·
+สร้างภาพปกด้วย AI (มีแค่บรีฟ §39) · เผยแพร่บทความขึ้น Shopify/Wix (W-3 รองรับ WordPress แล้ว)
 
 ## โครงสร้าง
 ```
