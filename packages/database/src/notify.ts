@@ -2,7 +2,7 @@
  * Notification helper (§65) — ใช้ร่วมกันระหว่าง API และ worker: บันทึกในแอป (dedupe) + ส่งต่อ webhook ภายนอกถ้าตั้งไว้
  * transport แยกจากการสร้างเหตุการณ์: ฝั่ง domain เรียก notify() อย่างเดียว
  */
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../generated/client';
 import { decryptSecret } from './crypto';
 import type { Mailer } from './mail';
 

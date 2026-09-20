@@ -3,6 +3,9 @@
 
 generator client {
   provider = "prisma-client-js"
+  // สร้างไว้ในโฟลเดอร์ของแพ็กเกจเอง ไม่ใช่ใน node_modules — ไม่งั้น `pnpm deploy --prod`
+  // (ที่ Dockerfile ใช้สร้าง image) จะได้บันเดิลที่ไม่มี client ที่ generate ไว้ แล้วคอนเทนเนอร์ crash ตอนบูต
+  output   = "../generated/client"
 }
 
 datasource db {

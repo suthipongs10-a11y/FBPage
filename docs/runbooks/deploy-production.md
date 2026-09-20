@@ -17,6 +17,7 @@ Caddy ตัด `/api` ออกก่อนส่งต่อให้ API ด�
 | Meta → Webhooks → **Callback URL** | `https://fbm.ragalpha.com/api/facebook/webhook` |
 | Google Cloud → OAuth client → **Authorized redirect URIs** | `https://fbm.ragalpha.com/api/youtube/oauth/callback` |
 | Google Cloud → OAuth client → **Authorized JavaScript origins** | `https://fbm.ragalpha.com` |
+| TikTok for Developers → Login Kit → **Redirect URI** | `https://fbm.ragalpha.com/api/tiktok/oauth/callback` |
 | Brevo → Transactional → Webhooks → **URL** | `https://fbm.ragalpha.com/api/email/webhooks/brevo/<workspaceId>?token=<secret>` |
 | Resend → Webhooks → **Endpoint URL** | `https://fbm.ragalpha.com/api/email/webhooks/resend/<workspaceId>` |
 
@@ -122,6 +123,8 @@ TIKTOK_VERIFIED_MEDIA_PREFIXES=
 SOCIAL_PUBLISHING_ENABLED=false
 
 # ===== แชทอัตโนมัติ (Messenger) — คีย์/โมเดล AI ใช้ของกลางจากหน้า "โมเดล AI" =====
+# หมายเหตุ: docker-compose.yml บังคับค่านี้เป็น false ให้อีกชั้นหนึ่ง ตั้งใน .env อย่างเดียวไม่พอ
+# จะเปิดส่งอัตโนมัติจริงต้องแก้ทั้ง .env และ docker-compose.yml (ตั้งใจให้ยากเพราะมันคุยกับลูกค้าจริง)
 MESSENGER_AUTO_SEND_ENABLED=false
 
 # ===== อีเมลแจ้งเตือนภายใน — กรอกในข้อ 9 (ไม่บังคับ) =====
@@ -169,7 +172,7 @@ grep -c '^META_WEBHOOK_VERIFY_TOKEN=.\{20,\}' .env
 | `WEB_PUBLISH_ENABLED` | สวิตช์ใหญ่ของการโพสต์บทความขึ้นเว็บลูกค้า | ได้ (ค่าเริ่มต้นปิด) |
 | `EMAIL_SEND_ENABLED` | สวิตช์ใหญ่ของการส่งอีเมลการตลาด | ได้ (ค่าเริ่มต้นปิด) |
 | `SOCIAL_PUBLISHING_ENABLED` | สวิตช์ใหญ่ของการอัปโหลดคลิปขึ้น TikTok จริง | ได้ (ค่าเริ่มต้นปิด) |
-| `MESSENGER_AUTO_SEND_ENABLED` | ให้แชทส่งคำตอบเองโดยไม่รอคนตรวจ | ได้ (ค่าเริ่มต้นปิด = เก็บเป็นร่างให้แอดมินตรวจ) |
+| `MESSENGER_AUTO_SEND_ENABLED` | ให้แชทส่งคำตอบเองโดยไม่รอคนตรวจ | ได้ (ค่าเริ่มต้นปิด = เก็บเป็นร่างให้แอดมินตรวจ) — compose บังคับ false ซ้ำอีกชั้น ต้องแก้ทั้งสองที่ |
 | `*_MOCK_BASE_URL` | ชี้ไปเซิร์ฟเวอร์จำลองตอนทดสอบ | **ต้องว่างใน production** ไม่งั้นระบบจะคุยกับของปลอม |
 
 ---
@@ -178,12 +181,25 @@ grep -c '^META_WEBHOOK_VERIFY_TOKEN=.\{20,\}' .env
 
 ```bash
 cd /opt/fbpm
-docker compose up -d --build          # ครั้งแรกใช้เวลา 5–10 นาที
+
+# 1) สร้าง image (ครั้งแรกใช้เวลา 5–10 นาที)
+docker compose build
+
+# 2) สร้างตารางในฐานข้อมูล — ต้องสั่งเอง ไม่ได้รันอัตโนมัติตอน API เริ่ม
+docker compose --profile maintenance run --rm migrate
+
+# 3) เปิดทุกบริการ รวม worker (worker อยู่หลัง profile "automation" ถ้าไม่ใส่ จะไม่ถูกเปิด)
+docker compose --profile automation up -d
+
 docker compose ps                     # ทุกตัวต้องขึ้น running/healthy
-docker compose logs -f api | head -40  # ต้องเห็น migration รันผ่านแล้ว API เริ่ม
+docker compose logs -f api | head -40
 ```
 
-migration ฐานข้อมูลรันอัตโนมัติทุกครั้งที่ API เริ่ม ไม่ต้องสั่งเอง
+> **สองจุดที่พลาดกันบ่อย**
+> - **migration ไม่ได้รันเอง** — คอนเทนเนอร์ API สั่งแค่ `node dist/main.js` (ตั้งใจให้เจ้าของระบบกดเอง จะได้ไม่มีการแก้ฐานข้อมูลโดยไม่ตั้งใจ) ถ้าข้ามข้อ 2 API จะเปิดได้แต่ทุกหน้าจะพังด้วย error ว่าไม่มีตาราง
+> - **`docker compose up -d` เฉย ๆ ไม่เปิด worker** — แล้วจะไม่มีการโพสต์ตามเวลา ไม่มีการเฝ้าเว็บ ไม่มีการตอบแชท ต้องใส่ `--profile automation` ทุกครั้ง
+>
+> จำง่าย ๆ: ใช้ `docker compose --profile automation up -d` เสมอ และสั่ง migrate ทุกครั้งที่อัปเดตโค้ด
 
 **ตรวจว่าใช้ได้**
 ```bash
@@ -195,13 +211,41 @@ curl -s https://fbm.ragalpha.com/api/health   # ต้องได้ JSON ส�
 
 ---
 
+## 2.5 ทดสอบว่าใช้ได้จริง (10 นาที ยังไม่ต้องมี key ของ Meta/Google)
+
+ทำตามลำดับนี้ ถ้าติดข้อไหนให้หยุดแล้วแก้ก่อน
+
+| # | ทำอะไร | ต้องได้อะไร |
+|---|---|---|
+| 1 | `curl -s https://fbm.ragalpha.com/api/health` | JSON ที่มี `"status":"ok"` และ postgres/redis เป็น ok |
+| 2 | `docker compose ps` | เห็น postgres, redis, api, web, caddy **และ worker** ทั้งหมด running/healthy |
+| 3 | เปิด `https://fbm.ragalpha.com` → สมัครบัญชีแรก | เข้าหน้าภาพรวมได้ บัญชีนี้เป็น owner |
+| 4 | เมนูซ้ายครบ | ภาพรวม · ลูกค้า · เพจ · คอนเทนต์ · ปฏิทิน · แชทอัตโนมัติ · TikTok · YouTube · เว็บไซต์ · อีเมล · รายงาน · โมเดล AI · ตั้งค่า |
+| 5 | **ลูกค้า** → เพิ่มลูกค้า → เพิ่มแบรนด์ | บันทึกได้ ไม่มี error |
+| 6 | **โมเดล AI** → เพิ่มคีย์ Gemini → *ทดสอบ* | ขึ้น ✔ พร้อมชื่อโมเดลและเวลาตอบ (ข้อนี้ต้องมี key จริง) |
+| 7 | ตั้งบทบาท `content` ให้ชี้คีย์นั้น → *บันทึกบทบาท* | บันทึกแล้ว |
+| 8 | **คอนเทนต์** → สร้างร่างด้วย AI | ได้ข้อความร่างกลับมา และหน้า **โมเดล AI** → ตารางงานล่าสุด มีแถวใหม่พร้อมชื่อคีย์ที่ใช้ |
+| 9 | **เว็บไซต์** → เพิ่มเว็บของคุณเอง (เช่น `https://ragalpha.com`) | ภายใน ~1 นาที worker ตรวจแล้วขึ้นสถานะ/คะแนน SEO — ถ้าไม่ขึ้นเลยแปลว่า worker ไม่ทำงาน |
+| 10 | **ตั้งค่า** → ตรวจว่าไม่มี API key โผล่ในหน้าเว็บที่ไหนเลย | เห็นได้แค่ 4 ตัวท้าย |
+
+ข้อ 9 คือข้อที่พิสูจน์ว่า worker ทำงานจริง — อย่าข้าม
+
+**ยังไม่ต้องทำตอนทดสอบ:** เชื่อมเพจจริง, อัปโหลด TikTok จริง, ส่งอีเมลจริง, โพสต์ขึ้นเว็บลูกค้าจริง
+สวิตช์พวกนี้ (`SOCIAL_PUBLISHING_ENABLED`, `EMAIL_SEND_ENABLED`, `WEB_PUBLISH_ENABLED`, `MESSENGER_AUTO_SEND_ENABLED`) ปิดไว้หมดตั้งแต่ต้น ตั้งใจให้ทดสอบได้โดยไม่มีอะไรหลุดออกไปหาลูกค้า
+
+---
+
 ## 3. AI (ใช้ Gemini ที่มีอยู่แล้ว)
 
 ไม่ต้องแก้ `.env`
 1. เอา key จาก <https://aistudio.google.com/apikey>
-2. ในระบบ → หน้า **โมเดล AI** → ช่อง Google AI (Gemini) → วาง key → กด *ทดสอบ*
-3. ตั้งบทบาทให้โมเดล: `strategy`, `content`, `analysis`, `community`, `fast`
+2. ในระบบ → หน้า **โมเดล AI** → **เพิ่มคีย์** → เลือก *Google Gemini* → ตั้งชื่อ (เช่น "Gemini หลัก") → วาง key → *บันทึก* → *ทดสอบ*
+3. ตั้งบทบาทให้โมเดล: `strategy`, `content`, `analysis`, `community`, `research`, `fast`
+   (บทบาท `community` คือตัวที่ตอบคอมเมนต์และแชทใช้ · `research` ไว้ใช้กับระบบค้นคว้าในอนาคต)
 4. หน้า **ตั้งค่า** → ใส่งบ AI ต่อเดือนและเพดานต่องาน — ถึงงบระบบหยุดเรียกเอง
+
+> ใส่ได้หลายใบและหลายเจ้าพร้อมกัน (Claude, OpenAI, Gemini, DeepSeek, Groq, OpenRouter, MiniMax หรือ endpoint แบบ OpenAI ของตัวเอง)
+> แยกกันด้วยชื่อที่ตั้ง แล้วจ่ายงานคนละบทบาทได้ เช่น ให้ Gemini เขียนคอนเทนต์ ให้ Claude ทำงานวิเคราะห์
 
 > อยากให้ทุก workspace ใช้ key เดียวกันโดยไม่ต้องกรอก ให้ใส่ที่ `GOOGLE_AI_API_KEY` ใน `.env` แทน
 
@@ -229,7 +273,7 @@ curl -s https://fbm.ragalpha.com/api/health   # ต้องได้ JSON ส�
 5. เติมค่าลง `.env` แล้วรีสตาร์ท
    ```bash
    nano .env      # ใส่ META_APP_ID และ META_APP_SECRET
-   docker compose up -d
+   docker compose --profile automation up -d
    ```
 6. หน้า **เพจ** → *เชื่อมต่อ Facebook*
 
@@ -253,7 +297,7 @@ curl -s https://fbm.ragalpha.com/api/health   # ต้องได้ JSON ส�
 5. Credentials → Create credentials → **OAuth client ID** → Web application
    - Authorized JavaScript origins: `https://fbm.ragalpha.com`
    - Authorized redirect URIs: `https://fbm.ragalpha.com/api/youtube/oauth/callback`
-6. เติม `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YOUTUBE_API_KEY` ลง `.env` → `docker compose up -d`
+6. เติม `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `YOUTUBE_API_KEY` ลง `.env` → `docker compose --profile automation up -d`
 7. หน้า **YouTube** → *เชื่อมบัญชี Google*
 
 `YOUTUBE_UPLOAD_ENABLED` ปล่อย `false` ไว้ก่อน เปิดเมื่อผ่าน YouTube API compliance audit แล้ว
@@ -262,7 +306,7 @@ curl -s https://fbm.ragalpha.com/api/health   # ต้องได้ JSON ส�
 
 ## 6. PageSpeed (ไม่บังคับ)
 
-โปรเจกต์ Google Cloud เดิม → Enable **PageSpeed Insights API** → สร้าง API key → ใส่ `PAGESPEED_API_KEY` → `docker compose up -d`
+โปรเจกต์ Google Cloud เดิม → Enable **PageSpeed Insights API** → สร้าง API key → ใส่ `PAGESPEED_API_KEY` → `docker compose --profile automation up -d`
 ไม่ใส่ = หน้าเว็บไซต์แสดงคะแนนความเร็วว่า "ไม่มีข้อมูล" (ไม่ใช่ 0)
 
 ---
@@ -276,7 +320,7 @@ curl -s https://fbm.ragalpha.com/api/health   # ต้องได้ JSON ส�
 2. ในระบบ: หน้า **เว็บ · บทความ** → *เชื่อม WordPress* → เลือกเว็บ → กรอก username + รหัส
 3. เปิดสวิตช์เมื่อพร้อมโพสต์จริง
    ```bash
-   sed -i 's/^WEB_PUBLISH_ENABLED=false/WEB_PUBLISH_ENABLED=true/' .env && docker compose up -d
+   sed -i 's/^WEB_PUBLISH_ENABLED=false/WEB_PUBLISH_ENABLED=true/' .env && docker compose --profile automation up -d
    ```
 
 ---
@@ -295,7 +339,7 @@ curl -s https://fbm.ragalpha.com/api/health   # ต้องได้ JSON ส�
      → คัดลอก Signing Secret (`whsec_…`) กลับมาใส่ในช่อง Webhook secret ของระบบ
 4. เปิดสวิตช์
    ```bash
-   sed -i 's/^EMAIL_SEND_ENABLED=false/EMAIL_SEND_ENABLED=true/' .env && docker compose up -d
+   sed -i 's/^EMAIL_SEND_ENABLED=false/EMAIL_SEND_ENABLED=true/' .env && docker compose --profile automation up -d
    ```
 
 ---
@@ -312,7 +356,7 @@ SMTP_USER=you@gmail.com
 SMTP_PASS=<รหัส 16 ตัว>
 SMTP_FROM="AI Page Manager <you@gmail.com>"
 ```
-`docker compose up -d` แล้วทดสอบที่ **ตั้งค่า → อีเมลแจ้งเตือน → ส่งอีเมลทดสอบถึงฉัน**
+`docker compose --profile automation up -d` แล้วทดสอบที่ **ตั้งค่า → อีเมลแจ้งเตือน → ส่งอีเมลทดสอบถึงฉัน**
 
 ---
 
@@ -329,7 +373,9 @@ mkdir -p /opt/fbpm/backup
 
 **อัปเดตโค้ด**
 ```bash
-cd /opt/fbpm && git pull && docker compose up -d --build
+cd /opt/fbpm && git pull && docker compose build \
+  && docker compose --profile maintenance run --rm migrate \
+  && docker compose --profile automation up -d
 ```
 
 **สำรอง `.env`** เก็บไว้ที่ปลอดภัยนอกเครื่อง — ถ้าหาย `AUTH_SECRET` ไปด้วย จะถอดรหัส token ที่เก็บไว้ไม่ได้อีกเลย
@@ -340,7 +386,7 @@ cd /opt/fbpm && git pull && docker compose up -d --build
 
 ```bash
 docker compose ps                                   # ทุกตัว healthy
-docker compose logs --since 24h worker | grep -i fail
+docker compose logs --since 24h worker | grep -i fail   # ไม่มี log เลย = worker ไม่ได้เปิด (ลืม --profile automation)
 df -h /                                             # พื้นที่ดิสก์
 ```
 ในระบบ: หน้าภาพรวม → รายการ "ต้องดู" ต้องว่าง · โควตา YouTube ไม่แตะ 80% · ค่า AI เทียบงบ
@@ -359,3 +405,6 @@ df -h /                                             # พื้นที่ด�
 | Google ตอบ `access_denied` | อีเมลนั้นยังไม่ได้อยู่ใน Test users ของ OAuth consent screen |
 | webhook อีเมลไม่เข้า สถิติขึ้น "ไม่มีข้อมูล" | ยังไม่ได้ตั้ง Webhook secret ในระบบ หรือ Brevo ยังไม่ได้ต่อ `?token=` ท้าย URL |
 | API ขึ้น error ตอนเริ่ม | `docker compose logs api` — มักเป็น `.env` ผิดรูปแบบหรือ `AUTH_SECRET` สั้นกว่า 32 ตัว |
+| หน้าเว็บขึ้นแต่กดอะไรก็ error / log มีคำว่า `relation ... does not exist` | ยังไม่ได้รัน migration → `docker compose --profile maintenance run --rm migrate` |
+| โพสต์ตามเวลาไม่ทำงาน · เว็บไม่ถูกตรวจ · แชทไม่ตอบ | worker ไม่ได้เปิด → `docker compose --profile automation up -d` แล้วดู `docker compose ps` ว่ามี worker |
+| log มี `Cannot find module '.prisma/client'` | image เก่าที่สร้างก่อนแก้ generator → `docker compose build --no-cache api worker` |
