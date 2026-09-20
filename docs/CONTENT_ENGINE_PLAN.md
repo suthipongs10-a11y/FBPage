@@ -13,11 +13,13 @@
 3. **ค้นคว้าตาม keyword** ก่อนเขียน — มีโหมดธรรมดา (เร็ว/ฟรี) และโหมดเจาะลึก (ค้นข้างนอก/มีค่าใช้จ่าย)
 4. **ฐานข้อมูลกันโพสต์ซ้ำ** — รู้ว่าเคยโพสต์อะไรไปแล้ว ทั้งของที่สร้างจากระบบนี้และของเก่าที่ลูกค้าโพสต์เอง
 
+5. **เสียบผู้ให้บริการ AI ได้หลายเจ้าพร้อมกัน** และเลือกได้ตอนทำงานจริงว่างานไหนใช้ตัวไหน — ทั้งข้อความ (Claude/OpenAI/Gemini/MiniMax/…), สร้างรูป และสร้างคลิป (OpenRouter/KIE AI/WaveSpeed/…) → **ดูข้อ 12**
+
 ### สิ่งที่ระบบนี้ "ไม่ทำ" (ต้องเข้าใจตรงกันก่อนเริ่ม)
-- **ไม่ตัดต่อวิดีโอและไม่สร้างไฟล์คลิปให้** — คลิปสั้นที่ได้คือ *สเปกการถ่าย*: hook 3 วินาทีแรก, ลำดับภาพ (shotlist), ข้อความบนจอ, สคริปต์พากย์, แคปชันรายแพลตฟอร์ม ไฟล์วิดีโอจริงยังต้องถ่าย/ตัดเอง แล้วอัปเข้าระบบ
-- **ไม่สร้างภาพด้วย AI** — ภาพที่ระบบทำให้ได้เองคือ *การ์ด* 1080×1080 จากเทมเพลตที่มีอยู่ (`quote` / `stat` / `tips` / `hero` × 6 ธีม) ถ้าต้องการภาพสังเคราะห์ต้องเพิ่มผู้ให้บริการใหม่ (ดูข้อ 11)
+- **ไม่ตัดต่อวิดีโอให้** — สร้างคลิปสั้นรายช็อตได้ (ข้อ 12) แต่การเรียงช็อต ใส่เสียง ใส่ซับ ยังทำนอกระบบ สิ่งที่ระบบให้เสมอคือ *สเปกการถ่าย*: hook 3 วินาทีแรก, shotlist, ข้อความบนจอ, สคริปต์พากย์
 - **ไม่โพสต์ Instagram / X / LINE OA** — ยังไม่มีโมดูลของแพลตฟอร์มเหล่านี้
 - **ไม่ข้ามขั้นอนุมัติ** — ทุกแพลตฟอร์มยังใช้ประตูอนุมัติเดิมของตัวเองทุกประตู
+- **ไม่เดาราคาของผู้ให้บริการสื่อ** — ค่าใช้จ่ายต่อภาพ/ต่อวินาทีให้ผู้ใช้กรอกเอง ไม่กรอก = `null` ไม่ใช่ 0
 
 ---
 
@@ -417,5 +419,286 @@ PUT    /workspaces/:ws/brands/:id/dedupe-policy ตั้งค่ากัน�
 
 1. **ผู้ให้บริการค้นเว็บ** — Serper (ถูก ง่าย) · Google Programmable Search (ทางการ โควตาฟรี 100/วัน) · Brave · Tavily (ออกแบบมาเพื่อ AI โดยเฉพาะ) เลือกหนึ่ง แล้วต้องเพิ่มโดเมนใน egress allowlist ของ VPS
 2. **งบค้นเจาะลึกต่อเดือน** — ตั้งเพดานเท่าไหร่ และให้ใครกดได้บ้าง
-3. **ภาพจาก AI** — เอาไหม ถ้าเอาต้องเพิ่มผู้ให้บริการภาพ (มีค่าใช้จ่ายต่อภาพ และต้องมีกติกาเรื่องการเปิดเผยว่าเป็นภาพสังเคราะห์ ซึ่งกระทบฟิลด์ `syntheticMedia` ของ YouTube/TikTok)
+3. ~~ภาพจาก AI เอาไหม~~ → **เอา** ออกแบบไว้ในข้อ 12 แล้ว เหลือเลือกว่าจะเริ่มด้วยเจ้าไหน และกรอกราคาต่อหน่วยเท่าไหร่
 4. **คู่แข่งที่จะเฝ้าดู** — ต้องการให้ระบบดูช่อง YouTube/TikTok ของคู่แข่งด้วยไหม (ทำได้ผ่าน API ทางการเท่านั้น)
+
+---
+
+## 12. ชั้นผู้ให้บริการ AI — หลายเจ้าพร้อมกัน เลือกได้ตอนทำงาน
+
+### 12.1 ของเดิมทำไปแล้วครึ่งทาง
+
+ระบบมี `AiProviderKey` (คีย์ต่อ workspace, เข้ารหัสแล้ว), `AiRoleConfig` (บทบาท → provider + model) และอะแดปเตอร์ 5 ตัว
+(`anthropic` / `openai` / `gemini` / `openrouter` / `compatible`) ทำงานผ่าน HTTP ล้วนอยู่แล้ว — **เรื่องข้อความจึงเหลือแก้แค่สองจุด**
+
+| ช่องโหว่ | อาการจริง | ทางแก้ |
+|---|---|---|
+| `@@unique([workspaceId, provider])` | มี `compatible` ได้แค่ **ตัวเดียว** → ใส่ MiniMax แล้วใส่ Groq เพิ่มไม่ได้ | เปลี่ยนไปคีย์ด้วย **ชื่อที่ตั้งเอง** แทนชนิด |
+| `AiRoleConfig.provider` เป็นสตริงชนิด | ชี้ไปที่ "ชนิด" ไม่ใช่ "คีย์ใบไหน" เลยแยกสองตัวที่ชนิดเดียวกันไม่ออก | ชี้ไปที่ `connectionId` |
+
+ส่วน **สร้างรูป / สร้างคลิป เป็นคนละเรื่องกันโดยสิ้นเชิง** ยัดลงทางเดิมไม่ได้ เพราะ:
+- เป็นงาน **asynchronous** — ส่งงาน → ได้ job id → poll เป็นนาที (คลิปบางเจ้า 2–5 นาที) ไม่ใช่ request/response
+- ผลลัพธ์เป็น **ไฟล์ไบนารี** ต้องโหลดมาเก็บเอง ไม่ใช่ข้อความ
+- คิดเงิน **ต่อภาพ / ต่อวินาที** ไม่ใช่ต่อ token → `estimateCostUsd()` และ `AiTaskLog.inputTokens` ใช้ไม่ได้เลย
+
+จึงต้องมีชั้นพี่น้องอีกชั้นหนึ่ง ไม่ใช่การต่อท่อเดิม
+
+---
+
+### 12.2 ข้อความ — `AiConnection` แทน `AiProviderKey`
+
+```prisma
+/// หนึ่งแถว = หนึ่งคีย์ที่ผู้ใช้ใส่ ตั้งชื่อเองได้ ใส่ชนิดเดียวกันกี่ใบก็ได้
+model AiConnection {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  /// ชื่อที่ผู้ใช้ตั้ง เช่น "Claude หลัก", "MiniMax", "Groq ราคาถูก"
+  label           String
+  /// ชนิดอะแดปเตอร์: anthropic | openai | gemini | openrouter | compatible
+  kind            String
+  /// preset ที่เลือกตอนสร้าง (minimax | deepseek | groq | ...) — ใช้เติมค่าเริ่มต้นและแสดงโลโก้เท่านั้น
+  preset          String?
+  encryptedApiKey String
+  keyHint         String?
+  baseUrl         String?
+  /// โมเดลที่แนะนำของคีย์ใบนี้ ให้ dropdown เลือกได้เร็วโดยไม่ต้องพิมพ์
+  models          String[]  @default([])
+  status          String    @default("ACTIVE")
+  lastValidatedAt DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  roles     AiRoleConfig[]
+
+  @@unique([workspaceId, label])
+  @@index([workspaceId, kind])
+}
+```
+
+`AiRoleConfig` เปลี่ยน `provider String` → `connectionId String` + relation (migration แปลงของเดิมให้อัตโนมัติ
+โดยตั้ง `label` = ชื่อ provider เดิม จึงไม่เสียค่าที่ตั้งไว้แล้ว)
+
+**ไม่เขียนอะแดปเตอร์เพิ่มรายเจ้า** — เจ้าที่พูด OpenAI protocol (MiniMax, DeepSeek, Groq, Together, LiteLLM, Ollama ฯลฯ)
+ใช้ `kind: 'compatible'` ได้หมด สิ่งที่เพิ่มคือ **แคตตาล็อก preset ในโค้ด** เพื่อให้ตั้งค่าคลิกเดียว:
+
+```ts
+// packages/ai-core/src/presets.ts — ข้อมูลล้วน ไม่มี logic
+export const PROVIDER_PRESETS = [
+  { id: 'anthropic',  label: 'Anthropic (Claude)', kind: 'anthropic',  baseUrl: null, models: [...] },
+  { id: 'openai',     label: 'OpenAI',             kind: 'openai',     baseUrl: null, models: [...] },
+  { id: 'gemini',     label: 'Google Gemini',      kind: 'gemini',     baseUrl: null, models: [...] },
+  { id: 'openrouter', label: 'OpenRouter',         kind: 'openrouter', baseUrl: null, models: [...] },
+  { id: 'minimax',    label: 'MiniMax',            kind: 'compatible', baseUrl: '<ยืนยันจากเอกสารตอนลงมือ>', models: [...] },
+  { id: 'deepseek',   label: 'DeepSeek',           kind: 'compatible', baseUrl: 'https://api.deepseek.com/v1', models: [...] },
+  { id: 'groq',       label: 'Groq',               kind: 'compatible', baseUrl: 'https://api.groq.com/openai/v1', models: [...] },
+  { id: 'custom',     label: 'อื่น ๆ (OpenAI-compatible)', kind: 'compatible', baseUrl: null, models: [] },
+];
+```
+
+> `baseUrl` และรายชื่อโมเดลของแต่ละเจ้า **ยืนยันจากเอกสารจริงตอนลงมือทำ** ไม่ใส่ค่าที่เดาเอาไว้ในสเปก
+
+---
+
+### 12.3 สื่อ — แพ็กเกจใหม่ `@fbpm/media-core`
+
+```prisma
+/// คีย์ของผู้ให้บริการสร้างรูป/คลิป
+model MediaConnection {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  label           String            // "KIE AI", "WaveSpeed", "OpenRouter รูป"
+  /// ชนิดอะแดปเตอร์: openrouter | kie | wavespeed | openai_image | gemini_image | generic_async
+  kind            String
+  encryptedApiKey String
+  keyHint         String?
+  baseUrl         String?
+  status          String   @default("ACTIVE")
+  lastValidatedAt DateTime?
+  lastError       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  models    MediaModelConfig[]
+  jobs      MediaJob[]
+
+  @@unique([workspaceId, label])
+}
+
+/// "งานประเภทนี้ ให้ใช้เจ้านี้ โมเดลนี้" — เทียบเท่า AiRoleConfig ของฝั่งข้อความ
+model MediaModelConfig {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  /// IMAGE_POST | IMAGE_THUMBNAIL | IMAGE_BROLL | VIDEO_SHOT | VIDEO_BROLL | TTS_VOICE
+  purpose      String
+  connectionId String
+  model        String
+  /// ค่าตั้งเฉพาะเจ้า เช่น { aspectRatio: "9:16", steps: 30, durationSec: 5 }
+  params       Json?
+  /// ★ ราคาต่อหน่วย — ผู้ใช้กรอกเอง เพราะ API ของเจ้าพวกนี้ไม่ได้ส่งราคากลับมา และราคาเปลี่ยนบ่อย
+  unitCostUsd  Decimal? @db.Decimal(10, 4)
+  /// image | second | job
+  unit         String   @default("job")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  connection MediaConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, purpose])
+}
+
+/// งานสร้างสื่อหนึ่งชิ้น — asynchronous, กันซ้ำ, ตามผลได้
+model MediaJob {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  brandId        String?
+  contentId      String?
+  campaignId     String?
+  purpose        String
+  connectionId   String
+  model          String
+  prompt         String
+  params         Json?
+  /// QUEUED | SUBMITTED | RUNNING | SUCCEEDED | FAILED | CANCELLED | TIMED_OUT
+  status         String    @default("QUEUED")
+  externalJobId  String?
+  /// กันยิงซ้ำแบบเดียวกับ ExternalOperation: media:<contentId>:<purpose>:<hash(prompt+params)>
+  idempotencyKey String    @unique
+  attempts       Int       @default(0)
+  pollCount      Int       @default(0)
+  nextPollAt     DateTime?
+  submittedAt    DateTime?
+  finishedAt     DateTime?
+  /// คำนวณจาก unitCostUsd × หน่วยที่ใช้ — ไม่รู้ราคา = null ห้ามเป็น 0
+  costUsd        Decimal?  @db.Decimal(10, 4)
+  durationSec    Int?
+  outputAssetIds String[]  @default([])
+  error          String?
+  requestedById  String?
+  createdAt      DateTime  @default(now())
+
+  connection MediaConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status, nextPollAt])
+  @@index([contentId])
+}
+```
+
+`MediaAsset` เพิ่ม: `aiGenerated Boolean @default(false)` · `mediaJobId String?` · `sha256 String?` · `kind` รับค่า `generated` เพิ่ม
+
+**อะแดปเตอร์กลาง** (HTTP ล้วน ห้าม import SDK เจ้าไหนทั้งสิ้น):
+
+```ts
+export type MediaPurpose = 'IMAGE_POST' | 'IMAGE_THUMBNAIL' | 'IMAGE_BROLL' | 'VIDEO_SHOT' | 'VIDEO_BROLL' | 'TTS_VOICE';
+export interface MediaOutput { url: string; mimeType: string; width?: number; height?: number; durationSec?: number }
+
+export interface MediaAdapter {
+  kind: string;
+  supports: MediaPurpose[];
+  /** เจ้าที่ตอบทันทีคืน outputs เลย เจ้าที่เป็นคิวคืน externalJobId */
+  submit(cfg: MediaConfig, req: MediaRequest): Promise<{ externalJobId: string } | { outputs: MediaOutput[] }>;
+  /** เฉพาะเจ้าที่เป็นคิว */
+  poll?(cfg: MediaConfig, externalJobId: string): Promise<{ status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'; outputs?: MediaOutput[]; error?: string }>;
+}
+```
+
+เขียนอะแดปเตอร์ทีละเจ้าตามเอกสารจริง (`openrouter`, `kie`, `wavespeed`) — โครงข้างบนครอบทั้งแบบซิงก์และแบบคิว
+เจ้าใหม่ที่เข้ามาทีหลังเขียนไฟล์เดียวจบ ไม่ต้องแตะที่อื่น
+
+**คิวและการตามผล** — `workers/scheduler` เพิ่มคิว `media-generate`:
+1. `submit` → บันทึก `externalJobId`, ตั้ง `nextPollAt`
+2. งาน `media-poll` วนถามสถานะด้วย backoff (10 วิ → 30 วิ → 60 วิ), เพดาน 10 นาทีแล้ว `TIMED_OUT`
+3. สำเร็จ → โหลดไฟล์ (ตรวจ content-type, เพดานขนาด, กัน SSRF ด้วย `isPrivateHost()` ตัวเดียวกับ W-1) → เก็บลง `MEDIA_DIR` → `sha256` → สร้าง `MediaAsset(aiGenerated: true)`
+4. `sha256` เข้าไปอยู่ใน `ContentFingerprint.mediaHashes` ด้วย → **รูปที่ AI สร้างก็โดนกันซ้ำเหมือนกัน**
+
+---
+
+### 12.4 เลือกตอนทำงานจริง
+
+สองระดับ:
+
+**ระดับค่าเริ่มต้น** (หน้า *โมเดล AI* ตั้งครั้งเดียว)
+
+| งาน | ตั้งที่ไหน |
+|---|---|
+| ค้นคว้า | `AiRoleConfig` บทบาท **`research`** ← บทบาทนี้มีในระบบอยู่แล้วแต่ยังไม่เคยถูกใช้ งานนี้คือที่ที่มันได้ใช้จริง |
+| เขียนคอนเทนต์ | บทบาท `content` |
+| ตอบแชท/คอมเมนต์ | บทบาท `community` |
+| สร้างรูป | `MediaModelConfig` purpose `IMAGE_POST` |
+| สร้างคลิป | `MediaModelConfig` purpose `VIDEO_SHOT` |
+
+**ระดับต่อครั้ง** (ในหน้า `/studio` ทุกขั้นมี dropdown "ใช้ตัวไหน")
+ส่ง `connectionId` + `model` มากับคำขอ → ใช้ทันทีโดยข้ามการเลือกตามบทบาท **แต่ยังตรวจงบและบันทึก log เหมือนเดิมทุกประการ**
+
+```ts
+// runAiTask รับ override เพิ่ม — ไม่กระทบผู้เรียกเดิม
+runAiTask(ctx, { ...meta, override: { connectionId, model } }, fn)
+```
+`AiTaskLog` / `MediaJob` บันทึกว่าใช้ตัวไหนเสมอ → ย้อนดูได้ว่า "คลิปที่ยอดดีเดือนนี้ใช้เจ้าไหนทำ"
+
+**ลองเทียบกันก่อนเลือก (ไม่บังคับ)** — ปุ่ม *ลองหลายตัว* ยิงโจทย์เดียวกันไป 2–3 ตัวพร้อมกัน แสดงผลข้างกัน
+พร้อมราคาจริงของแต่ละตัว กดเลือกตัวที่ชอบ → ระบบตั้งเป็นค่าเริ่มต้นของงานนั้นให้ (คิดเงินตามจริงทุกตัวที่ยิง แจ้งก่อนกด)
+
+---
+
+### 12.5 งบสองก้อน แยกกัน
+
+`Workspace` เพิ่ม `mediaMonthlyBudgetUsd Decimal?` แยกจาก `aiMonthlyBudgetUsd` เดิม
+
+เหตุผล: อัตราต่างกันเป็นร้อยเท่า คลิปเดียวอาจแพงกว่าค่าข้อความทั้งเดือน ถ้าใช้ก้อนเดียวกัน
+การทดลองสร้างคลิปไม่กี่ครั้งจะทำให้แชทลูกค้าหยุดทำงานทั้งพื้นที่ทำงาน — ซึ่งเป็นความเสียหายที่ไม่ควรเกิด
+หน้าเดียวแสดงทั้งสองก้อน แต่เพดานแยกและเตือนแยก
+
+---
+
+### 12.6 สื่อที่ AI สร้าง กับฟิลด์นโยบายของแพลตฟอร์ม
+
+`MediaAsset.aiGenerated = true` เป็น **ข้อเท็จจริงที่ระบบรู้แน่** (เราเป็นคนสั่งสร้างเอง) ไม่ใช่การคาดเดาของ AI
+
+เมื่อไฟล์นั้นถูกแนบกับ YouTube หรือ TikTok:
+- ระบบ **บังคับ** ให้คนตอบฟิลด์นโยบาย (`syntheticMedia` / `paidPlacement` / `madeForKids`) ก่อนอนุมัติ ข้ามไม่ได้
+- ช่อง `syntheticMedia` ตั้งค่าเริ่มต้นเป็น *ใช่* พร้อมหมายเหตุว่า "ไฟล์นี้สร้างด้วย AI ในระบบ"
+- **AI ยังห้ามตัดสินฟิลด์นี้เอง** ตามกฎเดิม — ระบบแค่บอกสิ่งที่รู้ คนยังเป็นผู้กดยืนยัน
+
+---
+
+### 12.7 กฎเพิ่มเติมของชั้นนี้
+
+- คีย์ทุกใบเข้ารหัสด้วย `common/crypto` · ห้ามอยู่ใน select/response/audit · แสดงได้แค่ 4 ตัวท้าย
+- ห้าม import SDK ของผู้ให้บริการรายใด — HTTP ล้วนเหมือนทุก integration ในโปรเจกต์นี้
+- **ราคาที่ไม่รู้ = `null` ห้ามเดา ห้ามใส่ 0** ถ้าผู้ใช้ไม่กรอก `unitCostUsd` หน้าสรุปต้องขึ้นว่า "ไม่ทราบค่าใช้จ่าย" ไม่ใช่ $0.00
+- ดาวน์โหลดไฟล์ผลลัพธ์ต้องตรวจ content-type, เพดานขนาด, timeout และกัน SSRF
+- test ใช้ `startMockMediaProvider()` — **ห้ามยิง API จริงของเจ้าไหนทั้งสิ้นใน CI** และห้ามใส่คีย์จริงเป็น secret ของ CI
+- ต้องเพิ่มโดเมนของทุกเจ้าที่ใช้เข้า egress allowlist ของ VPS ก่อนใช้งานจริง
+- `MediaJob` ต้องมี `idempotencyKey` เสมอ — กันยิงซ้ำตอน worker restart (บทเรียนเดียวกับ `ExternalOperation`)
+
+---
+
+### 12.8 เฟสของชั้นนี้
+
+| เฟส | ได้อะไร | DoD |
+|---|---|---|
+| **P-1** ข้อความหลายเจ้า | `AiConnection` + migration จากของเดิม + แคตตาล็อก preset + `AiRoleConfig.connectionId` + override ต่อครั้ง + หน้าตั้งค่าใหม่ | int test: ใส่ `compatible` 2 ใบพร้อมกันได้ · บทบาท `research` ชี้คนละใบกับ `content` ได้ · override ต่อครั้งเข้า `AiTaskLog` ถูกตัว · ของเดิมที่ตั้งไว้ไม่หาย |
+| **P-2** สร้างรูป | `@fbpm/media-core` + `MediaConnection`/`MediaModelConfig`/`MediaJob` + คิว + อะแดปเตอร์รูปเจ้าแรก + ปุ่มสร้างรูปในหน้าคอนเทนต์ | int test กับ mock ล้วน: ส่งงาน → poll → ได้ `MediaAsset(aiGenerated)` · ยิงซ้ำ key เดิมไม่สร้างงานใหม่ · ไม่กรอกราคา → `costUsd` เป็น null |
+| **P-3** สร้างคลิป | อะแดปเตอร์วิดีโอ (KIE / WaveSpeed) + poll ยาว + timeout + ผูกกับ TikTok/Shorts/Reel + บังคับฟิลด์นโยบาย | E2E: สั่งสร้างคลิป → ได้ไฟล์ → แนบกับ ContentItem → อนุมัติไม่ผ่านถ้ายังไม่ตอบฟิลด์นโยบาย |
+| **P-4** เทียบก่อนเลือก | ปุ่มลองหลายตัว + หน้าเทียบผลและราคา + ตั้งเป็นค่าเริ่มต้น | int test: ยิง 2 ตัว ได้ 2 ผล คิดเงินทั้งคู่ |
+
+### ลำดับที่แนะนำรวมทั้งหมด
+
+```
+P-1 → C-1 → C-2 → C-3 → P-2 → C-4 → P-3 → C-5 → P-4
+ │     │     │     │     │     │     │     │
+ │     │     │     │     │     │     │     └─ ค้นเจาะลึก (ต้องเลือก search provider ก่อน)
+ │     │     │     │     │     │     └─────── สร้างคลิป
+ │     │     │     │     │     └───────────── สร้างครบทุกช่องทาง
+ │     │     │     │     └─────────────────── สร้างรูป
+ │     │     │     └───────────────────────── แคมเปญ + เสนอมุม
+ │     │     └─────────────────────────────── ค้นคว้าโหมดธรรมดา
+ │     └───────────────────────────────────── ฐานกันซ้ำ  ← ใช้ได้ทันทีแม้ไม่มีอย่างอื่น
+ └─────────────────────────────────────────── หลายเจ้าสำหรับข้อความ ← เล็กที่สุด ได้ผลทั้งระบบทันที
+```
+
+**P-1 มาก่อนเสมอ** เพราะเล็กที่สุด และพอเสร็จแล้วทุกโมดูลที่มีอยู่ (คอนเทนต์ YouTube TikTok เว็บ อีเมล แชท)
+ได้ประโยชน์ทันทีโดยไม่ต้องรอ Content Engine เลย
