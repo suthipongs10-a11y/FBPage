@@ -22,8 +22,8 @@ test('Messenger: shared workspace AI key, target Page toggle, automatic reply, t
     const connection = await db.facebookConnection.create({ data: { workspaceId: ws, userId, providerUserId: `browser-${Date.now()}`, encryptedAccessToken: encryptSecret('BROWSER_USER_TOKEN', secret), scopes: ['pages_messaging'] } });
     const target = await db.facebookPage.create({ data: { brandId: brand.id, connectionId: connection.id, facebookPageId: `browser-page-${Date.now()}`, name: 'เพจเป้าหมายทดสอบ', pageAccessTokenEncrypted: encryptSecret('BROWSER_PAGE_TOKEN', secret) } });
     // แชทใช้คีย์และโมเดล AI กลางของพื้นที่ทำงาน (บทบาท community) ไม่มีคีย์เฉพาะโมดูลอีกแล้ว
-    await db.aiProviderKey.create({ data: { workspaceId: ws, provider: 'openai', encryptedApiKey: encryptSecret('BROWSER_WORKSPACE_AI_KEY', secret), baseUrl: `${mock.url}/v1` } });
-    await db.aiRoleConfig.create({ data: { workspaceId: ws, role: 'community', provider: 'openai', model: 'mock-chat' } });
+    const aiConn = await db.aiConnection.create({ data: { workspaceId: ws, label: 'Mock OpenAI', kind: 'openai', preset: 'openai', encryptedApiKey: encryptSecret('BROWSER_WORKSPACE_AI_KEY', secret), keyHint: '_KEY', baseUrl: `${mock.url}/v1`, models: ['mock-chat'] } });
+    await db.aiRoleConfig.create({ data: { workspaceId: ws, role: 'community', connectionId: aiConn.id, model: 'mock-chat' } });
     await page.getByRole('link', { name: 'แชทอัตโนมัติ', exact: true }).click(); await expect(page.getByRole('heading', { name: 'แชทอัตโนมัติ', exact: true })).toBeVisible();
     await expect(page.getByText('mock-chat', { exact: true })).toBeVisible();
     await page.getByLabel('จำนวนเรียก AI สูงสุดต่อวัน', { exact: true }).fill('200');

@@ -34,8 +34,8 @@ run('email marketing (integration)', () => {
     const c = await a.http('POST', `/workspaces/${ws}/clients`, { name: 'ฟ้าแดง' });
     brand = (await a.http('POST', `/workspaces/${ws}/clients/${c.json.id}/brands`, { name: 'ฟ้าแดง คลีนนิ่ง', industry: 'บริการทำความสะอาด', primaryCTA: 'ทักแชท', website: 'https://fadaeng.example' })).json.id;
     await a.http('POST', `/workspaces/${ws}/brands/${brand}/knowledge`, { type: 'service', title: 'ล้างแอร์', content: 'บริการล้างแอร์บ้าน นัดล่วงหน้า 1 วัน' });
-    await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { content: { provider: 'compatible', model: 'm-content' }, fast: { provider: 'compatible', model: 'm-fast' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-content', 'm-fast'] })).json.id;
+    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { content: { connectionId: aiConn, model: 'm-content' }, fast: { connectionId: aiConn, model: 'm-fast' } } });
   }, 40_000);
   afterAll(async () => {
     for (const k of ['EMAIL_MOCK_BASE_URL', 'EMAIL_SEND_ENABLED']) delete process.env[k];

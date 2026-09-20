@@ -53,11 +53,13 @@ export interface PagePost { id: string; facebookPostId: string; message: string 
 export interface SyncResult { imported: number; updated: number; total: number; availability: { likes: boolean; comments: boolean; shares: boolean }; syncedAt: string }
 
 // ---------- AI (Phase 5) ----------
-export interface AiProviderRow { id: string; label: string; defaultModel: string; baseUrl: string; needsBaseUrl: boolean; keyHelp: string; configured: boolean; platformKey: boolean; keyHint: string | null; customBaseUrl: string | null; lastValidatedAt: string | null; lastError: string | null; updatedAt: string | null }
-export interface AiRoleCfg { provider: string; model: string }
+export interface AiConnectionRow { id: string; label: string; kind: string; kindLabel: string; preset: string | null; keyHint: string | null; baseUrl: string | null; models: string[]; status: string; lastValidatedAt: string | null; lastError: string | null; createdAt: string; updatedAt: string }
+export interface AiPreset { id: string; label: string; kind: string; baseUrl: string | null; needsBaseUrl: boolean; models: string[]; keyHelp: string }
+export interface AiConnectionsView { connections: AiConnectionRow[]; presets: AiPreset[]; platformKeys: string[] }
+export interface AiRoleCfg { connectionId: string; model: string }
 export interface AiRoles { roles: Record<string, AiRoleCfg | null> }
 export interface AiUsage { monthlyBudgetUsd: number | null; maxCostPerTaskUsd: number | null; monthToDate: { costUsd: number; tasks: number; failed: number; since: string }; byModel: { provider: string; model: string; tasks: number; costUsd: number; inputTokens: number; outputTokens: number; avgLatencyMs: number }[] }
-export interface AiTaskRow { id: string; taskType: string; role: string; provider: string; model: string; latencyMs: number; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | number | null; success: boolean; retry: number; resourceType: string | null; resourceId: string | null; requestId: string; error: string | null; createdAt: string }
+export interface AiTaskRow { id: string; taskType: string; role: string; provider: string; connectionId: string | null; model: string; latencyMs: number; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | number | null; success: boolean; retry: number; resourceType: string | null; resourceId: string | null; requestId: string; error: string | null; createdAt: string }
 export interface AiToolRow { name: string; description: string; riskLevel: string; requiredPermission: string | null; allowed: boolean }
 export type AiChatMessage = { role: 'user'; content: string } | { role: 'assistant'; content: string; toolCalls?: { id: string; name: string; args: Record<string, unknown> }[] } | { role: 'tool'; toolCallId: string; name: string; content: string };
 export interface AiStep { type: 'tool' | 'result'; name: string; args?: Record<string, unknown>; preview?: string }

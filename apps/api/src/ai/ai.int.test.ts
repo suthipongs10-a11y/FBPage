@@ -30,7 +30,7 @@ run('AI gateway + command center + analyst (integration)', () => {
   const A = { email: `ai-a-${stamp}@test.local`, name: 'Alice', password: 'alice-password-123' };
   const B = { email: `ai-b-${stamp}@test.local`, name: 'Bob', password: 'bobby-password-123' };
   let a: ReturnType<typeof client>; let b: ReturnType<typeof client>;
-  let wsA = ''; let wsB = ''; let brandA = ''; let pageA = '';
+  let wsA = ''; let wsB = ''; let brandA = ''; let pageA = ''; let connA = '';
 
   beforeAll(async () => {
     graph = await startMockGraph(); ai = await startMockAi();
@@ -64,32 +64,60 @@ run('AI gateway + command center + analyst (integration)', () => {
   });
 
   it('stores a BYOK key encrypted, never returns it, and validates it against the provider', async () => {
-    const bad = await a.http('PUT', `/workspaces/${wsA}/ai/providers/compatible`, { apiKey: 'short' });
+    const bad = await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'สั้นไป', apiKey: 'short', baseUrl: ai.url });
     expect(bad.status).toBe(400);
-    const r = await a.http('PUT', `/workspaces/${wsA}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url, label: 'Mock LiteLLM' });
-    expect(r.status, r.text).toBe(200);
+    const noBase = await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'ไม่มี base', apiKey: 'MOCK_KEY' });
+    expect(noBase.status).toBe(422);
+    const r = await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock LiteLLM', apiKey: 'MOCK_KEY', baseUrl: ai.url });
+    expect(r.status, r.text).toBe(201);
+    connA = r.json.id;
     expect(r.json.keyHint).toBe('_KEY'); expect(r.text).not.toContain('MOCK_KEY');
-    const row = await prisma.aiProviderKey.findFirstOrThrow({ where: { workspaceId: wsA, provider: 'compatible' } });
+    const row = await prisma.aiConnection.findUniqueOrThrow({ where: { id: connA } });
+    expect(row.kind).toBe('compatible'); expect(row.preset).toBe('custom');
     expect(row.encryptedApiKey.startsWith('v1.')).toBe(true); expect(row.encryptedApiKey).not.toContain('MOCK_KEY');
-    const list = await a.http('GET', `/workspaces/${wsA}/ai/providers`);
-    expect(list.json.find((p: { id: string }) => p.id === 'compatible').configured).toBe(true);
+    const list = await a.http('GET', `/workspaces/${wsA}/ai/connections`);
+    expect(list.json.connections.find((c: { id: string }) => c.id === connA).status).toBe('ACTIVE');
+    expect(list.json.presets.some((p: { id: string }) => p.id === 'minimax')).toBe(true);
     expect(list.text).not.toContain('MOCK_KEY');
-    // ยังไม่มีโมเดลในบทบาทใด → validate บอกให้ตั้งก่อน
-    const v0 = await a.http('POST', `/workspaces/${wsA}/ai/providers/compatible/validate`, {});
+    // ยังไม่ได้ระบุชื่อโมเดลของคีย์ใบนี้ → validate บอกให้ตั้งก่อน
+    const v0 = await a.http('POST', `/workspaces/${wsA}/ai/connections/${connA}/validate`, {});
     expect(v0.json.ok).toBe(false);
-    const roles = await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { strategy: { provider: 'compatible', model: 'mock-strategy' }, analysis: { provider: 'compatible', model: 'mock-analysis' }, fast: { provider: 'compatible', model: 'mock-fast' } } });
+    const roles = await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { strategy: { connectionId: connA, model: 'mock-strategy' }, analysis: { connectionId: connA, model: 'mock-analysis' }, fast: { connectionId: connA, model: 'mock-fast' } } });
     expect(roles.status).toBe(200); expect(roles.json.roles.strategy.model).toBe('mock-strategy'); expect(roles.json.roles.content).toBeNull();
-    const v = await a.http('POST', `/workspaces/${wsA}/ai/providers/compatible/validate`, {});
+    expect(roles.json.roles.strategy.connectionId).toBe(connA);
+    const v = await a.http('POST', `/workspaces/${wsA}/ai/connections/${connA}/validate`, {});
     expect(v.json.ok, v.text).toBe(true);
   });
 
   it('wrong key → validate reports auth error and marks lastError', async () => {
-    await a.http('PUT', `/workspaces/${wsA}/ai/providers/compatible`, { apiKey: 'WRONG_KEY_1234' });
-    const v = await a.http('POST', `/workspaces/${wsA}/ai/providers/compatible/validate`, {});
+    await a.http('PATCH', `/workspaces/${wsA}/ai/connections/${connA}`, { apiKey: 'WRONG_KEY_1234' });
+    const v = await a.http('POST', `/workspaces/${wsA}/ai/connections/${connA}/validate`, {});
     expect(v.json.ok).toBe(false); expect(v.json.error).toMatch(/API key/);
-    const list = await a.http('GET', `/workspaces/${wsA}/ai/providers`);
-    expect(list.json.find((p: { id: string }) => p.id === 'compatible').lastError).toMatch(/API key/);
-    await a.http('PUT', `/workspaces/${wsA}/ai/providers/compatible`, { apiKey: 'MOCK_KEY' });
+    const list = await a.http('GET', `/workspaces/${wsA}/ai/connections`);
+    expect(list.json.connections.find((c: { id: string }) => c.id === connA).lastError).toMatch(/API key/);
+    await a.http('PATCH', `/workspaces/${wsA}/ai/connections/${connA}`, { apiKey: 'MOCK_KEY' });
+  });
+
+  it('keeps several keys of the same kind apart and lets a role point at a specific one', async () => {
+    const second = await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock สำรอง', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['mock-research'] });
+    expect(second.status, second.text).toBe(201);
+    const dup = await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock สำรอง', apiKey: 'MOCK_KEY', baseUrl: ai.url });
+    expect(dup.status).toBe(409);
+    // บทบาท research ชี้ใบที่สอง ขณะที่ strategy ยังชี้ใบแรก — แยกกันได้ทั้งที่ชนิดเดียวกัน
+    const roles = await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { research: { connectionId: second.json.id, model: 'mock-research' } } });
+    expect(roles.status, roles.text).toBe(200);
+    expect(roles.json.roles.research.connectionId).toBe(second.json.id);
+    expect(roles.json.roles.strategy.connectionId).toBe(connA);
+    const list = await a.http('GET', `/workspaces/${wsA}/ai/connections`);
+    expect(list.json.connections.filter((c: { kind: string }) => c.kind === 'compatible')).toHaveLength(2);
+    // ชี้ไปยังคีย์ของพื้นที่ทำงานอื่นไม่ได้
+    const foreign = await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { vision: { connectionId: 'not-a-real-connection', model: 'x' } } });
+    expect(foreign.status).toBe(422);
+    // ลบคีย์ → บทบาทที่ชี้ใบนั้นถูกล้าง และบอกว่ากระทบบทบาทไหน
+    const del = await a.http('DELETE', `/workspaces/${wsA}/ai/connections/${second.json.id}`);
+    expect(del.status, del.text).toBe(200); expect(del.json.clearedRoles).toEqual(['research']);
+    expect((await a.http('GET', `/workspaces/${wsA}/ai/roles`)).json.roles.research).toBeNull();
+    expect((await a.http('GET', `/workspaces/${wsA}/ai/roles`)).json.roles.strategy.connectionId).toBe(connA);
   });
 
   it('command center: uses tools against real workspace data, logs the task with cost/usage, locks context', async () => {
@@ -135,6 +163,30 @@ run('AI gateway + command center + analyst (integration)', () => {
     expect((await b.http('GET', `/workspaces/${wsA}/analytics/pages/${pageA}/analyses`)).status).toBe(404);
   });
 
+  it('per-run override sends the job to the chosen key and records which one was used', async () => {
+    const alt = await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock ทางเลือก', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['mock-override'] });
+    expect(alt.status, alt.text).toBe(201);
+    ai.state.replies.push({ text: 'ตอบจากโมเดลที่เลือกเอง' });
+    const r = await a.http('POST', `/workspaces/${wsA}/ai/command`, { message: 'สวัสดี', modelOverride: { connectionId: alt.json.id, model: 'mock-override' } });
+    expect(r.status, r.text).toBe(200);
+    expect(ai.state.requests.at(-1)!.model).toBe('mock-override');
+    const log = await prisma.aiTaskLog.findFirstOrThrow({ where: { workspaceId: wsA, taskType: 'ai.command' }, orderBy: { createdAt: 'desc' } });
+    expect(log.connectionId).toBe(alt.json.id); expect(log.model).toBe('mock-override');
+    // ไม่ระบุโมเดลมาด้วย → ใช้โมเดลแรกที่ตั้งไว้ให้คีย์ใบนั้น
+    ai.state.replies.push({ text: 'ok' });
+    await a.http('POST', `/workspaces/${wsA}/ai/command`, { message: 'อีกครั้ง', modelOverride: { connectionId: alt.json.id } });
+    expect(ai.state.requests.at(-1)!.model).toBe('mock-override');
+    // คีย์ที่ถูกปิดอยู่ หรือคีย์ของพื้นที่ทำงานอื่น ใช้ override ไม่ได้ และต้องไม่เงียบ ๆ ไปใช้ใบอื่นแทน
+    const before = ai.state.requests.length;
+    await a.http('PATCH', `/workspaces/${wsA}/ai/connections/${alt.json.id}`, { status: 'DISABLED' });
+    const off = await a.http('POST', `/workspaces/${wsA}/ai/command`, { message: 'x', modelOverride: { connectionId: alt.json.id } });
+    expect(off.status).toBe(422);
+    const foreign = await a.http('POST', `/workspaces/${wsA}/ai/command`, { message: 'x', modelOverride: { connectionId: 'no-such-connection' } });
+    expect(foreign.status).toBe(422);
+    expect(ai.state.requests).toHaveLength(before);
+    await a.http('DELETE', `/workspaces/${wsA}/ai/connections/${alt.json.id}`);
+  });
+
   it('budget: monthly cap blocks new tasks with 402; usage endpoint reports month-to-date', async () => {
     await prisma.aiTaskLog.create({ data: { workspaceId: wsA, taskType: 'seed', role: 'fast', provider: 'compatible', model: 'm', latencyMs: 1, estimatedCost: 5, success: true, requestId: 'seed' } });
     const set = await a.http('PATCH', `/workspaces/${wsA}`, { aiMonthlyBudgetUsd: 4 });
@@ -157,7 +209,7 @@ run('AI gateway + command center + analyst (integration)', () => {
   });
 
   it('removing the key returns the workspace to "not configured"', async () => {
-    expect((await a.http('DELETE', `/workspaces/${wsA}/ai/providers/compatible`)).status).toBe(200);
+    expect((await a.http('DELETE', `/workspaces/${wsA}/ai/connections/${connA}`)).status).toBe(200);
     expect((await a.http('POST', `/workspaces/${wsA}/ai/command`, { message: 'x' })).status).toBe(422);
     expect((await a.http('GET', `/workspaces/${wsA}/ai/tools`)).json.every((t: { riskLevel: string }) => t.riskLevel === 'READ')).toBe(true);
   });

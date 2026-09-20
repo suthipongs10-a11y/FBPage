@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, type AiProviderRow, type AiUsage, type Client, type ContentItem, type EmailSummary, type PageRow, type WorkspaceDetail, type WebContentSummary, type WebOverview, type YtOverview } from '@/lib/api';
+import { api, type AiConnectionsView, type AiUsage, type Client, type ContentItem, type EmailSummary, type PageRow, type WorkspaceDetail, type WebContentSummary, type WebOverview, type YtOverview } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Bars, SERIES, type Point } from '@/components/charts';
@@ -26,7 +26,7 @@ export default function OverviewPage() {
     api<PageRow[]>(`/workspaces/${ws.id}/pages`).then(p => { setPages(p); const first = p.find(x => !x.disconnectedAt); if (first) api<FbTrends>(`/workspaces/${ws.id}/pages/${first.id}/trends?weeks=8`).then(setFbTrend).catch(() => setFbTrend(null)); }).catch(() => setPages([]));
     api<ContentItem[]>(`/workspaces/${ws.id}/content?limit=500`).then(setContent).catch(() => setContent([]));
     api<AiUsage>(`/workspaces/${ws.id}/ai/usage`).then(setUsage).catch(() => setUsage(null));
-    api<AiProviderRow[]>(`/workspaces/${ws.id}/ai/providers`).then(p => setAiReady(p.some(x => x.configured || x.platformKey))).catch(() => setAiReady(true));
+    api<AiConnectionsView>(`/workspaces/${ws.id}/ai/connections`).then(c => setAiReady(c.connections.some(x => x.status === 'ACTIVE') || c.platformKeys.length > 0)).catch(() => setAiReady(true));
     api<WorkspaceDetail>(`/workspaces/${ws.id}`).then(setDetail).catch(() => setDetail(null));
     api<Client[]>(`/workspaces/${ws.id}/clients`).then(setClients).catch(() => setClients([]));
     api<WebOverview>(`/workspaces/${ws.id}/web/overview`).then(setWeb).catch(() => setWeb(null));

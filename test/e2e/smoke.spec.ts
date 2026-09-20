@@ -40,11 +40,40 @@ test('login, seed a client/brand/page via API, and see the page on the Pages scr
   const b = await api(page.request, 'POST', `/workspaces/${ws}/clients/${c.id}/brands`, { name: 'แบรนด์ E2E', primaryCTA: 'ทักแชท' });
   const conn = await api(page.request, 'POST', `/workspaces/${ws}/facebook/connections/token`, { accessToken: 'USER_OK_E2E_TOKEN_1234567890' });
   const pg = await api(page.request, 'POST', `/workspaces/${ws}/brands/${b.id}/pages/connect`, { connectionId: conn.connection.id, facebookPageId: '111' }); pageId = pg.id;
-  await api(page.request, 'PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-  await api(page.request, 'PUT', `/workspaces/${ws}/ai/roles`, { roles: { strategy: { provider: 'compatible', model: 'm' }, content: { provider: 'compatible', model: 'm' }, analysis: { provider: 'compatible', model: 'm' }, community: { provider: 'compatible', model: 'm' }, fast: { provider: 'compatible', model: 'm' } } });
+  const conn2 = await api(page.request, 'POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m'] });
+  await api(page.request, 'PUT', `/workspaces/${ws}/ai/roles`, { roles: Object.fromEntries(['strategy', 'content', 'analysis', 'community', 'fast'].map(r => [r, { connectionId: conn2.id, model: 'm' }])) });
   await page.goto('/pages');
   await expect(page.getByText(pg.name).first()).toBeVisible();
   await expect(page.getByText('USER_OK_E2E_TOKEN')).toHaveCount(0);   // token ไม่หลุดมาหน้าเว็บ
+});
+
+test('AI models page: add a second key of the same kind and point the research role at it', async ({ page }) => {
+  await login(page);
+  await page.goto('/ai-models');
+  // ชื่อคีย์ปรากฏทั้งในการ์ดคีย์และใน dropdown ของทุกบทบาท จึงต้องเจาะไปที่การ์ดคีย์
+  const keysCard = page.locator('section').filter({ has: page.getByRole('heading', { name: 'คีย์ผู้ให้บริการ', exact: true }) });
+  await expect(keysCard.getByText('Mock AI', { exact: true })).toBeVisible();
+  // ใส่คีย์ใบที่สองที่เป็นชนิดเดียวกัน — สิ่งที่ของเดิมทำไม่ได้เพราะจำกัดหนึ่งใบต่อชนิด
+  await page.getByRole('button', { name: 'เพิ่มคีย์', exact: true }).click();
+  // select ที่ห่อด้วย label: ชื่อที่เข้าถึงได้รวมข้อความของตัวเลือกที่เลือกอยู่ จึงจับด้วย role แทน exact label
+  await page.getByRole('combobox', { name: 'ผู้ให้บริการ' }).selectOption('custom');
+  await page.getByLabel('ชื่อที่ใช้เรียก', { exact: true }).fill('Mock ใบที่สอง');
+  await page.getByLabel('API key', { exact: true }).fill('MOCK_KEY');
+  await page.getByLabel('Base URL', { exact: true }).fill(ai.url);
+  await page.getByLabel('ชื่อโมเดลที่ใช้ได้ (คั่นด้วยจุลภาค)', { exact: true }).last().fill('m-research');   // ช่องในฟอร์มเพิ่มคีย์ (การ์ดคีย์เดิมก็มีช่องนี้)
+  await keysCard.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  await expect(keysCard.getByText('Mock ใบที่สอง', { exact: true })).toBeVisible();
+  // บทบาท "ค้นคว้า" ชี้ใบใหม่ ขณะที่บทบาทอื่นยังชี้ใบเดิม
+  await page.getByRole('combobox', { name: 'ค้นคว้า', exact: true }).selectOption({ label: 'Mock ใบที่สอง' });
+  await page.getByRole('button', { name: 'บันทึกบทบาท', exact: true }).click();
+  await expect(page.getByText('บันทึกแล้ว')).toBeVisible();
+  const roles = await api(page.request, 'GET', `/workspaces/${ws}/ai/roles`);
+  const conns = await api(page.request, 'GET', `/workspaces/${ws}/ai/connections`);
+  const second = conns.connections.find((c: { label: string }) => c.label === 'Mock ใบที่สอง');
+  expect(roles.roles.research.connectionId).toBe(second.id);
+  expect(roles.roles.content.connectionId).not.toBe(second.id);
+  expect(conns.connections.filter((c: { kind: string }) => c.kind === 'compatible')).toHaveLength(2);
+  expect(await page.locator('body').innerText()).not.toContain('MOCK_KEY');   // คีย์ไม่หลุดมาหน้าเว็บ
 });
 
 test('content approval happens in the browser: draft → submit → approve', async ({ page }) => {

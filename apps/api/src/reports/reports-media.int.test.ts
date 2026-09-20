@@ -71,8 +71,8 @@ run('reports + media (integration)', () => {
   }, 30_000);   // Chromium render ช้าได้เมื่อรัน test ขนานกัน
 
   it('with AI configured, the report stores a structured executive summary (no re-run on read)', async () => {
-    await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { analysis: { provider: 'compatible', model: 'm-analysis' }, content: { provider: 'compatible', model: 'm-content' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-analysis', 'm-content'] })).json.id;
+    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { analysis: { connectionId: aiConn, model: 'm-analysis' }, content: { connectionId: aiConn, model: 'm-content' } } });
     ai.state.replies.push({ text: JSON.stringify({ executiveSummary: 'เดือนนี้โพสต์ 2 รายการ', whatHappened: ['x'], whyItHappened: ['y'], repeat: ['โพสต์ความรู้'], stop: [], experiments: ['ลองวิดีโอ'], nextMonthFocus: ['ความสม่ำเสมอ'] }) });
     const r = await a.http('POST', `/workspaces/${ws}/pages/${pageA}/reports`, { month: new Date().toISOString().slice(0, 7) });
     expect(r.status, r.text).toBe(200); expect(r.json.data.summary.executiveSummary).toContain('2 รายการ'); expect(r.json.model).toBe('m-analysis');

@@ -30,8 +30,9 @@ run('TikTok local integration: OAuth, tenant isolation, AI, approval and Inbox',
     const other = await db.user.findUniqueOrThrow({ where: { email: `tt-b-${stamp}@test.local` }, include: { memberships: true } }); wsB = other.memberships[0]!.workspaceId;
     const c = await db.client.create({ data: { workspaceId: ws, name: 'Test Client', brands: { create: { name: 'Test Brand' } } }, include: { brands: true } }); brand = c.brands[0]!.id;
     await new Promise<void>(r => aiServer.listen(0, '127.0.0.1', r)); const addr = aiServer.address(); if (!addr || typeof addr === 'string') throw new Error('AI mock unavailable');
-    expect((await http('PUT', `/workspaces/${ws}/ai/providers/gemini`, { apiKey: 'MOCK_KEY', baseUrl: `http://127.0.0.1:${addr.port}/models` })).status).toBe(200);
-    await http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { content: { provider: 'gemini', model: 'gemini-test' }, analysis: { provider: 'gemini', model: 'gemini-test' } } });
+    const aiConn = await http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'gemini', label: 'Mock Gemini', apiKey: 'MOCK_KEY', baseUrl: `http://127.0.0.1:${addr.port}/models`, models: ['gemini-test'] });
+    expect(aiConn.status, aiConn.text).toBe(201);
+    await http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { content: { connectionId: aiConn.json.id, model: 'gemini-test' }, analysis: { connectionId: aiConn.json.id, model: 'gemini-test' } } });
   }, 40_000);
   afterAll(async () => {
     if (db) { if (brand) await db.contentItem.deleteMany({ where: { platform: 'TIKTOK', tiktokBrandId: brand } }); if (account) { await db.contentItem.deleteMany({ where: { tiktokAccountId: account } }); await db.tikTokAccount.deleteMany({ where: { id: account } }); } if (ws) await db.tikTokOAuthState.deleteMany({ where: { workspaceId: ws } }); await db.workspace.deleteMany({ where: { id: { in: [ws, wsB].filter(Boolean) } } }); await db.user.deleteMany({ where: { email: { in: [`tt-${stamp}@test.local`, `tt-b-${stamp}@test.local`] } } }); await db.$disconnect(); }

@@ -46,8 +46,8 @@ run('youtube module (integration)', () => {
     graph.state.validUserTokens.add('USER_OK_LONG_TOKEN_FOR_YT_TEST');
     const fconn = await a.http('POST', `/workspaces/${ws}/facebook/connections/token`, { accessToken: 'USER_OK_LONG_TOKEN_FOR_YT_TEST' });
     pageA = (await a.http('POST', `/workspaces/${ws}/brands/${brand}/pages/connect`, { connectionId: fconn.json.connection.id, facebookPageId: '111' })).json.id;
-    await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { strategy: { provider: 'compatible', model: 'm-strategy' }, content: { provider: 'compatible', model: 'm-content' }, analysis: { provider: 'compatible', model: 'm-analysis' }, community: { provider: 'compatible', model: 'm-community' }, fast: { provider: 'compatible', model: 'm-fast' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-analysis', 'm-community', 'm-content', 'm-fast', 'm-strategy'] })).json.id;
+    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { strategy: { connectionId: aiConn, model: 'm-strategy' }, content: { connectionId: aiConn, model: 'm-content' }, analysis: { connectionId: aiConn, model: 'm-analysis' }, community: { connectionId: aiConn, model: 'm-community' }, fast: { connectionId: aiConn, model: 'm-fast' } } });
   }, 40_000);
   afterAll(async () => {
     for (const k of ['META_GRAPH_BASE_URL', 'YOUTUBE_MOCK_BASE_URL', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_OAUTH_REDIRECT_URI', 'YOUTUBE_API_KEY', 'YOUTUBE_UPLOAD_ENABLED']) delete process.env[k];

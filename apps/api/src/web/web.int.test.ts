@@ -34,8 +34,8 @@ run('website care (integration)', () => {
     ws = (await a.http('POST', '/auth/register', A)).json.workspace.id; wsB = (await b.http('POST', '/auth/register', B)).json.workspace.id;
     const c = await a.http('POST', `/workspaces/${ws}/clients`, { name: 'ฟ้าแดง' });
     brand = (await a.http('POST', `/workspaces/${ws}/clients/${c.json.id}/brands`, { name: 'ฟ้าแดง คลีนนิ่ง', industry: 'บริการทำความสะอาด', serviceArea: 'ภูเก็ต', primaryCTA: 'ทักแชท' })).json.id;
-    await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { analysis: { provider: 'compatible', model: 'm-analysis' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-analysis'] })).json.id;
+    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { analysis: { connectionId: aiConn, model: 'm-analysis' } } });
   }, 40_000);
   afterAll(async () => {
     for (const k of ['WEB_MOCK_BASE_URL', 'WEB_ALLOW_PRIVATE_TARGETS', 'PAGESPEED_API_KEY', 'YOUTUBE_MOCK_BASE_URL', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_OAUTH_REDIRECT_URI']) delete process.env[k];

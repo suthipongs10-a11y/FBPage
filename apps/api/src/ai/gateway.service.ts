@@ -5,7 +5,7 @@
  */
 import { HttpException, HttpStatus, Inject, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import type { PrismaClient } from '@fbpm/database';
-import { AiBudgetExceededError, AiNotConfiguredError, AiProviderError, PROVIDERS, chat, estimateCostUsd, generateStructured, logAiTask, monthUsage, providerConfig, resolveModel, runAiTask, runToolLoop, type AiProviderId, type AiTaskContext, type AiTaskMeta, type AiTaskOutcome, type ChatRequest, type ChatResult, type ProviderConfig, type ResolvedModel, type StructuredInput, type StructuredResult, type ToolLoopInput, type ToolLoopResult, type Usage } from '@fbpm/ai-core';
+import { AiBudgetExceededError, AiConnectionUnavailableError, AiNotConfiguredError, AiProviderError, chat, estimateCostUsd, generateStructured, logAiTask, monthUsage, resolveModel, resolveOverride, runAiTask, runToolLoop, type AiTaskContext, type AiTaskMeta, type AiTaskOutcome, type ChatRequest, type ChatResult, type ProviderConfig, type ResolvedModel, type StructuredInput, type StructuredResult, type ToolLoopInput, type ToolLoopResult, type Usage } from '@fbpm/ai-core';
 import type { AiRole } from '@fbpm/shared';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
@@ -18,7 +18,7 @@ export type TaskOutcome<T> = AiTaskOutcome<T>;
 /** งบหมด → 402, ยังไม่ตั้งค่า AI → 422, provider ล้ม → 502 — ที่เดียวที่แปลง error ของชั้น AI เป็น HTTP */
 export function toHttpAiError(e: unknown): unknown {
   if (e instanceof AiBudgetExceededError) return new HttpException({ statusCode: HttpStatus.PAYMENT_REQUIRED, message: e.message }, HttpStatus.PAYMENT_REQUIRED);
-  if (e instanceof AiNotConfiguredError) return new UnprocessableEntityException(e.message);
+  if (e instanceof AiNotConfiguredError || e instanceof AiConnectionUnavailableError) return new UnprocessableEntityException(e.message);
   if (e instanceof AiProviderError) return new HttpException({ statusCode: HttpStatus.BAD_GATEWAY, message: e.userMessage, provider: e.provider }, HttpStatus.BAD_GATEWAY);
   if (e instanceof HttpException) return e;
   return new HttpException({ statusCode: HttpStatus.BAD_GATEWAY, message: e instanceof Error ? e.message : 'AI ล้มเหลว' }, HttpStatus.BAD_GATEWAY);
@@ -39,7 +39,7 @@ export class AiGatewayService {
   }
 
   /** เลือก provider/model ตามบทบาท (§5) */
-  async resolve(workspaceId: string, role: AiRole, exclude: AiProviderId[] = []): Promise<ResolvedModel> {
+  async resolve(workspaceId: string, role: AiRole, exclude: string[] = []): Promise<ResolvedModel> {
     try { return await resolveModel(this.ctx, workspaceId, role, exclude); } catch (e) { throw toHttpAiError(e); }
   }
 
@@ -64,22 +64,21 @@ export class AiGatewayService {
     return this.run(meta, async cfg => { const r = await runToolLoop(cfg, input); return { result: r, usage: r.usage, model: r.model }; });
   }
 
-  /** ทดสอบ key ของ provider ด้วยคำขอสั้นๆ (ไม่ผ่านการเลือกบทบาท) */
-  async ping(workspaceId: string, provider: AiProviderId, requestId: string, userId: string): Promise<{ ok: boolean; model: string; latencyMs: number; error?: string }> {
-    const cfg = await providerConfig(this.ctx, workspaceId, provider, PROVIDERS[provider].defaultModel);
-    if (!cfg) return { ok: false, model: '', latencyMs: 0, error: 'ยังไม่มี key' };
-    const roleModel = await this.prisma.aiRoleConfig.findFirst({ where: { workspaceId, provider }, select: { model: true } });
-    cfg.model = roleModel?.model || cfg.model;
-    if (!cfg.model) return { ok: false, model: '', latencyMs: 0, error: 'ต้องระบุชื่อโมเดลในบทบาทใดบทบาทหนึ่งก่อน' };
+  /** ทดสอบคีย์ใบหนึ่งด้วยคำขอสั้นๆ (ไม่ผ่านการเลือกบทบาท) */
+  async ping(workspaceId: string, connectionId: string, requestId: string, userId: string): Promise<{ ok: boolean; model: string; latencyMs: number; error?: string }> {
+    let resolved: ResolvedModel;
+    try { resolved = await resolveOverride(this.ctx, workspaceId, 'fast', { connectionId }); }
+    catch { return { ok: false, model: '', latencyMs: 0, error: 'ยังไม่ได้ระบุชื่อโมเดลของคีย์ใบนี้ — ใส่อย่างน้อยหนึ่งชื่อก่อนทดสอบ' }; }
+    const cfg = resolved.cfg; const provider = resolved.provider;
     const t0 = Date.now();
     const meta: TaskMeta = { workspaceId, userId, taskType: 'provider.validate', role: 'fast', requestId };
     try {
       const r = await chat(cfg, { messages: [{ role: 'user', content: 'ตอบคำเดียวว่า OK' }], maxTokens: 20 });
-      await logAiTask(this.prisma, meta, { provider, model: r.model, latencyMs: Date.now() - t0, usage: r.usage, costUsd: estimateCostUsd(r.model, r.usage), success: true, retry: 0 });
+      await logAiTask(this.prisma, meta, { provider, connectionId, model: r.model, latencyMs: Date.now() - t0, usage: r.usage, costUsd: estimateCostUsd(r.model, r.usage), success: true, retry: 0 });
       return { ok: true, model: r.model, latencyMs: Date.now() - t0 };
     } catch (e) {
       const msg = e instanceof AiProviderError ? e.userMessage : (e as Error).message;
-      await logAiTask(this.prisma, meta, { provider, model: cfg.model ?? '', latencyMs: Date.now() - t0, usage: { input: null, output: null }, costUsd: null, success: false, retry: 0, error: msg.slice(0, 500) });
+      await logAiTask(this.prisma, meta, { provider, connectionId, model: cfg.model ?? '', latencyMs: Date.now() - t0, usage: { input: null, output: null }, costUsd: null, success: false, retry: 0, error: msg.slice(0, 500) });
       return { ok: false, model: cfg.model ?? '', latencyMs: Date.now() - t0, error: msg };
     }
   }

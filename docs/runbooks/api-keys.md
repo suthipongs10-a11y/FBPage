@@ -189,7 +189,8 @@ user = อีเมลที่ล็อกอิน, pass = SMTP key (คนล
 ## 7. AI — เตรียมคีย์ผู้ให้บริการที่ต้องการใช้ เช่น Google Gemini
 
 ไม่ต้องแตะ `.env` ก็ได้:
-1. หน้า **โมเดล AI** → ช่อง **Google AI (Gemini)** → วาง API key จาก <https://aistudio.google.com/apikey> → *ทดสอบ*
+1. หน้า **โมเดล AI** → **เพิ่มคีย์** → เลือก *Google Gemini* → ตั้งชื่อที่จำง่าย → วาง API key จาก <https://aistudio.google.com/apikey> → *ทดสอบ*
+   - ใส่ได้หลายใบและหลายเจ้าพร้อมกัน (Claude, OpenAI, Gemini, MiniMax, DeepSeek, Groq, OpenRouter หรือ endpoint แบบ OpenAI ของตัวเอง) แยกกันด้วยชื่อที่ตั้ง แล้วจ่ายงานให้คนละบทบาทได้
 2. ตั้งบทบาทให้โมเดล: `strategy`, `content`, `analysis`, `community`, `fast` (เลือก Gemini รุ่นที่มีสิทธิ์ใช้)
    - บทบาท `community` คือตัวที่ **ตอบคอมเมนต์และแชท Messenger** ใช้ — ไม่ต้องมีคีย์แยกให้แชทอีกแล้ว
 3. หน้า **ตั้งค่า** → ใส่งบ AI ต่อเดือนและเพดานต่องาน — ถึงงบระบบจะหยุดเรียกเอง ครอบคลุมทุกโมดูลรวมแชทและ TikTok

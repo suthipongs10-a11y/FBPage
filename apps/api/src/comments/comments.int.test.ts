@@ -38,8 +38,8 @@ run('comments + leads + notifications (integration)', () => {
     graph.state.validUserTokens.add('USER_OK_LONG_TOKEN_FOR_COMMENTS_TEST');
     const conn = await a.http('POST', `/workspaces/${ws}/facebook/connections/token`, { accessToken: 'USER_OK_LONG_TOKEN_FOR_COMMENTS_TEST' });
     pageA = (await a.http('POST', `/workspaces/${ws}/brands/${brand}/pages/connect`, { connectionId: conn.json.connection.id, facebookPageId: '111' })).json.id;
-    await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { community: { provider: 'compatible', model: 'm-community' }, fast: { provider: 'compatible', model: 'm-fast' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-community', 'm-fast'] })).json.id;
+    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { community: { connectionId: aiConn, model: 'm-community' }, fast: { connectionId: aiConn, model: 'm-fast' } } });
   }, 30_000);
   afterAll(async () => { delete process.env.META_GRAPH_BASE_URL; await prisma.workspace.deleteMany({ where: { id: ws } }); await prisma.user.deleteMany({ where: { email: A.email } }); await prisma.$disconnect(); await app.close(); graph.server.close(); ai.server.close(); hook.close(); });
 

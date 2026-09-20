@@ -192,7 +192,7 @@ model Workspace {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  aiProviderKeys    AiProviderKey[]
+  aiConnections     AiConnection[]
   messengerSettings MessengerSettings?
   messengerUsage    MessengerDailyUsage[]
   aiRoleConfigs     AiRoleConfig[]
@@ -685,40 +685,52 @@ model MessengerMessage {
   @@index([conversationId, occurredAt])
 }
 
-model AiProviderKey {
+/// หนึ่งแถว = หนึ่งคีย์ที่ผู้ใช้ใส่ ตั้งชื่อเองได้ ใส่ชนิดเดียวกันกี่ใบก็ได้
+/// (เช่น compatible สามใบ ชี้ MiniMax / DeepSeek / Groq พร้อมกัน) — CONTENT_ENGINE_PLAN §12.2
+model AiConnection {
   id              String    @id @default(cuid())
   workspaceId     String
-  /// anthropic | openai | gemini | openrouter | compatible
-  provider        String
-  label           String?
+  /// ชื่อที่ผู้ใช้ตั้ง เช่น "Claude หลัก", "MiniMax" — เป็นตัวระบุที่บทบาทชี้ถึง
+  label           String
+  /// ชนิดอะแดปเตอร์: anthropic | openai | gemini | openrouter | compatible
+  kind            String
+  /// preset ที่เลือกตอนสร้าง (minimax | deepseek | groq | ...) — ใช้เติมค่าเริ่มต้นและแสดงผลเท่านั้น
+  preset          String?
   encryptedApiKey String
   /// 4 ตัวท้ายของ key เพื่อให้ผู้ใช้จำได้ว่าใส่ key ไหน
   keyHint         String?
   baseUrl         String?
+  /// โมเดลที่แนะนำของคีย์ใบนี้ ให้ dropdown เลือกได้โดยไม่ต้องพิมพ์
+  models          String[]  @default([])
   status          String    @default("ACTIVE")
   lastValidatedAt DateTime?
   lastError       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  roles     AiRoleConfig[]
 
-  @@unique([workspaceId, provider])
+  @@unique([workspaceId, label])
+  @@index([workspaceId, kind])
 }
 
 /// บทบาท AI → ผู้ให้บริการ/โมเดล (§5, §41)
 model AiRoleConfig {
-  id          String   @id @default(cuid())
-  workspaceId String
-  role        String
-  provider    String
-  model       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  workspaceId  String
+  role         String
+  /// ชี้ไปที่คีย์ใบใดใบหนึ่ง ไม่ใช่ชนิด — จึงแยกสองใบที่ชนิดเดียวกันออกจากกันได้
+  connectionId String
+  model        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connection AiConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, role])
+  @@index([connectionId])
 }
 
 /// รายงานรายเดือน/ช่วง (§34, §64) — สร้างจากข้อมูลที่บันทึกไว้ ไม่รัน AI ซ้ำทุกครั้งที่เปิด
@@ -783,6 +795,8 @@ model AiTaskLog {
   taskType      String
   role          String
   provider      String
+  /// คีย์ใบไหนที่ใช้จริง — สองใบชนิดเดียวกันจึงแยกกันได้ (null = ข้อมูลเก่าก่อนมี AiConnection)
+  connectionId  String?
   model         String
   promptVersion String?
   latencyMs     Int

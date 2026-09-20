@@ -21,9 +21,21 @@ export interface AiTaskContext {
   /** แจ้งเตือนเมื่องบใกล้หมด — ไม่ส่งมาก็ข้ามไป (worker ไม่จำเป็นต้องแจ้ง) */
   notifyBudget?: (workspaceId: string, input: { percent: number; costUsd: number; budgetUsd: number; monthKey: string }) => Promise<void>;
 }
-export interface ResolvedModel { cfg: ProviderConfig; provider: AiProviderId; model: string; role: AiRole; source: 'role' | 'fallback' | 'auto' }
-export interface AiTaskMeta { workspaceId: string; userId?: string | null; taskType: string; role: AiRole; requestId: string; resourceType?: string; resourceId?: string; promptVersion?: string }
-export interface AiTaskOutcome<T> { result: T; provider: AiProviderId; model: string; usage: Usage; costUsd: number | null; latencyMs: number; taskId: string; fallbackUsed: boolean }
+export interface ResolvedModel {
+  cfg: ProviderConfig; provider: AiProviderId; model: string; role: AiRole;
+  /** คีย์ใบไหนที่ถูกเลือก — null เมื่อมาจาก key ระดับแพลตฟอร์มใน env ซึ่งไม่มีแถวใน AiConnection */
+  connectionId: string | null; connectionLabel: string | null;
+  source: 'override' | 'role' | 'fallback' | 'auto';
+}
+/** สั่งใช้คีย์ใบนี้โมเดลนี้เฉพาะครั้งนี้ ข้ามการเลือกตามบทบาท — งบและ log ยังทำงานเหมือนเดิมทุกอย่าง */
+export interface AiModelOverride { connectionId: string; model?: string }
+export interface AiTaskMeta { workspaceId: string; userId?: string | null; taskType: string; role: AiRole; requestId: string; resourceType?: string; resourceId?: string; promptVersion?: string; override?: AiModelOverride | null }
+export interface AiTaskOutcome<T> { result: T; provider: AiProviderId; model: string; usage: Usage; costUsd: number | null; latencyMs: number; taskId: string; connectionId: string | null; fallbackUsed: boolean }
+
+/** ระบุคีย์ที่ override มาไม่ได้ — ถูกลบไปแล้ว ปิดอยู่ หรือเป็นของพื้นที่ทำงานอื่น */
+export class AiConnectionUnavailableError extends Error {
+  constructor(public readonly connectionId: string) { super('คีย์ AI ที่เลือกใช้ไม่ได้แล้ว — เลือกใหม่ที่หน้า "โมเดล AI"'); this.name = 'AiConnectionUnavailableError'; }
+}
 
 /** ยังไม่มี key ของผู้ให้บริการ AI เลย — ผู้ใช้ต้องไปตั้งที่หน้า "โมเดล AI" */
 export class AiNotConfiguredError extends Error {
@@ -42,10 +54,16 @@ const ROLE_FALLBACK_ORDER: Record<AiRole, AiRole[]> = {
   fast: ['fast', 'fallback', 'content'], fallback: ['fallback', 'strategy', 'content'],
 };
 
-/** key ของ provider — จาก BYOK ของ workspace ก่อน ไม่มีจึงใช้ key ระดับแพลตฟอร์มจาก env (§42) */
-export async function providerConfig(ctx: AiTaskContext, workspaceId: string, provider: AiProviderId, model: string): Promise<ProviderConfig | null> {
-  const row = await ctx.prisma.aiProviderKey.findUnique({ where: { workspaceId_provider: { workspaceId, provider } }, select: { encryptedApiKey: true, baseUrl: true, status: true } });
-  if (row && row.status === 'ACTIVE') return { provider, apiKey: row.encryptedApiKey ? decryptSecret(row.encryptedApiKey, ctx.env.AUTH_SECRET) : '', model, baseUrl: row.baseUrl ?? undefined };
+/** คีย์หนึ่งใบที่ถูกเลือกไว้แล้ว → config ที่อะแดปเตอร์ใช้ได้ */
+interface ConnectionRow { id: string; label: string; kind: string; encryptedApiKey: string; baseUrl: string | null }
+const CONNECTION_SELECT = { id: true, label: true, kind: true, encryptedApiKey: true, baseUrl: true } as const;
+
+function configFromConnection(ctx: AiTaskContext, row: ConnectionRow, model: string): ProviderConfig {
+  return { provider: row.kind as AiProviderId, apiKey: row.encryptedApiKey ? decryptSecret(row.encryptedApiKey, ctx.env.AUTH_SECRET) : '', model, baseUrl: row.baseUrl ?? undefined };
+}
+
+/** key ระดับแพลตฟอร์มจาก env — ใช้เมื่อ workspace ยังไม่ได้ใส่คีย์ของตัวเอง (§42) */
+export function platformConfig(ctx: AiTaskContext, provider: AiProviderId, model: string): ProviderConfig | null {
   const platform: Partial<Record<AiProviderId, { key?: string; baseUrl?: string }>> = {
     openai: { key: ctx.env.OPENAI_API_KEY }, anthropic: { key: ctx.env.ANTHROPIC_API_KEY }, gemini: { key: ctx.env.GOOGLE_AI_API_KEY }, openrouter: { key: ctx.env.OPENROUTER_API_KEY },
     compatible: { key: ctx.env.LITELLM_API_KEY, baseUrl: ctx.env.LITELLM_BASE_URL },
@@ -55,21 +73,40 @@ export async function providerConfig(ctx: AiTaskContext, workspaceId: string, pr
   return null;
 }
 
-/** เลือก provider/model ตามบทบาท (§5) — ไม่ตั้งไว้ → fallback → provider แรกที่มี key */
-export async function resolveModel(ctx: AiTaskContext, workspaceId: string, role: AiRole, exclude: AiProviderId[] = []): Promise<ResolvedModel> {
-  const roles = await ctx.prisma.aiRoleConfig.findMany({ where: { workspaceId }, select: { role: true, provider: true, model: true } });
+/** คีย์ใบที่ระบุ — ใช้กับ override ต่อครั้ง ไม่เจอ/ปิดอยู่ = error ไม่เงียบ ๆ ไปใช้ใบอื่น */
+export async function resolveOverride(ctx: AiTaskContext, workspaceId: string, role: AiRole, override: AiModelOverride): Promise<ResolvedModel> {
+  const row = await ctx.prisma.aiConnection.findFirst({ where: { id: override.connectionId, workspaceId, status: 'ACTIVE' }, select: { ...CONNECTION_SELECT, models: true } });
+  if (!row) throw new AiConnectionUnavailableError(override.connectionId);
+  const roleCfg = override.model ? null : await ctx.prisma.aiRoleConfig.findFirst({ where: { workspaceId, connectionId: row.id }, select: { model: true } });
+  const model = override.model || roleCfg?.model || row.models[0] || PROVIDERS[row.kind as AiProviderId]?.defaultModel || '';
+  if (!model) throw new AiConnectionUnavailableError(override.connectionId);
+  return { cfg: configFromConnection(ctx, row, model), provider: row.kind as AiProviderId, model, role, connectionId: row.id, connectionLabel: row.label, source: 'override' };
+}
+
+/**
+ * เลือกคีย์+โมเดลตามบทบาท (§5) — บทบาทชี้ไปที่คีย์ใบหนึ่งโดยตรง
+ * ไม่ได้ตั้งบทบาทนี้ไว้ → ไล่ตามบทบาทสำรอง → คีย์ใบแรกที่ยังเปิดอยู่ → key ระดับแพลตฟอร์มจาก env
+ * `exclude` เป็นรายการ connectionId ที่ลองแล้วล้ม (ใช้ตอน fallback) — key จาก env ใช้ชื่อเทียม `env:<kind>`
+ */
+export async function resolveModel(ctx: AiTaskContext, workspaceId: string, role: AiRole, exclude: string[] = []): Promise<ResolvedModel> {
+  const roles = await ctx.prisma.aiRoleConfig.findMany({ where: { workspaceId }, select: { role: true, model: true, connection: { select: { ...CONNECTION_SELECT, status: true } } } });
   for (const r of ROLE_FALLBACK_ORDER[role]) {
     const c = roles.find(x => x.role === r);
-    if (!c || exclude.includes(c.provider as AiProviderId)) continue;
-    const cfg = await providerConfig(ctx, workspaceId, c.provider as AiProviderId, c.model);
-    if (cfg) return { cfg, provider: cfg.provider, model: c.model, role, source: r === role ? 'role' : 'fallback' };
+    if (!c || c.connection.status !== 'ACTIVE' || exclude.includes(c.connection.id)) continue;
+    return { cfg: configFromConnection(ctx, c.connection, c.model), provider: c.connection.kind as AiProviderId, model: c.model, role, connectionId: c.connection.id, connectionLabel: c.connection.label, source: r === role ? 'role' : 'fallback' };
   }
-  const keys = await ctx.prisma.aiProviderKey.findMany({ where: { workspaceId, status: 'ACTIVE' }, select: { provider: true }, orderBy: { createdAt: 'asc' } });
-  const candidates: AiProviderId[] = [...keys.map(k => k.provider as AiProviderId), 'gemini', 'anthropic', 'openai', 'openrouter', 'compatible'];
-  for (const p of candidates) {
-    if (exclude.includes(p) || !PROVIDERS[p]?.defaultModel && p !== 'compatible') continue;
-    const cfg = await providerConfig(ctx, workspaceId, p, p === 'gemini' ? (ctx.env.GOOGLE_AI_MODEL || PROVIDERS[p].defaultModel) : PROVIDERS[p].defaultModel);
-    if (cfg && (cfg.model || p !== 'compatible')) return { cfg, provider: p, model: cfg.model ?? '', role, source: 'auto' };
+  const connections = await ctx.prisma.aiConnection.findMany({ where: { workspaceId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' }, select: { ...CONNECTION_SELECT, models: true } });
+  for (const row of connections) {
+    if (exclude.includes(row.id)) continue;
+    const model = row.models[0] || PROVIDERS[row.kind as AiProviderId]?.defaultModel || '';
+    if (!model) continue;   // compatible ที่ไม่ได้ระบุโมเดลไว้เลย เดาชื่อโมเดลเองไม่ได้
+    return { cfg: configFromConnection(ctx, row, model), provider: row.kind as AiProviderId, model, role, connectionId: row.id, connectionLabel: row.label, source: 'auto' };
+  }
+  for (const p of ['gemini', 'anthropic', 'openai', 'openrouter', 'compatible'] as AiProviderId[]) {
+    if (exclude.includes(`env:${p}`)) continue;
+    const model = p === 'gemini' ? (ctx.env.GOOGLE_AI_MODEL || PROVIDERS[p].defaultModel) : PROVIDERS[p].defaultModel;
+    const cfg = platformConfig(ctx, p, model);
+    if (cfg?.model) return { cfg, provider: p, model: cfg.model, role, connectionId: null, connectionLabel: null, source: 'auto' };
   }
   throw new AiNotConfiguredError();
 }
@@ -94,10 +131,10 @@ export async function assertBudget(ctx: AiTaskContext, workspaceId: string): Pro
 }
 
 /** บันทึก AiTaskLog หนึ่งแถว — ทุกคำขอ AI ต้องผ่านตรงนี้ ไม่ว่าจะสำเร็จหรือล้ม (§50) */
-export function logAiTask(prisma: PrismaClient, meta: AiTaskMeta, r: { provider: string; model: string; latencyMs: number; usage: Usage; costUsd: number | null; success: boolean; retry: number; error?: string }): Promise<{ id: string }> {
+export function logAiTask(prisma: PrismaClient, meta: AiTaskMeta, r: { provider: string; model: string; connectionId?: string | null; latencyMs: number; usage: Usage; costUsd: number | null; success: boolean; retry: number; error?: string }): Promise<{ id: string }> {
   return prisma.aiTaskLog.create({
     data: {
-      workspaceId: meta.workspaceId, taskType: meta.taskType, role: meta.role, provider: r.provider, model: r.model, promptVersion: meta.promptVersion ?? null,
+      workspaceId: meta.workspaceId, taskType: meta.taskType, role: meta.role, provider: r.provider, connectionId: r.connectionId ?? null, model: r.model, promptVersion: meta.promptVersion ?? null,
       latencyMs: r.latencyMs, inputTokens: r.usage.input, outputTokens: r.usage.output, estimatedCost: r.costUsd, success: r.success, retry: r.retry,
       resourceType: meta.resourceType ?? null, resourceId: meta.resourceId ?? null, requestId: meta.requestId, error: r.error ?? null,
     }, select: { id: true },
@@ -116,22 +153,26 @@ async function markPerTaskCap(prisma: PrismaClient, workspaceId: string, costUsd
 /** รัน task หนึ่งครั้งพร้อม log — provider ล้มแบบ retryable จะลอง provider อื่น 1 ครั้ง */
 export async function runAiTask<T>(ctx: AiTaskContext, meta: AiTaskMeta, fn: (cfg: ProviderConfig, resolved: ResolvedModel) => Promise<{ result: T; usage: Usage; model?: string }>): Promise<AiTaskOutcome<T>> {
   await assertBudget(ctx, meta.workspaceId);
-  const tried: AiProviderId[] = []; let lastErr: unknown; let retry = 0;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // override = ผู้ใช้เลือกเองครั้งนี้ ใช้ใบนั้นใบเดียว ไม่เงียบ ๆ เปลี่ยนไปใบอื่นให้
+  const attempts = meta.override ? 1 : 2;
+  const tried: string[] = []; let lastErr: unknown; let retry = 0;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     let resolved: ResolvedModel;
-    try { resolved = await resolveModel(ctx, meta.workspaceId, meta.role, tried); } catch (e) { if (attempt === 0) throw e; break; }
-    tried.push(resolved.provider);
+    try {
+      resolved = meta.override ? await resolveOverride(ctx, meta.workspaceId, meta.role, meta.override) : await resolveModel(ctx, meta.workspaceId, meta.role, tried);
+    } catch (e) { if (attempt === 0) throw e; break; }
+    tried.push(resolved.connectionId ?? `env:${resolved.provider}`);
     const t0 = Date.now();
     try {
       const out = await fn(resolved.cfg, resolved);
       const model = out.model ?? resolved.model; const costUsd = estimateCostUsd(model, out.usage);
-      const log = await logAiTask(ctx.prisma, meta, { provider: resolved.provider, model, latencyMs: Date.now() - t0, usage: out.usage, costUsd, success: true, retry });
+      const log = await logAiTask(ctx.prisma, meta, { provider: resolved.provider, connectionId: resolved.connectionId, model, latencyMs: Date.now() - t0, usage: out.usage, costUsd, success: true, retry });
       await markPerTaskCap(ctx.prisma, meta.workspaceId, costUsd);
-      return { result: out.result, provider: resolved.provider, model, usage: out.usage, costUsd, latencyMs: Date.now() - t0, taskId: log.id, fallbackUsed: attempt > 0 };
+      return { result: out.result, provider: resolved.provider, model, usage: out.usage, costUsd, latencyMs: Date.now() - t0, taskId: log.id, connectionId: resolved.connectionId, fallbackUsed: attempt > 0 };
     } catch (e) {
       lastErr = e;
       const msg = e instanceof AiProviderError ? e.userMessage : e instanceof Error ? e.message : String(e);
-      await logAiTask(ctx.prisma, meta, { provider: resolved.provider, model: resolved.model, latencyMs: Date.now() - t0, usage: { input: null, output: null }, costUsd: null, success: false, retry, error: msg.slice(0, 500) });
+      await logAiTask(ctx.prisma, meta, { provider: resolved.provider, connectionId: resolved.connectionId, model: resolved.model, latencyMs: Date.now() - t0, usage: { input: null, output: null }, costUsd: null, success: false, retry, error: msg.slice(0, 500) });
       if (!(e instanceof AiProviderError) || !e.isRetryable) break;
       retry++;
     }

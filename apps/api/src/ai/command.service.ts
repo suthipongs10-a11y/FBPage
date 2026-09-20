@@ -58,7 +58,7 @@ export class CommandService {
     ].join('\n');
     const messages: AiMessage[] = [...(dto.history as AiMessage[]), { role: 'user', content: dto.message }];
     const steps: ToolStep[] = [];
-    const out = await this.ai.toolLoop({ workspaceId, userId, taskType: 'ai.command', role: dto.role, requestId, promptVersion: COMMAND_PROMPT_VERSION, resourceType: ctx.pageId ? 'facebookPage' : ctx.brandId ? 'brand' : undefined, resourceId: ctx.pageId ?? ctx.brandId }, {
+    const out = await this.ai.toolLoop({ workspaceId, userId, taskType: 'ai.command', role: dto.role, requestId, promptVersion: COMMAND_PROMPT_VERSION, override: dto.modelOverride ?? null, resourceType: ctx.pageId ? 'facebookPage' : ctx.brandId ? 'brand' : undefined, resourceId: ctx.pageId ?? ctx.brandId }, {
       system, messages, tools: toToolDefs(usable), maxRounds: 8,
       onStep: s => steps.push(s),
       exec: async call => {

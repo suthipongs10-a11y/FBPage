@@ -174,8 +174,8 @@ run('content lifecycle + publish (integration)', () => {
   });
 
   it('strategist plan → PLANNED items; content agent fills a draft with missingInfo flagged; reviewer gates submit', async () => {
-    await a.http('PUT', `/workspaces/${wsA}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { strategy: { provider: 'compatible', model: 'm-strategy' }, content: { provider: 'compatible', model: 'm-content' }, fast: { provider: 'compatible', model: 'm-fast' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-content', 'm-fast', 'm-strategy'] })).json.id;
+    await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { strategy: { connectionId: aiConn, model: 'm-strategy' }, content: { connectionId: aiConn, model: 'm-content' }, fast: { connectionId: aiConn, model: 'm-fast' } } });
     ai.state.replies.push({ text: JSON.stringify({ objective: 'เพิ่มการทัก', contentPillars: ['ความรู้', 'โปร'], recommendedMix: { ความรู้: 0.6, โปร: 0.4 }, rationale: 'r', dataLimitations: [], items: [{ dayOffset: 0, contentType: 'post', pillar: 'ความรู้', title: 'ทำไมต้องจัดงานบุญ', objective: 'ให้ความรู้', hook: 'รู้ไหมว่า…', cta: 'ทักแชท' }, { dayOffset: 3, contentType: 'photo', pillar: 'โปร', title: 'แพ็กเกจ', objective: 'ขาย', hook: 'จัดครบ', cta: 'ทักแชท' }] }) });
     const p = await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/content/plan`, { days: 7, postsPerWeek: 2 });
     expect(p.status, p.text).toBe(200); expect(p.json.items).toHaveLength(2); expect(p.json.items[0].status).toBe('PLANNED'); expect(p.json.model).toBe('m-strategy');

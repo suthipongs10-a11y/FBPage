@@ -1,18 +1,35 @@
 import { z } from 'zod';
-import { AI_PROVIDERS } from '@fbpm/ai-core';
 import { AI_ROLES } from '@fbpm/shared';
 
-export const providerParam = z.enum(AI_PROVIDERS);
-export const upsertProviderKeySchema = z.object({
-  apiKey: z.string().trim().min(8, 'API key สั้นเกินไป').max(4000).optional(),
-  baseUrl: z.string().trim().url('Base URL ไม่ถูกต้อง').max(300).optional().or(z.literal('')),
-  label: z.string().trim().max(120).optional(),
-});
-export type UpsertProviderKeyDto = z.infer<typeof upsertProviderKeySchema>;
+const modelName = z.string().trim().min(1).max(120);
+const baseUrlField = z.string().trim().url('Base URL ไม่ถูกต้อง').max(300).or(z.literal(''));
 
-const roleConfig = z.object({ provider: z.enum(AI_PROVIDERS), model: z.string().trim().min(1).max(120) });
+export const createConnectionSchema = z.object({
+  /** id ของ preset จาก PROVIDER_PRESETS เช่น anthropic | openai | gemini | openrouter | minimax | custom */
+  preset: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1, 'ตั้งชื่อคีย์ให้จำง่าย').max(120),
+  apiKey: z.string().trim().min(8, 'API key สั้นเกินไป').max(4000),
+  baseUrl: baseUrlField.optional(),
+  models: z.array(modelName).max(30).optional(),
+}).strict();
+export type CreateConnectionDto = z.infer<typeof createConnectionSchema>;
+
+export const updateConnectionSchema = z.object({
+  label: z.string().trim().min(1).max(120).optional(),
+  apiKey: z.string().trim().min(8, 'API key สั้นเกินไป').max(4000).optional(),
+  baseUrl: baseUrlField.optional(),
+  models: z.array(modelName).max(30).optional(),
+  status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+}).strict();
+export type UpdateConnectionDto = z.infer<typeof updateConnectionSchema>;
+
+const roleConfig = z.object({ connectionId: z.string().trim().min(1), model: modelName });
 export const putRolesSchema = z.object({ roles: z.partialRecord(z.enum(AI_ROLES), roleConfig.nullable()) });
 export type PutRolesDto = z.infer<typeof putRolesSchema>;
+
+/** เลือกคีย์+โมเดลเฉพาะคำขอครั้งนี้ — ใช้ร่วมกับ body ของงานที่เรียก AI */
+export const modelOverrideSchema = z.object({ connectionId: z.string().trim().min(1), model: modelName.optional() });
+export type ModelOverrideDto = z.infer<typeof modelOverrideSchema>;
 
 export const aiMessageSchema = z.union([
   z.object({ role: z.literal('user'), content: z.string().max(20000) }),
@@ -27,6 +44,8 @@ export const commandSchema = z.object({
     days: z.coerce.number().int().min(1).max(365).default(30),
   }).default({ days: 30 }),
   role: z.enum(AI_ROLES).default('strategy'),
+  /** เลือกคีย์+โมเดลเฉพาะครั้งนี้ ข้ามการเลือกตามบทบาท (งบและ log ยังทำงานเหมือนเดิม) */
+  modelOverride: modelOverrideSchema.optional(),
 });
 export type CommandDto = z.infer<typeof commandSchema>;
 

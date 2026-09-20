@@ -35,8 +35,8 @@ run('web content → WordPress (integration)', () => {
     const c = await a.http('POST', `/workspaces/${ws}/clients`, { name: 'ฟ้าแดง' });
     brand = (await a.http('POST', `/workspaces/${ws}/clients/${c.json.id}/brands`, { name: 'ฟ้าแดง คลีนนิ่ง', industry: 'บริการทำความสะอาด', serviceArea: 'ภูเก็ต', primaryCTA: 'ทักแชท', preferredLanguage: 'th' })).json.id;
     await a.http('POST', `/workspaces/${ws}/brands/${brand}/knowledge`, { type: 'service', title: 'แม่บ้านรายวัน', content: 'บริการแม่บ้านรายวัน ทีมงานอบรมแล้ว ครอบคลุมทั้งภูเก็ต' });
-    await a.http('PUT', `/workspaces/${ws}/ai/providers/compatible`, { apiKey: 'MOCK_KEY', baseUrl: ai.url });
-    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { content: { provider: 'compatible', model: 'm-content' }, fast: { provider: 'compatible', model: 'm-fast' } } });
+    const aiConn = (await a.http('POST', `/workspaces/${ws}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-content', 'm-fast'] })).json.id;
+    await a.http('PUT', `/workspaces/${ws}/ai/roles`, { roles: { content: { connectionId: aiConn, model: 'm-content' }, fast: { connectionId: aiConn, model: 'm-fast' } } });
     siteId = (await a.http('POST', `/workspaces/${ws}/web/sites`, { brandId: brand, url: web.siteUrl, platform: 'WORDPRESS' })).json.id;
     await a.http('PATCH', `/workspaces/${ws}/web/sites/${siteId}`, { monitorEnabled: false });   // เทสต์นี้สนใจการโพสต์บทความ ไม่ให้ worker ของเทสต์อื่นหยิบไปตรวจ
     // คลิป YouTube ต้นทาง (สร้างตรงใน DB — ช่องของแบรนด์เดียวกัน)

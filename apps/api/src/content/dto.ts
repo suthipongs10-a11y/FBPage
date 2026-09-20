@@ -31,7 +31,11 @@ export type ScheduleDto = z.infer<typeof scheduleSchema>;
 export const planSchema = z.object({ days: z.coerce.number().int().min(3).max(31).default(7), postsPerWeek: z.coerce.number().int().min(1).max(14).default(3), objective: opt(300), notes: opt(1000) }).optional();
 export type PlanDto = z.infer<typeof planSchema>;
 
-export const generateSchema = z.object({ brief: opt(1500), pillar: opt(120), objective: opt(300), count: z.coerce.number().int().min(1).max(5).default(1) }).optional();
+export const generateSchema = z.object({
+  brief: opt(1500), pillar: opt(120), objective: opt(300), count: z.coerce.number().int().min(1).max(5).default(1),
+  /** เลือกคีย์+โมเดลเฉพาะครั้งนี้ — ไม่ส่งมา = ใช้บทบาท content ตามที่ตั้งไว้ */
+  modelOverride: z.object({ connectionId: z.string().trim().min(1), model: z.string().trim().min(1).max(120).optional() }).optional(),
+}).optional();
 export type GenerateDto = z.infer<typeof generateSchema>;
 
 export const calendarSchema = z.object({ from: z.string().optional(), to: z.string().optional(), pageId: z.string().optional() });

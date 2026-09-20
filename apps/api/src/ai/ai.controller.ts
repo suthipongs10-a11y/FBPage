@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ZodPipe } from '../common/zod.pipe';
 import { CurrentUser, RequestId, Tenant, type AuthUser, type TenantContext } from '../common/request-context';
@@ -8,8 +8,7 @@ import { RequirePermission } from '../workspaces/permissions';
 import { AiSettingsService } from './settings.service';
 import { CommandService } from './command.service';
 import { AnalystService } from './analyst.service';
-import { analyzeSchema, commandSchema, providerParam, putRolesSchema, tasksQuerySchema, upsertProviderKeySchema, type AnalyzeDto, type CommandDto, type PutRolesDto, type TasksQueryDto, type UpsertProviderKeyDto } from './dto';
-import type { AiProviderId } from '@fbpm/ai-core';
+import { analyzeSchema, commandSchema, createConnectionSchema, putRolesSchema, tasksQuerySchema, updateConnectionSchema, type AnalyzeDto, type CommandDto, type CreateConnectionDto, type PutRolesDto, type TasksQueryDto, type UpdateConnectionDto } from './dto';
 
 @ApiTags('ai')
 @Controller('workspaces/:workspaceId')
@@ -18,19 +17,24 @@ export class AiController {
   constructor(@Inject(AiSettingsService) private readonly settings: AiSettingsService, @Inject(CommandService) private readonly cmd: CommandService, @Inject(AnalystService) private readonly analyst: AnalystService) {}
 
   // ---------- ตั้งค่า (§41, §42) ----------
-  @Get('ai/providers') @RequirePermission('ai.use')
-  providers(@Tenant() t: TenantContext) { return this.settings.providers(t.workspaceId); }
+  @Get('ai/connections') @RequirePermission('ai.use')
+  connections(@Tenant() t: TenantContext) { return this.settings.connections(t.workspaceId); }
 
-  @Put('ai/providers/:provider') @RequirePermission('ai.configure')
-  upsertKey(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('provider', new ZodPipe(providerParam)) p: AiProviderId, @Body(new ZodPipe(upsertProviderKeySchema)) dto: UpsertProviderKeyDto, @RequestId() rid: string) {
-    return this.settings.upsertKey(t.workspaceId, u.id, p, dto, rid);
+  @Post('ai/connections') @HttpCode(201) @RequirePermission('ai.configure')
+  createConnection(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(createConnectionSchema)) dto: CreateConnectionDto, @RequestId() rid: string) {
+    return this.settings.createConnection(t.workspaceId, u.id, dto, rid);
   }
 
-  @Delete('ai/providers/:provider') @RequirePermission('ai.configure')
-  removeKey(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('provider', new ZodPipe(providerParam)) p: AiProviderId, @RequestId() rid: string) { return this.settings.removeKey(t.workspaceId, u.id, p, rid); }
+  @Patch('ai/connections/:id') @RequirePermission('ai.configure')
+  updateConnection(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(updateConnectionSchema)) dto: UpdateConnectionDto, @RequestId() rid: string) {
+    return this.settings.updateConnection(t.workspaceId, u.id, id, dto, rid);
+  }
 
-  @Post('ai/providers/:provider/validate') @HttpCode(200) @RequirePermission('ai.configure')
-  validateKey(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('provider', new ZodPipe(providerParam)) p: AiProviderId, @RequestId() rid: string) { return this.settings.validateKey(t.workspaceId, u.id, p, rid); }
+  @Delete('ai/connections/:id') @RequirePermission('ai.configure')
+  removeConnection(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.settings.removeConnection(t.workspaceId, u.id, id, rid); }
+
+  @Post('ai/connections/:id/validate') @HttpCode(200) @RequirePermission('ai.configure')
+  validateConnection(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.settings.validateConnection(t.workspaceId, u.id, id, rid); }
 
   @Get('ai/roles') @RequirePermission('ai.use')
   roles(@Tenant() t: TenantContext) { return this.settings.roles(t.workspaceId); }

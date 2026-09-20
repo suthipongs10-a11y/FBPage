@@ -51,14 +51,14 @@ run('Messenger automatic replies (real DB/queue, local Meta/AI fixtures)', () =>
     expect((await a('PATCH', path(`/pages/${pageId}`), { ...config, enabled: true })).status).toBe(422);
   });
   it('uses the workspace AI key and never stores or exposes a key of its own', async () => {
-    await db.aiProviderKey.create({ data: { workspaceId: ws, provider: 'openai', encryptedApiKey: encryptSecret('WORKSPACE_AI_KEY', secret), baseUrl: `${mock.url}/v1` } });
-    await db.aiRoleConfig.create({ data: { workspaceId: ws, role: 'community', provider: 'openai', model: 'mock-chat' } });
+    const conn = await db.aiConnection.create({ data: { workspaceId: ws, label: 'Mock OpenAI', kind: 'openai', preset: 'openai', encryptedApiKey: encryptSecret('WORKSPACE_AI_KEY', secret), keyHint: '_KEY', baseUrl: `${mock.url}/v1`, models: ['mock-chat'] } });
+    await db.aiRoleConfig.create({ data: { workspaceId: ws, role: 'community', connectionId: conn.id, model: 'mock-chat' } });
     const r = await a('PATCH', path('/settings'), { dailyLimit: 100 }); expect(r.status).toBe(200);
     expect(JSON.stringify(r.json)).not.toContain('WORKSPACE_AI_KEY');
     expect(r.json.ai).toMatchObject({ provider: 'openai', model: 'mock-chat' });
     const row = await db.messengerSettings.findUniqueOrThrow({ where: { workspaceId: ws } });
     expect(Object.keys(row)).not.toContain('encryptedApiKey');
-    expect(decryptSecret((await db.aiProviderKey.findFirstOrThrow({ where: { workspaceId: ws } })).encryptedApiKey!, secret)).toBe('WORKSPACE_AI_KEY');
+    expect(decryptSecret((await db.aiConnection.findFirstOrThrow({ where: { workspaceId: ws } })).encryptedApiKey, secret)).toBe('WORKSPACE_AI_KEY');
     expect(JSON.stringify(await db.auditLog.findMany({ where: { workspaceId: ws } }))).not.toContain('WORKSPACE_AI_KEY');
   });
   it('enforces workspace isolation, permissions and input validation', async () => {
@@ -192,7 +192,7 @@ run('Messenger automatic replies (real DB/queue, local Meta/AI fixtures)', () =>
   });
   it('stops answering and refuses to be enabled once the workspace AI key is gone', async () => {
     await db.messengerPageConfig.update({ where: { pageId }, data: { enabled: false, revision: { increment: 1 } } });
-    await db.aiProviderKey.deleteMany({ where: { workspaceId: ws } });
+    await db.aiConnection.deleteMany({ where: { workspaceId: ws } });
     expect((await a('GET', path('/settings'))).json.ai).toBeNull();
     const calls = mock.state.aiCalls.length;
     expect((await a('POST', path(`/pages/${pageId}/preview`), { text: 'ราคาเท่าไหร่คะ' })).status).toBe(502);

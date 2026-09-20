@@ -1,6 +1,6 @@
 # Content Engine — สร้างคอนเทนต์ชุดเดียว ลงทุกแพลตฟอร์ม พร้อมระบบค้นคว้าและกันโพสต์ซ้ำ
 
-> สถานะ: **ออกแบบ รอเริ่มทำ** · ต่อยอดจาก Phase 6 (Content loop), Phase 9 (YouTube Content Lab), Phase 11 (W-3 บทความ), Phase 12 (TikTok)
+> สถานะ: **P-1 ทำแล้ว · ที่เหลือรอเริ่ม** · ต่อยอดจาก Phase 6 (Content loop), Phase 9 (YouTube Content Lab), Phase 11 (W-3 บทความ), Phase 12 (TikTok)
 > กฎทั้งหมดใน [`AGENTS.md`](../AGENTS.md) และ [`CLAUDE.md`](../CLAUDE.md) ยังบังคับใช้เต็มที่ — เอกสารนี้ไม่ยกเว้นข้อใดเลย
 
 ---
@@ -680,7 +680,7 @@ runAiTask(ctx, { ...meta, override: { connectionId, model } }, fn)
 
 | เฟส | ได้อะไร | DoD |
 |---|---|---|
-| **P-1** ข้อความหลายเจ้า | `AiConnection` + migration จากของเดิม + แคตตาล็อก preset + `AiRoleConfig.connectionId` + override ต่อครั้ง + หน้าตั้งค่าใหม่ | int test: ใส่ `compatible` 2 ใบพร้อมกันได้ · บทบาท `research` ชี้คนละใบกับ `content` ได้ · override ต่อครั้งเข้า `AiTaskLog` ถูกตัว · ของเดิมที่ตั้งไว้ไม่หาย |
+| **P-1** ข้อความหลายเจ้า | ✅ **ทำแล้ว** — `AiConnection` + migration จากของเดิม + แคตตาล็อก preset + `AiRoleConfig.connectionId` + override ต่อครั้ง (`modelOverride` ที่ `/ai/command` และ content generate) + หน้าตั้งค่าใหม่ | ผ่านครบ: ใส่ `compatible` 2 ใบพร้อมกันได้ · บทบาท `research` ชี้คนละใบกับ `content` ได้ · override เข้า `AiTaskLog.connectionId` ถูกตัว และคีย์ที่ปิด/ไม่มีอยู่ถูกปฏิเสธแทนที่จะเงียบ ๆ ใช้ใบอื่น · ทดสอบ replay migration กับข้อมูลรูปแบบเดิมแล้วคีย์/บทบาทไม่หาย |
 | **P-2** สร้างรูป | `@fbpm/media-core` + `MediaConnection`/`MediaModelConfig`/`MediaJob` + คิว + อะแดปเตอร์รูปเจ้าแรก + ปุ่มสร้างรูปในหน้าคอนเทนต์ | int test กับ mock ล้วน: ส่งงาน → poll → ได้ `MediaAsset(aiGenerated)` · ยิงซ้ำ key เดิมไม่สร้างงานใหม่ · ไม่กรอกราคา → `costUsd` เป็น null |
 | **P-3** สร้างคลิป | อะแดปเตอร์วิดีโอ (KIE / WaveSpeed) + poll ยาว + timeout + ผูกกับ TikTok/Shorts/Reel + บังคับฟิลด์นโยบาย | E2E: สั่งสร้างคลิป → ได้ไฟล์ → แนบกับ ContentItem → อนุมัติไม่ผ่านถ้ายังไม่ตอบฟิลด์นโยบาย |
 | **P-4** เทียบก่อนเลือก | ปุ่มลองหลายตัว + หน้าเทียบผลและราคา + ตั้งเป็นค่าเริ่มต้น | int test: ยิง 2 ตัว ได้ 2 ผล คิดเงินทั้งคู่ |
