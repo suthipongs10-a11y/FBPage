@@ -1,0 +1,24 @@
+{
+  "name": "@fbpm/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prisma schema, migrations and typed client for the multi-tenant data model",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "studio": "prisma studio",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"(no unit tests — schema is exercised by apps/api health + integration tests)\""
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3"
+  },
+  "devDependencies": {
+    "prisma": "6.19.3",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@fbpm/youtube-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "YouTubeService / YouTubeAnalyticsService — Google OAuth, Data API v3, Analytics API, quota, metric adapter, mock (AGENTS_YOUTUBE.md §18–22)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run" },
+  "dependencies": { "@fbpm/database": "workspace:*", "@fbpm/shared": "workspace:*" },
+  "devDependencies": { "@types/node": "22.20.1", "typescript": "5.9.3", "vitest": "5.0.0" }
+}

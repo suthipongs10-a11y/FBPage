@@ -1,0 +1,31 @@
+{
+  "name": "@fbpm/worker-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BullMQ worker — scheduled publishing, sync, maintenance queues (AGENTS.md §46–48)",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fbpm/messenger-core": "workspace:*",
+    "@fbpm/tiktok-core": "workspace:*",
+    "@fbpm/database": "workspace:*",
+    "@fbpm/email-core": "workspace:*",
+    "@fbpm/facebook-core": "workspace:*",
+    "@fbpm/shared": "workspace:*",
+    "@fbpm/web-core": "workspace:*",
+    "@fbpm/youtube-core": "workspace:*",
+    "bullmq": "6.3.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

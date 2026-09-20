@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node fb-pages.mjs:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./pages.json)",
+      "Read(./.claude/settings.local.json)",
+      "Bash(cat pages.json:*)",
+      "Bash(cat .env:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}

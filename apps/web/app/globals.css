@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/*
+ * ธีมสว่าง (light) ทั้งแอป — โค้ดหน้าต่างๆ เขียนด้วยสเกล slate แบบ "มืด" (bg-slate-900 = การ์ด, text-slate-200 = ตัวอักษร)
+ * จึงกำหนดค่าใหม่ให้สเกล slate กลับด้าน: เลขสูง = พื้นสว่าง, เลขต่ำ = หมึกเข้ม และปรับสีสถานะ (emerald/amber/rose/sky)
+ * ให้พื้นเป็นโทนอ่อนและตัวอักษรเข้มพอสำหรับ contrast บนพื้นขาว — เปลี่ยนธีมได้ที่ไฟล์นี้ไฟล์เดียว
+ */
+@theme {
+  --color-slate-950: #f4f7fb;   /* พื้นหน้า */
+  --color-slate-900: #ffffff;   /* การ์ด */
+  --color-slate-800: #e8edf5;   /* เส้นขอบ / hover */
+  --color-slate-700: #d3dbe7;   /* เส้นขอบ input */
+  --color-slate-600: #8a97ab;   /* ข้อความจางสุด */
+  --color-slate-500: #6b7a90;
+  --color-slate-400: #55657c;   /* ข้อความรอง */
+  --color-slate-300: #3b4a60;
+  --color-slate-200: #1f2a3c;   /* ข้อความหลัก */
+  --color-slate-100: #0f172a;
+
+  --color-sky-700: #93c5fd;     /* ขอบเน้น (วันนี้ในปฏิทิน) */
+  --color-sky-600: #1d4ed8;
+  --color-sky-500: #2563eb;     /* ปุ่มหลัก (ตัวอักษรขาว) */
+  --color-sky-400: #1d4ed8;     /* ลิงก์ */
+  --color-sky-300: #1e40af;
+
+  --color-emerald-950: #ecfdf5; --color-emerald-900: #a7f3d0; --color-emerald-400: #059669; --color-emerald-300: #047857; --color-emerald-200: #065f46;
+  --color-amber-950: #fffbeb;   --color-amber-900: #fde68a;   --color-amber-400: #d97706;   --color-amber-300: #b45309;   --color-amber-200: #92400e;
+  --color-rose-950: #fff1f2;    --color-rose-900: #fecdd3;    --color-rose-400: #e11d48;    --color-rose-300: #be123c;    --color-rose-200: #9f1239;    --color-rose-700: #fda4af;
+}
+
+:root {
+  color-scheme: light;
+}
+body {
+  @apply bg-slate-950 text-slate-200 antialiased;
+  background-image: radial-gradient(1200px 600px at 10% -10%, rgba(37, 99, 235, 0.08), transparent 60%), radial-gradient(900px 500px at 110% 0%, rgba(219, 39, 119, 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+/* การ์ดให้มีเงานุ่มแบบ dashboard สว่าง */
+section.rounded-xl, div.rounded-xl.border {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.12);
+}
+/* หัวข้อ gradient */
+.brand-gradient { background-image: linear-gradient(90deg, #2563eb, #7c3aed 55%, #db2777); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.accent-stripe { position: relative; overflow: hidden; }
+.accent-stripe::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--accent, #2563eb); }
