@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fbpm/messenger-core": "workspace:*",
+    "@fbpm/tiktok-core": "workspace:*",
     "@fbpm/database": "workspace:*",
     "@fbpm/email-core": "workspace:*",
     "@fbpm/facebook-core": "workspace:*",

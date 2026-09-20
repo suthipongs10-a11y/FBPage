@@ -32,7 +32,7 @@ export async function publishBlockReason(prisma: PrismaClient, contentId: string
 export async function publishContent(d: SyncDeps, contentId: string, _opts: { requestId: string; scheduledPublish?: boolean } = { requestId: 'n/a' }): Promise<PublishOutcome> {
   const blocked = await publishBlockReason(d.prisma, contentId);
   if (blocked) return { status: 'SKIPPED', reason: blocked };
-  const c0 = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, pageId: true, caption: true, hashtags: true, mediaPaths: true, status: true, retryCount: true, publishedPostId: true, externalPostId: true, scheduledAt: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
+  const c0 = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, updatedAt: true, pageId: true, caption: true, hashtags: true, mediaPaths: true, status: true, retryCount: true, publishedPostId: true, externalPostId: true, scheduledAt: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
   if (!c0.pageId || !c0.page) return { status: 'SKIPPED', reason: 'ไม่ได้ผูกกับเพจ Facebook' };
   const c = { ...c0, pageId: c0.pageId, page: c0.page };
   const workspaceId = c.page.brand.client.workspaceId;
@@ -44,28 +44,28 @@ export async function publishContent(d: SyncDeps, contentId: string, _opts: { re
   // §48: เคยสร้างโพสต์ไปแล้ว → ไม่ยิงซ้ำ แค่ปิดสถานะให้ตรง
   const existingOp = await d.prisma.externalOperation.findUnique({ where: { idempotencyKey } });
   if (existingOp?.externalId) return finalize(d, c.id, c.pageId, existingOp.externalId, message, true);
-  if (existingOp && existingOp.requestHash !== requestHash && existingOp.status === 'PENDING') {
-    await d.prisma.externalOperation.update({ where: { id: existingOp.id }, data: { requestHash, status: 'PENDING', error: null } });
-  }
-  const op = existingOp ?? await d.prisma.externalOperation.create({ data: { workspaceId, provider: 'facebook', operationType: 'publish-post', idempotencyKey, requestHash, status: 'PENDING' } });
-  await d.prisma.contentItem.update({ where: { id: c.id }, data: { status: 'PUBLISHING', lastError: null } });
-
+  // Legacy PENDING and interrupted claims are ambiguous. Never guess ownership
+  // from matching captions and never issue a second write without reconciliation.
+  if (existingOp) return { status: 'SKIPPED', reason: 'RECONCILIATION_REQUIRED: ตรวจผลที่ Facebook ก่อนส่งอีกครั้ง' };
   const { facebookPageId, token } = await loadPageToken(d, c.pageId);
+  const op = await d.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${idempotencyKey}))::text`;
+    if (await tx.externalOperation.findUnique({ where: { idempotencyKey } })) return null;
+    // CAS also rejects edits made after this invocation read the approved draft.
+    const claimed = await tx.contentItem.updateMany({ where: { id: c.id, updatedAt: c.updatedAt, status: { in: ['APPROVED', 'SCHEDULED', 'PUBLISH_FAILED'] } }, data: { status: 'PUBLISHING', lastError: null } });
+    if (!claimed.count) return null;
+    return tx.externalOperation.create({ data: { workspaceId, provider: 'facebook', operationType: 'publish-post', idempotencyKey, requestHash, status: 'IN_FLIGHT' } });
+  });
+  if (!op) return { status: 'SKIPPED', reason: 'มีคำขอเผยแพร่อยู่แล้ว หรือเนื้อหาถูกแก้ไข' };
   try {
-    // ถ้ารอบก่อนอาจส่งถึง Facebook แล้วแต่เราไม่ได้รับ id (เครือข่ายหลุด) → ค้นโพสต์ที่ข้อความตรงกันใน 15 นาทีล่าสุดก่อน
-    if (existingOp && c.retryCount > 0) {
-      const { posts } = await d.fb.getPosts(facebookPageId, token, { since: new Date(Date.now() - 15 * 60_000), limit: 20 });
-      const dup = posts.find(p => (p.message ?? '').trim() === message);
-      if (dup) { await d.prisma.externalOperation.update({ where: { id: op.id }, data: { externalId: dup.id, status: 'SUCCEEDED' } }); return finalize(d, c.id, c.pageId, dup.id, message, true); }
-    }
     const photos: PhotoPostInput['photos'] = c.mediaPaths.map(p => (/^https?:\/\//.test(p) ? { url: p } : p));
     const r = photos.length ? await d.fb.createPhotoPost(facebookPageId, token, { message, photos }) : await d.fb.createPost(facebookPageId, token, { message });
     await d.prisma.externalOperation.update({ where: { id: op.id }, data: { externalId: r.externalId, status: 'SUCCEEDED', error: null } });
     return finalize(d, c.id, c.pageId, r.externalId, message, false);
   } catch (e) {
-    const err = e instanceof FacebookApiError ? e.userMessage : e instanceof Error ? e.message : String(e);
-    const retryable = e instanceof FacebookApiError ? e.isRateLimited || e.httpStatus === 0 || e.httpStatus >= 500 : true;
-    await d.prisma.externalOperation.update({ where: { id: op.id }, data: { status: retryable ? 'PENDING' : 'FAILED', error: err.slice(0, 500) } });
+    const err = e instanceof FacebookApiError && (e.isTokenError || e.isPermissionError) ? e.userMessage : 'RECONCILIATION_REQUIRED: ไม่ยืนยันผลการส่ง กรุณาตรวจสอบที่ Facebook';
+    const retryable = false;
+    await d.prisma.externalOperation.updateMany({ where: { id: op.id, externalId: null }, data: { status: 'UNKNOWN', error: err } });
     await d.prisma.contentItem.update({ where: { id: c.id }, data: { status: 'PUBLISH_FAILED', retryCount: { increment: 1 }, lastError: err.slice(0, 500) } });
     if (e instanceof FacebookApiError && e.isTokenError) await d.prisma.facebookPage.update({ where: { id: c.pageId }, data: { tokenStatus: 'INVALID' } });
     return { status: 'FAILED', error: err, retryable };

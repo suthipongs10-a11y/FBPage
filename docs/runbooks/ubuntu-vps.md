@@ -1,5 +1,7 @@
 # Runbook — Deploy บน Ubuntu VPS (Docker Compose + Caddy)
 
+> **SUPERSEDED 2026-09-14 — ห้ามทำตามคำสั่งติดตั้งด้านล่างโดยตรง:** ใช้ [VPS_MIGRATION_PLAN.md](../VPS_MIGRATION_PLAN.md) และตรวจเครื่องด้วย `deploy/preflight.sh` ก่อน ต้องผ่านการซ้อม restore และอนุมัติสุดท้ายจากเจ้าของ Migration ไม่รันตอน API เริ่มแล้ว; worker ต้องเปิด profile แยก ส่วนที่เหลือเก็บเป็นประวัติเท่านั้น
+
 ## เตรียมเครื่อง (Ubuntu 22.04/24.04)
 ```bash
 sudo apt update && sudo apt install -y ca-certificates curl git

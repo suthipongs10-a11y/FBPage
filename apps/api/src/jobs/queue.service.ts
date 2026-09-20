@@ -7,23 +7,25 @@ import { Queue } from 'bullmq';
 import { EMAIL_JOBS, EMAIL_QUEUES, JOBS, QUEUES, WEB_JOBS, WEB_QUEUES, YT_QUEUES, emailSendJobId, publishJobId, webPublishJobId, ytUploadJobId } from '@fbpm/shared';
 import { ENV, type Env } from '../config/env';
 
-function connectionFromUrl(url: string) {
+export function connectionFromUrl(url: string) {
   const u = new URL(url); const db = u.pathname && u.pathname !== '/' ? Number(u.pathname.slice(1)) : undefined;
   return { host: u.hostname, port: Number(u.port) || 6379, ...(u.password && { password: decodeURIComponent(u.password) }), ...(Number.isFinite(db) && { db }), ...(u.protocol === 'rediss:' && { tls: {} }) };
 }
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
-  readonly publish: Queue; readonly sync: Queue; readonly analytics: Queue;
+  readonly tiktok: Queue; readonly publish: Queue; readonly sync: Queue; readonly analytics: Queue;
   readonly ytUpload: Queue; readonly ytSync: Queue; readonly ytAnalytics: Queue; readonly ytComments: Queue;
   readonly webPublish: Queue; readonly emailSend: Queue;
   constructor(@Inject(ENV) env: Env) {
     const connection = connectionFromUrl(env.REDIS_URL);
     const mk = (name: string) => new Queue(name, { connection, defaultJobOptions: { removeOnComplete: 500, removeOnFail: 1000 } });
-    this.publish = mk(QUEUES.facebookPublish); this.sync = mk(QUEUES.facebookSync); this.analytics = mk(QUEUES.analytics);
+    this.tiktok = mk('tiktok'); this.publish = mk(QUEUES.facebookPublish); this.sync = mk(QUEUES.facebookSync); this.analytics = mk(QUEUES.analytics);
     this.ytUpload = mk(YT_QUEUES.upload); this.ytSync = mk(YT_QUEUES.sync); this.ytAnalytics = mk(YT_QUEUES.analytics); this.ytComments = mk(YT_QUEUES.comments);
     this.webPublish = mk(WEB_QUEUES.publish); this.emailSend = mk(EMAIL_QUEUES.send);
   }
+
+  scheduleTikTok(workspaceId: string, contentId: string, runAt: Date, requestId: string) { return this.replaceDelayed(this.tiktok, `tiktok-${contentId}`, 'upload', { workspaceId, contentId, requestId }, runAt, 120_000); }
 
   // ---------- งานตั้งเวลาแบบทั่วไป (W-3 WordPress / W-4 อีเมล) — jobId ต่อทรัพยากร กันซ้ำ ----------
   private async replaceDelayed(queue: Queue, jobId: string, name: string, data: Record<string, unknown>, runAt: Date | undefined, backoffMs: number): Promise<string> {
@@ -121,5 +123,5 @@ export class QueueService implements OnModuleDestroy {
     await this.ytComments.add(JOBS.ytSyncComments, { channelId, requestId }, { jobId: `ytcomments-${channelId}-${Math.floor(Date.now() / 60_000)}`, attempts: 2 });
   }
 
-  async onModuleDestroy(): Promise<void> { await Promise.all([this.publish, this.sync, this.analytics, this.ytUpload, this.ytSync, this.ytAnalytics, this.ytComments, this.webPublish, this.emailSend].map((q) => q.close())); }
+  async onModuleDestroy(): Promise<void> { await Promise.all([this.tiktok, this.publish, this.sync, this.analytics, this.ytUpload, this.ytSync, this.ytAnalytics, this.ytComments, this.webPublish, this.emailSend].map((q) => q.close())); }
 }

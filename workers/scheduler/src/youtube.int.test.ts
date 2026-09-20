@@ -7,6 +7,7 @@ import { Queue, type Job } from 'bullmq';
 import { PrismaClient, encryptSecret } from '@fbpm/database';
 import { startMockYouTube } from '@fbpm/youtube-core';
 import { JOBS, YT_QUEUES } from '@fbpm/shared';
+import { redisConnectionFromUrl } from './queues';
 
 const HAS_DB = !!process.env.DATABASE_URL && !!process.env.REDIS_URL;
 const run = HAS_DB ? describe : describe.skip;
@@ -20,7 +21,7 @@ run('worker youtube + maintenance jobs', () => {
     yt = await startMockYouTube();
     Object.assign(process.env, { YOUTUBE_MOCK_BASE_URL: yt.url, GOOGLE_CLIENT_ID: 'gclient', GOOGLE_CLIENT_SECRET: 'gsecret', GOOGLE_OAUTH_REDIRECT_URI: 'http://127.0.0.1:4000/youtube/oauth/callback', YOUTUBE_API_KEY: 'APIKEY_OK', YOUTUBE_UPLOAD_ENABLED: 'true', AUTH_SECRET: SECRET, MEDIA_DIR: mkdtempSync(join(tmpdir(), 'yt-worker-')) });
     mod = await import('./main'); prisma = new PrismaClient();
-    const u = new URL(process.env.REDIS_URL!); const connection = { host: u.hostname, port: Number(u.port) || 6379 };
+    const connection = redisConnectionFromUrl(process.env.REDIS_URL!);
     uploadQ = new Queue(YT_QUEUES.upload, { connection }); analyticsQ = new Queue(YT_QUEUES.analytics, { connection }); syncQ = new Queue(YT_QUEUES.sync, { connection });
     const user = await prisma.user.create({ data: { email: `ytworker-${Date.now()}@test.local`, name: 'W', passwordHash: 'x' } }); userId = user.id;
     const w = await prisma.workspace.create({ data: { name: 'W', slug: `ytw-${Date.now()}` } }); ws = w.id;
@@ -32,7 +33,7 @@ run('worker youtube + maintenance jobs', () => {
     const asset = await prisma.mediaAsset.create({ data: { workspaceId: ws, kind: 'video', path, mimeType: 'video/mp4', bytes: 512 * 1024 } });
     const c = await prisma.contentItem.create({ data: { platform: 'YOUTUBE', youtubeChannelId: channelId, status: 'APPROVED', ytStatus: 'UPLOAD_PENDING', title: 'คลิปทดสอบ', createdById: userId, youtubeMeta: { create: { title: 'ยูเรียใส่กี่กิโล', description: 'd', tags: ['ปุ๋ย'], privacyStatus: 'private', madeForKids: false, videoAssetId: asset.id } } } }); contentId = c.id;
     const st = await prisma.contentItem.create({ data: { platform: 'YOUTUBE', youtubeChannelId: channelId, status: 'PUBLISHING', ytStatus: 'UPLOADING', title: 'ค้าง', createdById: userId, youtubeMeta: { create: { title: 'ค้าง', madeForKids: false } } } }); staleId = st.id;
-    await prisma.$executeRawUnsafe(`UPDATE "ContentItem" SET "updatedAt" = NOW() - INTERVAL '10 hours' WHERE id = $1`, staleId);
+    await prisma.contentItem.update({ where: { id: staleId }, data: { updatedAt: new Date(Date.now() - 10 * 3_600_000) } });
   }, 30_000);
   afterAll(async () => {
     for (const q of [uploadQ, analyticsQ, syncQ]) { await q.drain(true).catch(() => undefined); await q.close(); }
@@ -88,9 +89,9 @@ run('worker youtube + maintenance jobs', () => {
     const tc = await mod.maintenance.tokenCheck(); expect(tc.googleError).toBeGreaterThanOrEqual(1);
     expect(await prisma.notification.findFirst({ where: { workspaceId: ws, type: 'reconnect_required', resourceId: connId } })).not.toBeNull();
     await prisma.googleConnection.update({ where: { id: connId }, data: { status: 'ACTIVE' } });
-    const auditBefore = await prisma.auditLog.count(); const snapsBefore = await prisma.youTubeVideoMetricSnapshot.count({ where: { video: { channelId } } });
+    const auditBefore = await prisma.auditLog.count({ where: { workspaceId: ws } }); const snapsBefore = await prisma.youTubeVideoMetricSnapshot.count({ where: { video: { channelId } } });
     await prisma.notification.create({ data: { workspaceId: ws, type: 'info', title: 'old', readAt: new Date(Date.now() - 200 * 86_400_000) } });
     const cl = await mod.maintenance.cleanup(); expect(cl.notifications).toBeGreaterThanOrEqual(1);
-    expect(await prisma.auditLog.count()).toBe(auditBefore); expect(await prisma.youTubeVideoMetricSnapshot.count({ where: { video: { channelId } } })).toBe(snapsBefore);
+    expect(await prisma.auditLog.count({ where: { workspaceId: ws } })).toBe(auditBefore); expect(await prisma.youTubeVideoMetricSnapshot.count({ where: { video: { channelId } } })).toBe(snapsBefore);
   });
 });

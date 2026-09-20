@@ -1,6 +1,11 @@
 # secrets — never commit
 .env
 .env.*
+!.env.example
+*.log
+build/
+.local-tools/
+.local-data/
 pages.json
 .claude/settings.local.json
 

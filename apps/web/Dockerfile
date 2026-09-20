@@ -11,7 +11,7 @@ RUN pnpm install --frozen-lockfile --filter @fbpm/web...
 
 FROM deps AS build
 ARG NEXT_PUBLIC_API_URL=/api
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1 API_URL=http://api:4000
 COPY packages/shared packages/shared
 COPY apps/web apps/web
 RUN pnpm --filter @fbpm/shared build && pnpm --filter @fbpm/web build

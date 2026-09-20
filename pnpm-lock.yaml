@@ -41,9 +41,15 @@ importers:
       '@fbpm/facebook-core':
         specifier: workspace:*
         version: link:../../packages/facebook-core
+      '@fbpm/messenger-core':
+        specifier: workspace:*
+        version: link:../../packages/messenger-core
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@fbpm/tiktok-core':
+        specifier: workspace:*
+        version: link:../../packages/tiktok-core
       '@fbpm/web-core':
         specifier: workspace:*
         version: link:../../packages/web-core
@@ -198,8 +204,49 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
 
+  packages/messenger-core:
+    dependencies:
+      '@fbpm/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
+      '@fbpm/database':
+        specifier: workspace:*
+        version: link:../database
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+
   packages/shared:
     devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+
+  packages/tiktok-core:
+    dependencies:
+      '@fbpm/database':
+        specifier: workspace:*
+        version: link:../database
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -259,9 +306,15 @@ importers:
       '@fbpm/facebook-core':
         specifier: workspace:*
         version: link:../../packages/facebook-core
+      '@fbpm/messenger-core':
+        specifier: workspace:*
+        version: link:../../packages/messenger-core
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@fbpm/tiktok-core':
+        specifier: workspace:*
+        version: link:../../packages/tiktok-core
       '@fbpm/web-core':
         specifier: workspace:*
         version: link:../../packages/web-core

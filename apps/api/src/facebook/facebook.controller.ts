@@ -32,7 +32,7 @@ export class FacebookController {
   revoke(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('connectionId') id: string, @RequestId() rid: string) { return this.conns.revoke(t.workspaceId, u.id, id, rid); }
 
   @Get('facebook/oauth/start') @RequirePermission('page.connect')
-  oauthStart(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser) { return this.conns.oauthStartUrl(t.workspaceId, u.id); }
+  oauthStart(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Query('messenger') messenger?: string) { return this.conns.oauthStartUrl(t.workspaceId, u.id, messenger === 'true'); }
 
   // ---------- เพจ ----------
   @Post('brands/:brandId/pages/connect') @RequirePermission('page.connect')

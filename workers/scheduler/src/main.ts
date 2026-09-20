@@ -1,3 +1,6 @@
+import { TikTokClient, type TikTokDeps } from '@fbpm/tiktok-core';
+import { handleTikTok, registerTikTok } from './tiktok';
+import { buildMessengerDeps, handleMessenger, MESSENGER_QUEUE } from './messenger';
 /**
  * Scheduler / Publisher / Metric collector worker (§46, §47, §48)
  * - facebook-publish: เผยแพร่ ContentItem ตามเวลา (idempotent ผ่าน ExternalOperation, ตรวจ kill switch ทุกครั้ง)
@@ -108,14 +111,20 @@ export async function handleWebhook(job: Job<SocialEvent>): Promise<unknown> {
 }
 
 const ack = async (job: Job): Promise<{ acknowledged: true }> => { log('job received (no processor yet)', { queue: job.queueName, name: job.name, id: job.id }); return { acknowledged: true }; };
+const tiktokDeps: TikTokDeps = { prisma, secret: AUTH_SECRET, publishingEnabled: process.env.SOCIAL_PUBLISHING_ENABLED === 'true', mediaPrefixes: (process.env.TIKTOK_VERIFIED_MEDIA_PREFIXES || '').split(',').filter(Boolean), client: new TikTokClient({ clientKey: process.env.TIKTOK_CLIENT_KEY, clientSecret: process.env.TIKTOK_CLIENT_SECRET, redirectUri: process.env.TIKTOK_REDIRECT_URI, mockBaseUrl: process.env.TIKTOK_MOCK_BASE_URL || undefined, testMode: process.env.APP_ENV === 'test' }) };
+const tiktokQueue = new Queue('tiktok', { connection });
+const messengerQueue = new Queue(MESSENGER_QUEUE, { connection });
+const messengerDeps = buildMessengerDeps(prisma, AUTH_SECRET);
 const processors: Record<string, (job: Job) => Promise<unknown>> = {
+  [MESSENGER_QUEUE]: job => handleMessenger(messengerDeps, messengerQueue, job),
+  tiktok: job => handleTikTok(tiktokDeps, job),
   [QUEUES.facebookPublish]: handlePublish, [QUEUES.facebookSync]: handleSync, [QUEUES.analytics]: handleAnalytics, [QUEUES.facebookWebhook]: handleWebhook as (job: Job) => Promise<unknown>,
   [QUEUES.maintenance]: maintenance.handle, [YT_QUEUES.maintenance]: maintenance.handle,
   [WEB_QUEUES.monitor]: web.handleMonitor as (job: Job) => Promise<unknown>, [WEB_QUEUES.daily]: web.handleDaily as (job: Job) => Promise<unknown>, [WEB_QUEUES.publish]: web.handlePublish as (job: Job) => Promise<unknown>,
   [EMAIL_QUEUES.send]: email.handleSend as (job: Job) => Promise<unknown>,
   [YT_QUEUES.upload]: yt.handleUpload as (job: Job) => Promise<unknown>, [YT_QUEUES.sync]: yt.handleSync as (job: Job) => Promise<unknown>, [YT_QUEUES.analytics]: yt.handleAnalytics as (job: Job) => Promise<unknown>, [YT_QUEUES.comments]: yt.handleComments as (job: Job) => Promise<unknown>,
 };
-const ALL_QUEUES = [...Object.values(QUEUES), ...Object.values(YT_QUEUES), ...Object.values(WEB_QUEUES), ...Object.values(EMAIL_QUEUES)];
+const ALL_QUEUES = [MESSENGER_QUEUE, 'tiktok', ...Object.values(QUEUES), ...Object.values(YT_QUEUES), ...Object.values(WEB_QUEUES), ...Object.values(EMAIL_QUEUES)];
 
 async function main(): Promise<void> {
   const workers = ALL_QUEUES.map(name => {
@@ -126,6 +135,8 @@ async function main(): Promise<void> {
   });
   // งานรอบ: ซิงก์ทุกเพจทุก 6 ชั่วโมง (retry-safe — แค่เพิ่ม snapshot)
   await syncQueue.upsertJobScheduler('sync-all-pages-6h', { every: 6 * 3_600_000 }, { name: JOBS.syncAllPages, data: {} });
+  await registerTikTok(tiktokQueue);
+  await messengerQueue.upsertJobScheduler('messenger-recover', { every: 60_000 }, { name: 'recover', data: {} });
   await registerYtSchedulers(ytQueues.sync);
   await registerMaintenanceSchedulers(maintenanceQueue, ytMaintenanceQueue);
   await registerWebSchedulers(webQueues.monitor, webQueues.daily);

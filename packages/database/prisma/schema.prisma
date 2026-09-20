@@ -22,28 +22,28 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions    Session[]
-  memberships WorkspaceMember[]
-  connections FacebookConnection[]
-  googleConnections GoogleConnection[]
-  auditLogs   AuditLog[]
-  approvalsRequested ApprovalRequest[] @relation("ApprovalRequestedBy")
-  approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewedBy")
+  sessions           Session[]
+  memberships        WorkspaceMember[]
+  connections        FacebookConnection[]
+  googleConnections  GoogleConnection[]
+  auditLogs          AuditLog[]
+  approvalsRequested ApprovalRequest[]    @relation("ApprovalRequestedBy")
+  approvalsReviewed  ApprovalRequest[]    @relation("ApprovalReviewedBy")
   passwordResets     PasswordReset[]
 }
 
 /// ลิงก์เชิญเข้า workspace (ไม่ต้องมีอีเมล — owner คัดลอกลิงก์ส่งเอง) token เก็บเป็น sha256
 model WorkspaceInvite {
-  id           String    @id @default(cuid())
+  id           String        @id @default(cuid())
   workspaceId  String
   email        String?
   role         WorkspaceRole
-  tokenHash    String    @unique
+  tokenHash    String        @unique
   invitedById  String
   expiresAt    DateTime
   acceptedAt   DateTime?
   acceptedById String?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime      @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -123,36 +123,36 @@ model PageComment {
 
 /// ลีดที่ตรวจพบ (§24) — ห้ามแต่งข้อมูลติดต่อ ค่าที่ไม่รู้เป็น null
 model Lead {
-  id            String    @id @default(cuid())
-  workspaceId   String
-  pageId        String?
-  commentId     String?   @unique
-  youtubeCommentId String? @unique
-  source        String    @default("comment")
+  id               String   @id @default(cuid())
+  workspaceId      String
+  pageId           String?
+  commentId        String?  @unique
+  youtubeCommentId String?  @unique
+  source           String   @default("comment")
   /// FACEBOOK | YOUTUBE (AGENTS_YOUTUBE.md §112)
-  sourcePlatform String   @default("FACEBOOK")
-  name          String?
-  intent        String?
-  product       String?
-  service       String?
-  quantity      String?
-  requestedDate String?
-  location      String?
-  budget        String?
-  phone         String?
-  urgency       String?
-  leadScore     Int
-  confidence    Float
+  sourcePlatform   String   @default("FACEBOOK")
+  name             String?
+  intent           String?
+  product          String?
+  service          String?
+  quantity         String?
+  requestedDate    String?
+  location         String?
+  budget           String?
+  phone            String?
+  urgency          String?
+  leadScore        Int
+  confidence       Float
   /// NEW | CONTACTED | QUALIFIED | WON | LOST | SPAM
-  status        String    @default("NEW")
-  notes         String?
-  data          Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  status           String   @default("NEW")
+  notes            String?
+  data             Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  page      FacebookPage? @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  comment   PageComment? @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  page           FacebookPage?   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  comment        PageComment?    @relation(fields: [commentId], references: [id], onDelete: SetNull)
   youtubeComment YouTubeComment? @relation(fields: [youtubeCommentId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, status, createdAt])
@@ -175,39 +175,41 @@ model Session {
 }
 
 model Workspace {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  plan      String   @default("internal")
-  status    String   @default("ACTIVE")
-  timezone  String   @default("Asia/Bangkok") // ค่าเริ่มต้นเท่านั้น — เพจ/ลูกค้า override ได้ (§87)
+  id                     String   @id @default(cuid())
+  name                   String
+  slug                   String   @unique
+  plan                   String   @default("internal")
+  status                 String   @default("ACTIVE")
+  timezone               String   @default("Asia/Bangkok") // ค่าเริ่มต้นเท่านั้น — เพจ/ลูกค้า override ได้ (§87)
   /// สวิตช์ฉุกเฉิน — หยุดอัตโนมัติทั้ง workspace โดยไม่ต้องพึ่ง AI (§92)
-  automationPaused Boolean @default(false)
+  automationPaused       Boolean  @default(false)
   /// งบ AI ต่อเดือน (USD) และเพดานต่อ task (§41) — null = ไม่จำกัด
-  aiMonthlyBudgetUsd   Decimal? @db.Decimal(12, 4)
-  aiMaxCostPerTaskUsd  Decimal? @db.Decimal(12, 4)
+  aiMonthlyBudgetUsd     Decimal? @db.Decimal(12, 4)
+  aiMaxCostPerTaskUsd    Decimal? @db.Decimal(12, 4)
   /// ปลายทางแจ้งเตือนภายนอก (§65) — URL เข้ารหัส เพราะมักมี token อยู่ในตัว (Discord/LINE/Slack webhook)
   notifyWebhookEncrypted String?
   notifyWebhookHint      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  aiProviderKeys AiProviderKey[]
-  aiRoleConfigs  AiRoleConfig[]
-  notifications  Notification[]
-  invites        WorkspaceInvite[]
-  leads          Lead[]
+  aiProviderKeys    AiProviderKey[]
+  messengerSettings MessengerSettings?
+  messengerUsage    MessengerDailyUsage[]
+  aiRoleConfigs     AiRoleConfig[]
+  notifications     Notification[]
+  invites           WorkspaceInvite[]
+  leads             Lead[]
   googleConnections GoogleConnection[]
-  youtubeApiUsage YouTubeApiUsage[]
-  members     WorkspaceMember[]
-  clients     Client[]
-  connections FacebookConnection[]
-  approvals   ApprovalRequest[]
-  auditLogs   AuditLog[]
-  aiTaskLogs  AiTaskLog[]
-  externalOps ExternalOperation[]
-  emailProvider EmailProviderAccount?
-  emailCampaigns EmailCampaign[]
+  youtubeApiUsage   YouTubeApiUsage[]
+  members           WorkspaceMember[]
+  clients           Client[]
+  connections       FacebookConnection[]
+  approvals         ApprovalRequest[]
+  auditLogs         AuditLog[]
+  aiTaskLogs        AiTaskLog[]
+  externalOps       ExternalOperation[]
+  emailProvider     EmailProviderAccount?
+  emailCampaigns    EmailCampaign[]
 }
 
 enum WorkspaceRole {
@@ -225,8 +227,8 @@ model WorkspaceMember {
   userId      String
   role        WorkspaceRole
   /// สิทธิ์เพิ่ม/ลดจากค่าเริ่มต้นของบทบาท (ตรวจด้วย permission ไม่ใช่ชื่อบทบาท §58)
-  permissions String[] @default([])
-  createdAt   DateTime @default(now())
+  permissions String[]      @default([])
+  createdAt   DateTime      @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -270,30 +272,32 @@ model Brand {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  client    Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  sites     Site[]
-  knowledge BrandKnowledgeItem[]
-  pages     FacebookPage[]
+  client          Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sites           Site[]
+  knowledge       BrandKnowledgeItem[]
+  pages           FacebookPage[]
   youtubeChannels YouTubeChannel[]
-  topics    Topic[]
-  insights  BrandInsight[]
+  tiktokAccounts  TikTokAccount[]
+  tiktokDrafts    ContentItem[] @relation("TikTokDraftBrand")
+  topics          Topic[]
+  insights        BrandInsight[]
+  emailLists      EmailList[]
 
   @@index([clientId])
-  emailLists EmailList[]
 }
 
 model BrandKnowledgeItem {
-  id       String  @id @default(cuid())
-  brandId  String
+  id        String   @id @default(cuid())
+  brandId   String
   /// business_info | product | service | faq | price | location | policy | brand_voice | prohibited_claim | customer_persona | past_campaign
-  type     String
-  title    String
-  content  String
-  source   String?
-  metadata Json?
+  type      String
+  title     String
+  content   String
+  source    String?
+  metadata  Json?
   /// embedding เก็บเป็น float[] ก่อน — เปลี่ยนเป็น pgvector เมื่อต้องค้นหาเชิงความหมาย (§6)
-  embedding Float[] @default([])
-  active   Boolean  @default(true)
+  embedding Float[]  @default([])
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -333,7 +337,7 @@ enum AutomationLevel {
 }
 
 model FacebookPage {
-  id                       String    @id @default(cuid())
+  id                       String          @id @default(cuid())
   brandId                  String
   connectionId             String
   facebookPageId           String
@@ -346,23 +350,23 @@ model FacebookPage {
   /// ข้อมูลเพจล่าสุดจาก Graph (about, phone, hours …) สำหรับคะแนนความสมบูรณ์ — ไม่มี token
   profile                  Json?
   pageAccessTokenEncrypted String
-  tokenStatus              String    @default("VALID")
+  tokenStatus              String          @default("VALID")
   lastValidatedAt          DateTime?
   lastSyncError            String?
   /// UNKNOWN | OK | NO_PERMISSION | ERROR — ผลซิงก์คอมเมนต์ล่าสุด (§23)
-  commentsStatus           String    @default("UNKNOWN")
+  commentsStatus           String          @default("UNKNOWN")
   commentsSyncedAt         DateTime?
   /// สิทธิ์บนเพจจาก me/accounts.tasks เช่น CREATE_CONTENT, MANAGE — ไม่มี MANAGE = แก้ตั้งค่าเพจไม่ได้ (ADR-001)
-  tasks                    String[]  @default([])
+  tasks                    String[]        @default([])
   automationLevel          AutomationLevel @default(APPROVAL_REQUIRED)
   /// สวิตช์ฉุกเฉินระดับเพจ (§92)
-  publishingPaused         Boolean   @default(false)
+  publishingPaused         Boolean         @default(false)
   timezone                 String?
-  connectedAt              DateTime  @default(now())
+  connectedAt              DateTime        @default(now())
   lastSyncedAt             DateTime?
   disconnectedAt           DateTime?
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
   brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
   connection FacebookConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
@@ -372,6 +376,8 @@ model FacebookPage {
   plans      ContentPlan[]
   reports    Report[]
   comments   PageComment[]
+  messengerConfig MessengerPageConfig?
+  conversations MessengerConversation[]
   leads      Lead[]
 
   @@unique([brandId, facebookPageId])
@@ -435,60 +441,65 @@ enum ContentStatus {
 }
 
 model ContentItem {
-  id             String        @id @default(cuid())
+  id               String        @id @default(cuid())
   /// FACEBOOK | YOUTUBE | WEB (AGENTS_YOUTUBE.md §24, AGENTS_WEB.md W-3)
-  platform       String        @default("FACEBOOK")
-  pageId         String?
+  platform         String        @default("FACEBOOK")
+  pageId           String?
   youtubeChannelId String?
-  siteId         String?
-  status         ContentStatus @default(DRAFT)
+  tiktokAccountId  String?
+  tiktokBrandId    String?
+  siteId           String?
+  status           ContentStatus @default(DRAFT)
   /// สถานะละเอียดของ YouTube (§26) — status หลักยังใช้ ContentStatus ร่วมกันสำหรับคิวอนุมัติ/ปฏิทิน
-  ytStatus       String?
-  contentType    String        @default("post")
-  title          String?
-  caption        String?
-  cta            String?
-  hashtags       String[]      @default([])
-  mediaBrief     String?
-  mediaPaths     String[]      @default([])
-  objective      String?
-  contentPillar  String?
+  ytStatus         String?
+  contentType      String        @default("post")
+  title            String?
+  caption          String?
+  cta              String?
+  hashtags         String[]      @default([])
+  mediaBrief       String?
+  mediaPaths       String[]      @default([])
+  objective        String?
+  contentPillar    String?
   /// เวลาที่ตั้งใจในเขตเวลาของเพจ + เขตเวลา + เวลาที่แปลงเป็น UTC แล้ว (§47)
-  scheduledLocal String?
-  scheduledTz    String?
-  scheduledAt    DateTime?
-  retryCount     Int           @default(0)
-  createdById    String?
-  aiProvider     String?
-  aiModel        String?
-  promptVersion  String?
-  editedByHuman  Boolean       @default(false)
-  publishedPostId String?      @unique
+  scheduledLocal   String?
+  scheduledTz      String?
+  scheduledAt      DateTime?
+  retryCount       Int           @default(0)
+  createdById      String?
+  aiProvider       String?
+  aiModel          String?
+  promptVersion    String?
+  editedByHuman    Boolean       @default(false)
+  publishedPostId  String?       @unique
   /// id โพสต์บน Facebook หลังเผยแพร่ (เก็บซ้ำกับ FacebookPost เพื่อกันซ้ำตาม §48)
-  externalPostId String?
-  publishedAt    DateTime?
-  planId         String?
+  externalPostId   String?
+  publishedAt      DateTime?
+  planId           String?
   /// บันทึกจาก agent: ข้อมูลที่ขาด (NEEDS_HUMAN_INPUT §54), เหตุผล, hook ฯลฯ
-  aiNotes        Json?
+  aiNotes          Json?
   /// ผล Reviewer (§25): { result: PASS|NEEDS_REVISION|BLOCKED, issues[] }
-  reviewResult   Json?
-  lastError      String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  reviewResult     Json?
+  lastError        String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
-  page          FacebookPage?     @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  youtubeChannel YouTubeChannel?  @relation(fields: [youtubeChannelId], references: [id], onDelete: Cascade)
-  site          Site?             @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  webMeta       WebContentMetadata?
+  page           FacebookPage?            @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  youtubeChannel YouTubeChannel?          @relation(fields: [youtubeChannelId], references: [id], onDelete: Cascade)
+  tiktokAccount  TikTokAccount?           @relation(fields: [tiktokAccountId], references: [id], onDelete: Restrict)
+  tiktokMeta     TikTokContentMetadata?
+  tiktokBrand    Brand? @relation("TikTokDraftBrand", fields: [tiktokBrandId], references: [id], onDelete: Restrict)
+  site           Site?                    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  webMeta        WebContentMetadata?
   emailCampaigns EmailCampaign[]
-  publishedPost FacebookPost?     @relation(fields: [publishedPostId], references: [id])
-  plan          ContentPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
-  revisions     ContentRevision[]
-  approvals     ApprovalRequest[]
-  youtubeMeta   YouTubeContentMetadata?
-  uploadOps     YouTubeUploadOperation[]
-  relationsFrom ContentRelation[] @relation("RelationParent")
-  relationsTo   ContentRelation[] @relation("RelationChild")
+  publishedPost  FacebookPost?            @relation(fields: [publishedPostId], references: [id])
+  plan           ContentPlan?             @relation(fields: [planId], references: [id], onDelete: SetNull)
+  revisions      ContentRevision[]
+  approvals      ApprovalRequest[]
+  youtubeMeta    YouTubeContentMetadata?
+  uploadOps      YouTubeUploadOperation[]
+  relationsFrom  ContentRelation[]        @relation("RelationParent")
+  relationsTo    ContentRelation[]        @relation("RelationChild")
 
   @@index([pageId, status])
   @@index([scheduledAt])
@@ -600,6 +611,83 @@ model AuditLog {
 
 // ---------- AI task log (§50, §51) ----------
 /// BYOK (§42) — key ของผู้ให้บริการ AI ต่อ workspace เข้ารหัสด้วย AUTH_SECRET ห้าม log/ส่งไปหน้าเว็บ
+// Messenger uses a dedicated credential, never the content/provider fallback keys.
+model MessengerSettings {
+  workspaceId String @id
+  encryptedApiKey String
+  keyHint String
+  model String
+  dailyLimit Int @default(500)
+  validatedAt DateTime?
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model MessengerDailyUsage {
+  workspaceId String
+  day String
+  requests Int @default(0)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@id([workspaceId, day])
+}
+
+model MessengerPageConfig {
+  pageId String @id
+  enabled Boolean @default(false)
+  enabledAt DateTime?
+  instructions String @default("")
+  fallbackMessage String @default("ได้รับข้อความแล้วค่ะ ขณะนี้ยังตรวจสอบคำตอบให้ไม่ได้ กรุณาฝากรายละเอียดเพิ่มเติม ทีมงานจะเข้ามาดูแลต่อค่ะ")
+  subscribedAt DateTime?
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt
+  page FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model MessengerConversation {
+  id String @id @default(cuid())
+  pageId String
+  psid String
+  mode String @default("AUTO")
+  latestInboundId String?
+  lastCustomerAt DateTime?
+  needsAttention Boolean @default(false)
+  lastError String?
+  revision Int @default(1)
+  leaseToken String?
+  leaseUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  page FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages MessengerMessage[]
+  @@unique([pageId, psid])
+  @@index([pageId, updatedAt])
+}
+
+model MessengerMessage {
+  id String @id @default(cuid())
+  conversationId String
+  externalId String
+  direction String
+  text String
+  unsupported Boolean @default(false)
+  occurredAt DateTime
+  // PENDING -> GENERATING -> SENDING -> SENT / FAILED / UNKNOWN; terminal rows never auto-retry.
+  status String @default("PENDING")
+  replyText String?
+  replyAction String?
+  replyMessageId String?
+  error String?
+  processingAt DateTime?
+  sentAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  conversation MessengerConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@unique([conversationId, externalId])
+  @@index([status, updatedAt])
+  @@index([conversationId, occurredAt])
+}
+
 model AiProviderKey {
   id              String    @id @default(cuid())
   workspaceId     String
@@ -751,12 +839,12 @@ model GoogleConnection {
 
 /// ช่องที่เชื่อมกับแบรนด์ (§11) — accessMode PUBLIC_API_KEY (อ่านข้อมูลสาธารณะ) หรือ OAUTH (เจ้าของช่อง: analytics/อัปโหลด/ตอบ)
 model YouTubeChannel {
-  id                 String    @id @default(cuid())
+  id                 String          @id @default(cuid())
   brandId            String
   googleConnectionId String?
   youtubeChannelId   String
   /// PUBLIC_API_KEY | OAUTH
-  accessMode         String    @default("PUBLIC_API_KEY")
+  accessMode         String          @default("PUBLIC_API_KEY")
   title              String
   customUrl          String?
   description        String?
@@ -771,34 +859,34 @@ model YouTubeChannel {
   timezone           String?
   /// 1 ANALYZE_ONLY | 2 CONTENT_DRAFT | 3 APPROVAL_PUBLISHING | 4 FULL_AUTO (§135) — เก็บเป็น AutomationLevel เดิม
   automationLevel    AutomationLevel @default(APPROVAL_REQUIRED)
-  automationPaused   Boolean   @default(false)
-  uploadsPaused      Boolean   @default(false)
+  automationPaused   Boolean         @default(false)
+  uploadsPaused      Boolean         @default(false)
   /// YouTubeChannelPolicy (§64) + settings (§137) เป็น JSON
   policy             Json?
-  connectedAt        DateTime  @default(now())
+  connectedAt        DateTime        @default(now())
   lastSyncedAt       DateTime?
   /// IDLE | SYNCING | OK | ERROR | NO_ACCESS
-  syncStatus         String    @default("IDLE")
+  syncStatus         String          @default("IDLE")
   syncError          String?
-  commentsStatus     String    @default("UNKNOWN")
-  analyticsStatus    String    @default("UNKNOWN")
-  status             String    @default("ACTIVE")
+  commentsStatus     String          @default("UNKNOWN")
+  analyticsStatus    String          @default("UNKNOWN")
+  status             String          @default("ACTIVE")
   disconnectedAt     DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  brand      Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  connection GoogleConnection? @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
-  videos     YouTubeVideo[]
-  snapshots  YouTubeChannelMetricSnapshot[]
-  comments   YouTubeComment[]
-  playlists  YouTubePlaylist[]
-  syncRuns   YouTubeSyncRun[]
-  content    ContentItem[]
+  brand           Brand                          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection      GoogleConnection?              @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
+  videos          YouTubeVideo[]
+  snapshots       YouTubeChannelMetricSnapshot[]
+  comments        YouTubeComment[]
+  playlists       YouTubePlaylist[]
+  syncRuns        YouTubeSyncRun[]
+  content         ContentItem[]
   recommendations YouTubeRecommendation[]
-  clusters   CommentCluster[]
-  analyses   YouTubeChannelAnalysis[]
-  reports    YouTubeReport[]
+  clusters        CommentCluster[]
+  analyses        YouTubeChannelAnalysis[]
+  reports         YouTubeReport[]
 
   @@unique([brandId, youtubeChannelId])
   @@index([googleConnectionId])
@@ -843,10 +931,10 @@ model YouTubeVideo {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  channel   YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  snapshots YouTubeVideoMetricSnapshot[]
-  comments  YouTubeComment[]
-  playlistItems YouTubePlaylistItem[]
+  channel         YouTubeChannel               @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  snapshots       YouTubeVideoMetricSnapshot[]
+  comments        YouTubeComment[]
+  playlistItems   YouTubePlaylistItem[]
   recommendations YouTubeRecommendation[]
 
   @@unique([channelId, youtubeVideoId])
@@ -856,15 +944,15 @@ model YouTubeVideo {
 
 /// Snapshot metric วิดีโอ (§13) — metricsJson = { key: { value|null, unit, sourceMetric, source } }
 model YouTubeVideoMetricSnapshot {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   videoId          String
-  capturedAt       DateTime @default(now())
+  capturedAt       DateTime  @default(now())
   metricSetVersion String
   metricsJson      Json
   /// DATA_API | ANALYTICS_API | REPORTING_API
   source           String
   /// FIRST_24H | FIRST_72H | FIRST_7D | FIRST_28D | LIFETIME | RANGE
-  window           String   @default("LIFETIME")
+  window           String    @default("LIFETIME")
   dateRangeStart   DateTime?
   dateRangeEnd     DateTime?
 
@@ -875,9 +963,9 @@ model YouTubeVideoMetricSnapshot {
 }
 
 model YouTubeChannelMetricSnapshot {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   channelId        String
-  capturedAt       DateTime @default(now())
+  capturedAt       DateTime  @default(now())
   rangeStart       DateTime?
   rangeEnd         DateTime?
   metricsJson      Json
@@ -918,8 +1006,8 @@ model YouTubeComment {
   lastSyncedAt      DateTime  @default(now())
   createdAt         DateTime  @default(now())
 
-  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  video   YouTubeVideo?  @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  channel YouTubeChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  video   YouTubeVideo?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
   cluster CommentCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
   lead    Lead?
 
@@ -962,17 +1050,17 @@ model YouTubePlaylist {
   rawData           Json?
   lastSyncedAt      DateTime @default(now())
 
-  channel YouTubeChannel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channel YouTubeChannel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
   items   YouTubePlaylistItem[]
 
   @@unique([channelId, youtubePlaylistId])
 }
 
 model YouTubePlaylistItem {
-  id         String  @id @default(cuid())
+  id         String @id @default(cuid())
   playlistId String
   videoId    String
-  position   Int     @default(0)
+  position   Int    @default(0)
 
   playlist YouTubePlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
   video    YouTubeVideo    @relation(fields: [videoId], references: [id], onDelete: Cascade)
@@ -1051,21 +1139,21 @@ model YouTubeContentMetadata {
 
 /// อัปโหลดกันซ้ำ (§58) — resumable session state (§59)
 model YouTubeUploadOperation {
-  id                      String    @id @default(cuid())
-  contentItemId           String
-  channelId               String
-  videoAssetId            String
-  idempotencyKey          String    @unique
+  id                  String   @id @default(cuid())
+  contentItemId       String
+  channelId           String
+  videoAssetId        String
+  idempotencyKey      String   @unique
   /// PENDING | UPLOADING | UPLOADED | PROCESSING | READY | FAILED
-  status                  String    @default("PENDING")
-  youtubeVideoId          String?
-  resumableSessionUri     String?
-  bytesSent               BigInt    @default(0)
-  totalBytes              BigInt?
-  retryCount              Int       @default(0)
-  error                   String?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  status              String   @default("PENDING")
+  youtubeVideoId      String?
+  resumableSessionUri String?
+  bytesSent           BigInt   @default(0)
+  totalBytes          BigInt?
+  retryCount          Int      @default(0)
+  error               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   content ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
 
@@ -1074,24 +1162,24 @@ model YouTubeUploadOperation {
 
 /// คำแนะนำที่ทำได้จริง (§79–81) พร้อมสถานะติดตามผล
 model YouTubeRecommendation {
-  id          String    @id @default(cuid())
-  channelId   String
-  videoId     String?
+  id            String   @id @default(cuid())
+  channelId     String
+  videoId       String?
   /// YT_RECOMMENDATION_ACTIONS
-  actionType  String
-  title       String
-  why         String
-  evidence    Json
+  actionType    String
+  title         String
+  why           String
+  evidence      Json
   /// LOW | MEDIUM | HIGH
-  confidence  String
-  priority    Int       @default(50)
+  confidence    String
+  priority      Int      @default(50)
   /// OPEN | ACCEPTED | IGNORED | DONE
-  status      String    @default("OPEN")
-  outcome     Json?
-  source      String    @default("analyst")
+  status        String   @default("OPEN")
+  outcome       Json?
+  source        String   @default("analyst")
   promptVersion String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   video   YouTubeVideo?  @relation(fields: [videoId], references: [id], onDelete: Cascade)
@@ -1101,15 +1189,15 @@ model YouTubeRecommendation {
 
 /// ผลวิเคราะห์ช่องโดย YouTube Analyst (§28, §109)
 model YouTubeChannelAnalysis {
-  id          String   @id @default(cuid())
-  channelId   String
-  days        Int
-  result      Json
-  provider    String
-  model       String
+  id            String   @id @default(cuid())
+  channelId     String
+  days          Int
+  result        Json
+  provider      String
+  model         String
   promptVersion String
-  createdById String?
-  createdAt   DateTime @default(now())
+  createdById   String?
+  createdAt     DateTime @default(now())
 
   channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
@@ -1299,26 +1387,26 @@ model SiteAnalysis {
 
 /// W-3 Web content (AGENTS_WEB.md) — บทความสำหรับเว็บ (ContentItem platform=WEB) ผูกกับ Site
 model WebContentMetadata {
-  contentItemId   String   @id
-  title           String?
-  slug            String?
-  excerpt         String?
+  contentItemId    String   @id
+  title            String?
+  slug             String?
+  excerpt          String?
   /// เนื้อหา HTML ที่จะส่งขึ้น WordPress (AI ร่าง → คนแก้)
-  bodyHtml        String?
-  metaTitle       String?
-  metaDescription String?
-  targetQuery     String?
-  tags            String[] @default([])
-  categories      String[] @default([])
+  bodyHtml         String?
+  metaTitle        String?
+  metaDescription  String?
+  targetQuery      String?
+  tags             String[] @default([])
+  categories       String[] @default([])
   featuredImageUrl String?
-  outline         Json?
+  outline          Json?
   /// แหล่งที่ใช้ร่าง: { youtubeContentIds[], facebookPostIds[], topic, notes }
-  sources         Json?
+  sources          Json?
   /// draft | publish | future (สถานะบน WordPress หลังเผยแพร่)
-  wpStatus        String?
-  wpPostId        Int?
-  wpLink          String?
-  updatedAt       DateTime @updatedAt
+  wpStatus         String?
+  wpPostId         Int?
+  wpLink           String?
+  updatedAt        DateTime @updatedAt
 
   content ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
 }
@@ -1326,41 +1414,41 @@ model WebContentMetadata {
 // ---------- W-4 Email marketing (AGENTS_WEB.md) ----------
 /// บัญชีผู้ให้บริการส่งอีเมลจำนวนมากของ workspace (Brevo/Resend) — API key เข้ารหัสด้วย common/crypto เท่านั้น
 model EmailProviderAccount {
-  id             String    @id @default(cuid())
-  workspaceId    String    @unique
+  id               String    @id @default(cuid())
+  workspaceId      String    @unique
   /// brevo | resend
-  provider       String
-  apiKeyEnc      String
-  keyHint        String?
+  provider         String
+  apiKeyEnc        String
+  keyHint          String?
   /// secret สำหรับตรวจลายเซ็น webhook (เข้ารหัส)
   webhookSecretEnc String?
   /// UNKNOWN | OK | AUTH_FAILED | ERROR
-  status         String    @default("UNKNOWN")
-  accountEmail   String?
-  lastError      String?
-  verifiedAt     DateTime?
+  status           String    @default("UNKNOWN")
+  accountEmail     String?
+  lastError        String?
+  verifiedAt       DateTime?
   /// สวิตช์หยุดส่งทั้ง workspace (kill switch)
-  sendingPaused  Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  sendingPaused    Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 /// รายชื่อผู้รับของแบรนด์ — ต้องมี consent (PDPA) ทุกคน
 model EmailList {
-  id             String    @id @default(cuid())
-  brandId        String
-  name           String
-  description    String?
-  fromEmail      String
-  fromName       String
-  replyTo        String?
+  id          String    @id @default(cuid())
+  brandId     String
+  name        String
+  description String?
+  fromEmail   String
+  fromName    String
+  replyTo     String?
   /// ข้อความยินยอมที่ผู้รับเห็นตอนสมัคร (เก็บไว้เป็นหลักฐาน)
-  consentText    String?
-  archivedAt     DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  consentText String?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   brand       Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
   subscribers EmailSubscriber[]
@@ -1397,42 +1485,42 @@ model EmailSubscriber {
 
 /// แคมเปญ/จดหมายข่าว — ร่างโดย AI → อนุมัติ → ส่งผ่านผู้ให้บริการ (กันซ้ำต่อผู้รับด้วย EmailSend)
 model EmailCampaign {
-  id              String    @id @default(cuid())
-  workspaceId     String
-  listId          String
-  name            String
-  subject         String?
-  preheader       String?
-  bodyHtml        String?
-  bodyText        String?
+  id                String    @id @default(cuid())
+  workspaceId       String
+  listId            String
+  name              String
+  subject           String?
+  preheader         String?
+  bodyHtml          String?
+  bodyText          String?
   /// DRAFT | AI_REVIEW | NEEDS_REVISION | READY_FOR_APPROVAL | APPROVED | SCHEDULED | SENDING | SENT | SEND_FAILED | REJECTED | CANCELLED
-  status          String    @default("DRAFT")
-  scheduledLocal  String?
-  scheduledTz     String?
-  scheduledAt     DateTime?
-  startedAt       DateTime?
-  sentAt          DateTime?
-  recipientCount  Int?
-  sentCount       Int       @default(0)
-  failedCount     Int       @default(0)
+  status            String    @default("DRAFT")
+  scheduledLocal    String?
+  scheduledTz       String?
+  scheduledAt       DateTime?
+  startedAt         DateTime?
+  sentAt            DateTime?
+  recipientCount    Int?
+  sentCount         Int       @default(0)
+  failedCount       Int       @default(0)
   /// ตัวเลขจาก webhook ของผู้ให้บริการ — null = ยังไม่มีข้อมูล/ผู้ให้บริการไม่รายงาน ห้ามเป็น 0
-  deliveredCount  Int?
-  openedCount     Int?
-  clickedCount    Int?
-  bouncedCount    Int?
-  complainedCount Int?
+  deliveredCount    Int?
+  openedCount       Int?
+  clickedCount      Int?
+  bouncedCount      Int?
+  complainedCount   Int?
   unsubscribedCount Int?
-  sourceContentId String?
-  createdById     String?
-  aiProvider      String?
-  aiModel         String?
-  promptVersion   String?
-  editedByHuman   Boolean   @default(false)
-  reviewResult    Json?
-  aiNotes         Json?
-  lastError       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  sourceContentId   String?
+  createdById       String?
+  aiProvider        String?
+  aiModel           String?
+  promptVersion     String?
+  editedByHuman     Boolean   @default(false)
+  reviewResult      Json?
+  aiNotes           Json?
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   list          EmailList    @relation(fields: [listId], references: [id], onDelete: Cascade)
@@ -1479,4 +1567,93 @@ model EmailEvent {
   campaign EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, type])
+}
+
+model TikTokAccount {
+  id                    String        @id @default(cuid())
+  workspaceId           String
+  brandId               String
+  openId                String
+  displayName           String
+  username              String?
+  avatarUrl             String?
+  followers             Float?
+  following             Float?
+  likes                 Float?
+  videoCount            Float?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String
+  tokenExpiresAt        DateTime
+  refreshExpiresAt      DateTime
+  scopes                String[]      @default([])
+  status                String        @default("ACTIVE")
+  uploadsPaused         Boolean       @default(false)
+  lastSyncedAt          DateTime?
+  lastError             String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  brand                 Brand         @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  videos                TikTokVideo[]
+  content               ContentItem[]
+
+  @@unique([workspaceId, openId])
+  @@index([brandId])
+}
+
+model TikTokOAuthState {
+  hash        String    @id
+  sessionId   String
+  userId      String
+  workspaceId String
+  brandId     String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+
+  @@index([expiresAt])
+}
+
+model TikTokVideo {
+  id              String                  @id @default(cuid())
+  accountId       String
+  externalId      String
+  title           String
+  description     String
+  thumbnailUrl    String?
+  shareUrl        String?
+  publishedAt     DateTime?
+  durationSeconds Float?
+  updatedAt       DateTime                @updatedAt
+  account         TikTokAccount           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  snapshots       ContentMetricSnapshot[]
+
+  @@unique([accountId, externalId])
+  @@index([accountId, publishedAt])
+}
+
+/// Normalized metrics: null means unavailable, never fabricated zero.
+model ContentMetricSnapshot {
+  id            String      @id @default(cuid())
+  platform      String      @default("TIKTOK")
+  tiktokVideoId String
+  capturedAt    DateTime    @default(now())
+  views         Float?
+  likes         Float?
+  comments      Float?
+  shares        Float?
+  tiktokVideo   TikTokVideo @relation(fields: [tiktokVideoId], references: [id], onDelete: Cascade)
+
+  @@index([tiktokVideoId, capturedAt])
+}
+
+model TikTokContentMetadata {
+  contentId     String      @id
+  hook          String?
+  script        String?
+  sourceUrl     String?
+  uploadStatus  String      @default("DRAFT")
+  publishId     String?
+  confirmedAt   DateTime?
+  confirmedById String?
+  lastPolledAt  DateTime?
+  content       ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
 }

@@ -44,7 +44,7 @@ run('content lifecycle + publish (integration)', () => {
     ({ app } = await createApp()); await app.listen(0, '127.0.0.1');
     base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
     a = client(base); b = client(base); prisma = new PrismaClient();
-    const u = new URL(process.env.REDIS_URL!); publishQueue = new Queue(QUEUES.facebookPublish, { connection: { host: u.hostname, port: Number(u.port) || 6379 } });
+    const u = new URL(process.env.REDIS_URL!); publishQueue = new Queue(QUEUES.facebookPublish, { connection: { host: u.hostname, port: Number(u.port) || 6379, db: Number(u.pathname.slice(1)) || 0 } });
     wsA = (await a.http('POST', '/auth/register', A)).json.workspace.id; wsB = (await b.http('POST', '/auth/register', B)).json.workspace.id;
     const c = await a.http('POST', `/workspaces/${wsA}/clients`, { name: 'ลูกค้า C' });
     brandA = (await a.http('POST', `/workspaces/${wsA}/clients/${c.json.id}/brands`, { name: 'แบรนด์ C', primaryCTA: 'ทักแชท' })).json.id;
@@ -129,7 +129,7 @@ run('content lifecycle + publish (integration)', () => {
     expect((await a.http('POST', `/workspaces/${wsA}/content/${cid}/publish`, {})).status).toBe(409);
   });
 
-  it('publisher recovers a retry after a network cut without creating a duplicate (§48)', async () => {
+  it('ambiguous legacy attempts require reconciliation even when a caption matches another post', async () => {
     const c2 = (await a.http('POST', `/workspaces/${wsA}/content`, { pageId: pageA, caption: `โพสต์กันซ้ำ ${stamp}` })).json.id;
     await a.http('POST', `/workspaces/${wsA}/content/${c2}/submit`, {}); await a.http('POST', `/workspaces/${wsA}/content/${c2}/approve`, {});
     // จำลอง: รอบแรกส่งถึง Facebook แล้วแต่เราไม่ได้ id → op PENDING + retryCount 1 + โพสต์มีอยู่แล้วบนเพจ
@@ -138,8 +138,39 @@ run('content lifecycle + publish (integration)', () => {
     await prisma.contentItem.update({ where: { id: c2 }, data: { status: 'PUBLISH_FAILED', retryCount: 1 } });
     const before = graph.state.published.length;
     const r = await a.http('POST', `/workspaces/${wsA}/content/${c2}/publish`, {});
-    expect(r.json.outcome.status).toBe('PUBLISHED'); expect(r.json.outcome.duplicateRecovered).toBe(true); expect(r.json.outcome.externalId).toBe('111_dup');
+    expect(r.json.outcome.status).toBe('SKIPPED'); expect(r.json.outcome.reason).toContain('RECONCILIATION_REQUIRED');
     expect(graph.state.published.length).toBe(before);
+  });
+
+  it('changing the approved title also requires another human approval', async () => {
+    const item = await prisma.contentItem.create({ data: { pageId: pageA, caption: 'approved', status: 'APPROVED' } });
+    const edited = await a.http('PATCH', `/workspaces/${wsA}/content/${item.id}`, { title: 'changed title' });
+    expect(edited.status).toBe(200); expect(edited.json.status).toBe('DRAFT');
+    expect((await a.http('POST', `/workspaces/${wsA}/content/${item.id}/publish`, {})).status).toBe(409);
+  });
+  it('concurrent publishers claim an approved item only once', async () => {
+    const item = await prisma.contentItem.create({ data: { pageId: pageA, caption: 'concurrent claim', status: 'APPROVED' } });
+    const before = graph.state.published.length;
+    const deps = { prisma, fb: new FacebookService({ baseUrl: graph.url }), authSecret: process.env.AUTH_SECRET!, apiVersion: 'v26.0' };
+    const results = await Promise.all(Array.from({ length: 6 }, () => publishContent(deps, item.id)));
+    expect(results.filter(r => r.status === 'PUBLISHED')).toHaveLength(1);
+    expect(graph.state.published.length).toBe(before + 1);
+  });
+
+  it('a lost response never retries a write or associates an unrelated post', async () => {
+    const item = await prisma.contentItem.create({ data: { pageId: pageA, caption: 'ambiguous response', status: 'APPROVED' } });
+    let writes = 0;
+    const fb = new FacebookService({ baseUrl: graph.url, fetchImpl: async (url, init) => {
+      if (init?.method === 'POST') { writes++; throw new Error('connection lost'); }
+      return fetch(url, init);
+    } });
+    const deps = { prisma, fb, authSecret: process.env.AUTH_SECRET!, apiVersion: 'v26.0' };
+    const result = await publishContent(deps, item.id);
+    expect(result).toMatchObject({ status: 'FAILED', retryable: false });
+    expect(writes).toBe(1);
+    expect(await publishContent(deps, item.id)).toMatchObject({ status: 'SKIPPED' });
+    expect(writes).toBe(1);
+    expect(await prisma.externalOperation.findUnique({ where: { idempotencyKey: `publish:${item.id}` } })).toMatchObject({ status: 'UNKNOWN', externalId: null });
   });
 
   it('strategist plan → PLANNED items; content agent fills a draft with missingInfo flagged; reviewer gates submit', async () => {

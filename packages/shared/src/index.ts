@@ -8,6 +8,7 @@ export const WORKSPACE_ROLES = ['owner', 'admin', 'manager', 'editor', 'reviewer
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
 export const PERMISSIONS = [
+  'messenger.read', 'messenger.manage', 'messenger.reply',
   'client.read', 'client.manage',
   'page.read', 'page.connect', 'page.manage',
   'content.read', 'content.create', 'content.edit', 'content.approve', 'content.publish',
@@ -17,6 +18,7 @@ export const PERMISSIONS = [
   'automation.read', 'automation.manage',
   'ai.use', 'ai.configure',
   'billing.manage', 'workspace.manage',
+  'tiktok.read', 'tiktok.connect', 'tiktok.content.create', 'tiktok.content.approve', 'tiktok.upload',
   // YouTube module (AGENTS_YOUTUBE.md §142)
   'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.revenue.read',
   'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit',
@@ -32,14 +34,14 @@ export type Permission = (typeof PERMISSIONS)[number];
 export const ROLE_PERMISSIONS: Record<WorkspaceRole, readonly Permission[]> = {
   owner: PERMISSIONS,
   admin: PERMISSIONS.filter(p => p !== 'billing.manage'),
-  manager: ['client.read', 'client.manage', 'page.read', 'page.connect', 'page.manage', 'content.read', 'content.create', 'content.edit', 'content.approve', 'content.publish', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'automation.manage', 'ai.use',
+  manager: ['messenger.read', 'messenger.manage', 'messenger.reply', 'tiktok.read', 'tiktok.connect', 'tiktok.content.create', 'tiktok.content.approve', 'tiktok.upload', 'client.read', 'client.manage', 'page.read', 'page.connect', 'page.manage', 'content.read', 'content.create', 'content.edit', 'content.approve', 'content.publish', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'automation.manage', 'ai.use',
     'youtube.read', 'youtube.connect', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.content.approve', 'youtube.upload', 'youtube.publish', 'youtube.metadata.edit', 'youtube.comments.read', 'youtube.comments.reply', 'youtube.playlists.manage', 'youtube.automation.manage', 'youtube.settings.manage', 'web.read', 'web.manage', 'web.analytics.read',
     'web.content.create', 'web.content.edit', 'web.content.approve', 'web.content.publish', 'email.read', 'email.manage', 'email.approve', 'email.send'],
-  editor: ['client.read', 'page.read', 'content.read', 'content.create', 'content.edit', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'ai.use',
+  editor: ['messenger.read', 'messenger.reply', 'tiktok.read', 'tiktok.content.create', 'client.read', 'page.read', 'content.read', 'content.create', 'content.edit', 'analytics.read', 'comments.read', 'comments.reply', 'leads.read', 'automation.read', 'ai.use',
     'youtube.read', 'youtube.analytics.read', 'youtube.content.create', 'youtube.content.edit', 'youtube.comments.read', 'youtube.comments.reply', 'web.read', 'web.analytics.read', 'web.content.create', 'web.content.edit', 'email.read', 'email.manage'],
-  reviewer: ['client.read', 'page.read', 'content.read', 'content.approve', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.content.approve', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'web.content.approve', 'email.read', 'email.approve'],
-  analyst: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'ai.use', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'email.read'],
-  viewer: ['client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'email.read'],
+  reviewer: ['messenger.read', 'tiktok.read', 'tiktok.content.approve', 'client.read', 'page.read', 'content.read', 'content.approve', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.content.approve', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'web.content.approve', 'email.read', 'email.approve'],
+  analyst: ['messenger.read', 'tiktok.read', 'client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'ai.use', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'email.read'],
+  viewer: ['messenger.read', 'tiktok.read', 'client.read', 'page.read', 'content.read', 'analytics.read', 'comments.read', 'leads.read', 'automation.read', 'youtube.read', 'youtube.analytics.read', 'youtube.comments.read', 'web.read', 'web.analytics.read', 'email.read'],
 };
 export const hasPermission = (role: WorkspaceRole, permission: Permission): boolean =>
   ROLE_PERMISSIONS[role].includes(permission);
@@ -192,7 +194,7 @@ export const REPLY_STATUSES = ['NONE', 'DRAFTED', 'APPROVED', 'SENT', 'FAILED', 
 export type ReplyStatus = (typeof REPLY_STATUSES)[number];
 
 // ---------- Platforms (AGENTS_YOUTUBE.md §24, §112) ----------
-export const PLATFORMS = ['FACEBOOK', 'YOUTUBE'] as const;
+export const PLATFORMS = ['FACEBOOK', 'YOUTUBE', 'WEB', 'TIKTOK'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 export const YT_VIDEO_TYPES = ['LONG_FORM', 'SHORT', 'LIVE', 'PREMIERE', 'UNKNOWN'] as const;
 export type YtVideoType = (typeof YT_VIDEO_TYPES)[number];

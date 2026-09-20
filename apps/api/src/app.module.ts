@@ -1,3 +1,4 @@
+import { TikTokModule } from './tiktok/tiktok.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
@@ -21,6 +22,6 @@ import { WebModule } from './web/web.module';
 import { EmailModule } from './email/email.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, WebModule, EmailModule, HealthModule],
+  imports: [TikTokModule, ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, WebModule, EmailModule, HealthModule],
 })
 export class AppModule {}

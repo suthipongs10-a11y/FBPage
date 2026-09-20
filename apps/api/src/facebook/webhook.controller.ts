@@ -9,6 +9,8 @@ import type { Request, Response } from 'express';
 import { Queue } from 'bullmq';
 import { JOBS, QUEUES, type SocialEvent } from '@fbpm/shared';
 import { ENV, type Env } from '../config/env';
+import { connectionFromUrl } from '../jobs/queue.service';
+import { MessengerService } from '../messenger/messenger.service';
 
 interface FeedChange { field: string; value: Record<string, unknown> }
 interface Entry { id: string; time?: number; changes?: FeedChange[]; messaging?: { sender?: { id?: string }; message?: { text?: string } }[] }
@@ -41,11 +43,12 @@ export function verifySignature(appSecret: string, rawBody: Buffer | undefined, 
 @Controller('facebook/webhook')
 export class WebhookController {
   private queue: Queue | null = null;
-  constructor(@Inject(ENV) private readonly env: Env) {}
+  constructor(@Inject(ENV) private readonly env: Env, @Inject(MessengerService) private readonly messenger: MessengerService) {}
   private q(): Queue {
-    if (!this.queue) { const u = new URL(this.env.REDIS_URL); this.queue = new Queue(QUEUES.facebookWebhook, { connection: { host: u.hostname, port: Number(u.port) || 6379, ...(u.password && { password: decodeURIComponent(u.password) }) } }); }
+    if (!this.queue) this.queue = new Queue(QUEUES.facebookWebhook, { connection: connectionFromUrl(this.env.REDIS_URL) });
     return this.queue;
   }
+  async onModuleDestroy() { await this.queue?.close(); }
 
   /** Meta ยืนยัน endpoint */
   @Get()
@@ -59,7 +62,8 @@ export class WebhookController {
   async receive(@Req() req: Request & { rawBody?: Buffer }, @Body() body: { object?: string; entry?: Entry[] }) {
     if (!this.env.META_APP_SECRET) throw new ServiceUnavailableException('ยังไม่ได้ตั้ง META_APP_SECRET');
     if (!verifySignature(this.env.META_APP_SECRET, req.rawBody, req.headers['x-hub-signature-256'] as string | undefined)) throw new ForbiddenException('ลายเซ็นไม่ถูกต้อง');
-    const events = normalizeWebhook(body);
+    await this.messenger.receive(body);
+    const events = normalizeWebhook(body).filter(ev => ev.type !== 'MESSAGE_RECEIVED');
     const q = this.q();
     await Promise.all(events.map((ev, i) => q.add(JOBS.webhookEvent, ev, { jobId: `wh-${ev.facebookPageId}-${'commentId' in ev ? ev.commentId : `${Date.now()}-${i}`}`.replace(/[^\w-]/g, '_'), attempts: 3, backoff: { type: 'exponential', delay: 30_000 }, removeOnComplete: 1000 })));
     return { received: events.length };

@@ -47,10 +47,10 @@ export class AiGatewayService {
       if (cfg) return { cfg, provider: cfg.provider, model: c.model, role, source: r === role ? 'role' : 'fallback' };
     }
     const keys = await this.prisma.aiProviderKey.findMany({ where: { workspaceId, status: 'ACTIVE' }, select: { provider: true }, orderBy: { createdAt: 'asc' } });
-    const candidates: AiProviderId[] = [...keys.map(k => k.provider as AiProviderId), 'anthropic', 'openai', 'gemini', 'openrouter', 'compatible'];
+    const candidates: AiProviderId[] = [...keys.map(k => k.provider as AiProviderId), 'gemini', 'anthropic', 'openai', 'openrouter', 'compatible'];
     for (const p of candidates) {
       if (exclude.includes(p) || !PROVIDERS[p]?.defaultModel && p !== 'compatible') continue;
-      const cfg = await this.providerConfig(workspaceId, p, PROVIDERS[p].defaultModel);
+      const cfg = await this.providerConfig(workspaceId, p, p === 'gemini' ? (this.env.GOOGLE_AI_MODEL || PROVIDERS[p].defaultModel) : PROVIDERS[p].defaultModel);
       if (cfg && (cfg.model || p !== 'compatible')) return { cfg, provider: p, model: cfg.model ?? '', role, source: 'auto' };
     }
     throw new UnprocessableEntityException('ยังไม่ได้ตั้งค่า AI — ใส่ API key ของผู้ให้บริการอย่างน้อย 1 รายที่หน้า "โมเดล AI"');

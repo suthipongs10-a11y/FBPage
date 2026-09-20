@@ -17,7 +17,7 @@ run('worker publish job', () => {
     process.env.META_GRAPH_BASE_URL = graph.url; process.env.AUTH_SECRET = SECRET;
     mod = await import('./main');
     prisma = new PrismaClient();
-    const u = new URL(process.env.REDIS_URL!); analytics = new Queue(QUEUES.analytics, { connection: { host: u.hostname, port: Number(u.port) || 6379 } });
+    const u = new URL(process.env.REDIS_URL!); analytics = new Queue(QUEUES.analytics, { connection: { host: u.hostname, port: Number(u.port) || 6379, db: Number(u.pathname.slice(1)) || 0 } });
     const user = await prisma.user.create({ data: { email: `worker-${Date.now()}@test.local`, name: 'W', passwordHash: 'x' } }); userId = user.id;
     const w = await prisma.workspace.create({ data: { name: 'W', slug: `w-${Date.now()}` } }); ws = w.id;
     const client = await prisma.client.create({ data: { workspaceId: ws, name: 'C' } });
@@ -52,7 +52,7 @@ run('worker publish job', () => {
   });
 
   it('sync-all enqueues one sync job per connected page; sync-page runs a sync', async () => {
-    const u = new URL(process.env.REDIS_URL!); const syncQ = new Queue(QUEUES.facebookSync, { connection: { host: u.hostname, port: Number(u.port) || 6379 } });
+    const u = new URL(process.env.REDIS_URL!); const syncQ = new Queue(QUEUES.facebookSync, { connection: { host: u.hostname, port: Number(u.port) || 6379, db: Number(u.pathname.slice(1)) || 0 } });
     await prisma.facebookPage.updateMany({ where: { brand: { client: { workspaceId: ws } } }, data: { publishingPaused: false } });
     const r = await mod.handleSync(job({}, JOBS.syncAllPages) as never) as { enqueued: number };
     expect(r.enqueued).toBeGreaterThanOrEqual(1);

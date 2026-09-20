@@ -4,9 +4,9 @@
   "private": true,
   "description": "Next.js dashboard — Overview, Clients, Pages, AI Command, Content, Calendar, Analytics (AGENTS.md §35)",
   "scripts": {
-    "dev": "next dev -p ${WEB_PORT:-3000}",
+    "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "echo \"(no tests yet — Phase 1 shell only)\""
   },

@@ -6,6 +6,8 @@ export const LOCALES = ['th', 'en'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 const th = {
+  'nav.messenger': 'แชทอัตโนมัติ',
+  'nav.tiktok': 'TikTok',
   'app.name': 'Facebook AI Page Manager',
   'nav.overview': 'ภาพรวม', 'nav.clients': 'ลูกค้า', 'nav.pages': 'เพจ', 'nav.ai': 'AI Command',
   'nav.content': 'คอนเทนต์', 'nav.calendar': 'ปฏิทิน', 'nav.analytics': 'วิเคราะห์', 'nav.comments': 'คอมเมนต์',
@@ -175,6 +177,8 @@ const th = {
 
 const en: Record<keyof typeof th, string> = {
   ...th,
+  'nav.messenger': 'AI Messenger',
+  'nav.tiktok': 'TikTok',
   'nav.overview': 'Overview', 'nav.clients': 'Clients', 'nav.pages': 'Pages', 'nav.content': 'Content', 'nav.calendar': 'Calendar',
   'nav.analytics': 'Analytics', 'nav.comments': 'Comments', 'nav.leads': 'Leads', 'nav.reports': 'Reports', 'nav.automation': 'Automation',
   'nav.aiModels': 'AI Models', 'nav.settings': 'Settings', 'nav.soon': 'Soon',

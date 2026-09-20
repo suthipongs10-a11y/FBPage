@@ -1,3 +1,4 @@
+import { redisConnectionFromUrl } from './queues';
 /** Worker integration — web-monitor / web-daily กับ mock เว็บลูกค้า (ต้องมี DATABASE_URL + REDIS_URL) */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Queue, type Job } from 'bullmq';
@@ -17,7 +18,7 @@ run('worker web jobs', () => {
     web = await startMockWeb();
     Object.assign(process.env, { WEB_MOCK_BASE_URL: web.url, WEB_ALLOW_PRIVATE_TARGETS: 'true', PAGESPEED_API_KEY: 'PSI_OK', AUTH_SECRET: SECRET });
     mod = await import('./main'); prisma = new PrismaClient();
-    const u = new URL(process.env.REDIS_URL!); const connection = { host: u.hostname, port: Number(u.port) || 6379 };
+    const connection = redisConnectionFromUrl(process.env.REDIS_URL!);
     monitorQ = new Queue(WEB_QUEUES.monitor, { connection }); dailyQ = new Queue(WEB_QUEUES.daily, { connection });
     const user = await prisma.user.create({ data: { email: `webworker-${Date.now()}@test.local`, name: 'W', passwordHash: 'x' } }); userId = user.id;
     const w = await prisma.workspace.create({ data: { name: 'W', slug: `webw-${Date.now()}` } }); ws = w.id;

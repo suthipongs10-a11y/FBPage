@@ -1,3 +1,5 @@
+> Latest owner instructions (2026-09-14): read [docs/SOCIALMANAGE_HANDOFF.md](docs/SOCIALMANAGE_HANDOFF.md) first. SocialManage is the priority; DreamFrame is paused. Facebook workflow first, Messenger drafts for review, MCP and VPS preparation without deployment or external writes. The older [AGENTS_TIKTOK.md](AGENTS_TIKTOK.md) and platform guide below remain applicable where consistent. Current results: [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
+
 # AGENTS.md — Facebook AI Page Manager / AI Marketing Manager
 
 > **Purpose:** This file is the primary implementation guide for all coding agents working on this repository.

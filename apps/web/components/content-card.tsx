@@ -1,4 +1,5 @@
 'use client';
+import { tt } from '@/lib/tiktok';
 import { useState, type FormEvent } from 'react';
 import { api, type ContentItem, type ContentRevisionRow, type MediaAsset, type MediaCapabilities, type PublishOutcome } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
@@ -12,6 +13,7 @@ const defaultLocal = () => { const d = new Date(Date.now() + 3_600_000); d.setMi
 
 /** การ์ดคอนเทนต์ + การกระทำตามสถานะ (§38) — ใช้ทั้งหน้าคอนเทนต์และปฏิทิน */
 export function ContentCard({ item, onChange }: { item: ContentItem; onChange: () => Promise<void> }) {
+  if (item.platform === 'TIKTOK') return <Link href="/tiktok" className="block rounded-xl border border-slate-700 p-3 text-sm"><Pill>TikTok</Pill> <Pill>{tt.status[item.status] || item.status}</Pill><p>{item.title}</p>{item.scheduledAt && <p>{tt.scheduled}: {fmt(item.scheduledAt, item.scheduledTz)}</p>}</Link>;
   if (item.platform === 'YOUTUBE' || !item.page) return <YoutubeMiniCard item={item} />;
   return <FacebookCard item={{ ...item, page: item.page }} onChange={onChange} />;
 }

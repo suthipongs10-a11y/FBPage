@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong database password}
       POSTGRES_DB: fbpm
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -37,9 +37,12 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/fbpm?schema=public
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Set database password}@postgres:5432/fbpm?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?Preserve the existing encryption secret during migration}
       REDIS_URL: redis://redis:6379
       API_PORT: 4000
+      APP_ENV: production
+      MESSENGER_AUTO_SEND_ENABLED: 'false'
       MEDIA_DIR: /app/data/media
     volumes:
       - media-data:/app/data/media
@@ -53,15 +56,19 @@ services:
       retries: 5
 
   worker:
+    profiles: [automation]
     build:
       context: .
       dockerfile: workers/scheduler/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/fbpm?schema=public
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Set database password}@postgres:5432/fbpm?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?Preserve the existing encryption secret during migration}
       REDIS_URL: redis://redis:6379
       MEDIA_DIR: /app/data/media
+      APP_ENV: production
+      MESSENGER_AUTO_SEND_ENABLED: 'false'
     volumes:
       - media-data:/app/data/media   # publisher อ่านไฟล์ภาพที่ API สร้างไว้ (path เดียวกันทั้งสองคอนเทนเนอร์)
     depends_on:
@@ -88,7 +95,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:-localhost}
+      DOMAIN: ${DOMAIN:?Set the approved domain after VPS preflight}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
@@ -96,6 +103,17 @@ services:
     depends_on:
       - web
       - api
+
+  migrate:
+    profiles: [maintenance]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Set database password}@postgres:5432/fbpm?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
 
 volumes:
   media-data:

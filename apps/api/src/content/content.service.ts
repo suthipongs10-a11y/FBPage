@@ -15,7 +15,7 @@ import { isValidTimeZone, localToUtc } from './tz';
 import type { CalendarDto, CreateContentDto, ListContentDto, ScheduleDto, UpdateContentDto } from './dto';
 
 export const CONTENT_SELECT = {
-  id: true, pageId: true, platform: true, ytStatus: true, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true, privacyStatus: true, scheduledPublishAt: true } }, siteId: true, site: { select: { id: true, name: true, url: true } }, webMeta: { select: { title: true, slug: true, wpLink: true, wpStatus: true } }, status: true, contentType: true, title: true, caption: true, cta: true, hashtags: true, mediaBrief: true, mediaPaths: true, objective: true, contentPillar: true,
+  id: true, pageId: true, platform: true, tiktokAccount: { select: { id: true, displayName: true } }, tiktokMeta: { select: { uploadStatus: true } }, ytStatus: true, youtubeChannel: { select: { id: true, title: true } }, youtubeMeta: { select: { title: true, format: true, privacyStatus: true, scheduledPublishAt: true } }, siteId: true, site: { select: { id: true, name: true, url: true } }, webMeta: { select: { title: true, slug: true, wpLink: true, wpStatus: true } }, status: true, contentType: true, title: true, caption: true, cta: true, hashtags: true, mediaBrief: true, mediaPaths: true, objective: true, contentPillar: true,
   scheduledLocal: true, scheduledTz: true, scheduledAt: true, retryCount: true, createdById: true, aiProvider: true, aiModel: true, promptVersion: true, editedByHuman: true,
   publishedPostId: true, externalPostId: true, publishedAt: true, planId: true, aiNotes: true, reviewResult: true, lastError: true, createdAt: true, updatedAt: true,
   page: { select: { id: true, name: true, pictureUrl: true, timezone: true, automationLevel: true, publishingPaused: true, tokenStatus: true, brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } } } },
@@ -36,6 +36,7 @@ export class ContentService {
   private async load(workspaceId: string, id: string) {
     const c = await this.prisma.contentItem.findFirst({ where: { id, ...contentInWorkspace(workspaceId) }, select: CONTENT_SELECT });
     if (!c) throw new NotFoundException('ไม่พบคอนเทนต์');
+    if (c.platform === 'TIKTOK') throw new ConflictException('จัดการคอนเทนต์นี้ผ่านโมดูล TikTok');
     return c;
   }
 
@@ -77,12 +78,15 @@ export class ContentService {
     const { reason, ...fields } = dto;
     const captionChanged = fields.caption !== undefined && fields.caption !== c.caption;
     // แก้หลังอนุมัติ/ตั้งเวลา → ต้องกลับไปขออนุมัติใหม่ (§29)
-    const backToDraft = ['APPROVED', 'SCHEDULED', 'READY_FOR_APPROVAL', 'PUBLISH_FAILED'].includes(c.status) && (captionChanged || fields.mediaPaths !== undefined || fields.hashtags !== undefined);
+    const backToDraft = ['APPROVED', 'SCHEDULED', 'READY_FOR_APPROVAL', 'PUBLISH_FAILED'].includes(c.status) && Object.keys(fields).length > 0;
     if (backToDraft && c.status === 'SCHEDULED') await this.queue.cancelPublish(id);
     const out = await this.prisma.contentItem.update({
-      where: { id },
+      where: { id, status: c.status, updatedAt: c.updatedAt },
       data: { ...fields, editedByHuman: true, ...(backToDraft && { status: 'DRAFT', scheduledAt: null, scheduledLocal: null, scheduledTz: null, reviewResult: undefined }), ...(captionChanged && { revisions: { create: { version: c._count.revisions + 1, caption: fields.caption ?? null, editedBy: userId, reason: reason ?? 'human edit' } } }) },
       select: CONTENT_SELECT,
+    }).catch((e: unknown) => {
+      if (e && typeof e === 'object' && 'code' in e && e.code === 'P2025') throw new ConflictException('เนื้อหาถูกเปลี่ยนหรือเริ่มเผยแพร่แล้ว กรุณาโหลดใหม่');
+      throw e;
     });
     await this.audit.log({ workspaceId, userId, action: 'content.update', resourceType: 'contentItem', resourceId: id, before: { status: c.status, caption: c.caption?.slice(0, 200) }, after: { ...fields, caption: fields.caption?.slice(0, 200), status: out.status }, requestId });
     return out;

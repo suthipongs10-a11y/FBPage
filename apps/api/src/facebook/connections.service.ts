@@ -78,14 +78,14 @@ export class ConnectionsService {
   // ---------- OAuth (ใช้ได้เมื่อมี META_APP_ID/SECRET) ----------
   private get oauthConfigured(): boolean { return !!(this.env.META_APP_ID && this.env.META_APP_SECRET && this.env.META_OAUTH_REDIRECT_URI); }
 
-  oauthStartUrl(workspaceId: string, userId: string): { url: string } {
+  oauthStartUrl(workspaceId: string, userId: string, messenger = false): { url: string } {
     if (!this.oauthConfigured) throw new ConflictException('ยังไม่ได้ตั้งค่า META_APP_ID / META_APP_SECRET / META_OAUTH_REDIRECT_URI — ใช้วิธีวาง token แทนได้');
     const state = signState({ ws: workspaceId, uid: userId, exp: Date.now() + 10 * 60_000, n: randomBytes(8).toString('hex') } satisfies OAuthState, this.env.AUTH_SECRET);
     const u = new URL(`https://www.facebook.com/${this.env.META_GRAPH_API_VERSION}/dialog/oauth`);
     u.searchParams.set('client_id', this.env.META_APP_ID!);
     u.searchParams.set('redirect_uri', this.env.META_OAUTH_REDIRECT_URI!);
     u.searchParams.set('state', state);
-    u.searchParams.set('scope', OAUTH_SCOPES.join(','));
+    u.searchParams.set('scope', [...OAUTH_SCOPES, ...(messenger ? ['pages_messaging'] : [])].join(','));
     u.searchParams.set('response_type', 'code');
     return { url: u.toString() };
   }

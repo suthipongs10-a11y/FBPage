@@ -1,8 +1,43 @@
+# AI Page Manager — SocialManage
+
+ระบบดูแลคอนเทนต์ลูกค้าใน workspace เดียว: Facebook, YouTube, Website Care/WordPress, Email และ TikTok
+
+## สถานะล่าสุด — 14 กันยายน 2026
+
+เริ่มเฟสเตรียมใช้งานจริง โดยเน้น Facebook ก่อน อ่าน [สถานะ ช่องว่าง และงานส่งต่อ](docs/SOCIALMANAGE_HANDOFF.md) และ [แผนย้าย VPS ที่ยังไม่อนุมัติ](docs/VPS_MIGRATION_PLAN.md)
+
+แก้การเผยแพร่ซ้ำจากคำขอพร้อมกันและเครือข่ายหลุด; ผลส่งที่ไม่แน่นอนหยุดรอตรวจ ไม่เดาจากข้อความเหมือนกัน Messenger เปลี่ยนค่าเริ่มต้นเป็นร่างรอตรวจและไม่ส่งลูกค้า ชุด Docker ปรับให้รวมโมดูลใหม่และกันข้อมูลลับออกจาก build แต่ยังไม่ได้ทดสอบ Docker จริงหรือ deploy ส่วน MCP ยังไม่สร้างและยังไม่เชื่อม ChatGPT
+
+## ผลงานก่อนหน้า — 11 กันยายน 2026
+
+**Messenger AI:** เพิ่มเมนู **แชทอัตโนมัติ** เลือกเปิดเฉพาะเพจ ใช้คีย์ OpenAI สำหรับแชทแยกจากคอนเทนต์ วิเคราะห์คำถามจากความรู้แบรนด์และบทสนทนา แล้วตอบเองโดยไม่รออนุมัติ พร้อมโหมดแอดมินรับช่วงและข้อความรับเรื่องเมื่อ AI ขัดข้อง ทุกเพจเริ่มต้นปิด ดู [วิธีตั้งค่าและข้อจำกัด](docs/MESSENGER.md)
+
+ผลตรวจวันที่ 11 กันยายน: **249 unit/integration + 11 browser ผ่าน**, build/typecheck/lint ผ่าน การเชื่อมภายนอกในการทดสอบใช้ mock ทั้งหมด ยังต้องตรวจบริการจริงด้วยคีย์และสิทธิ์ Meta ที่ใช้งานจริง
+
+ต่อยอดจาก `fbpagesource.zip` ในโฟลเดอร์ `C:\Work\SocialManage\fbpage` เพิ่ม TikTok MVP บนระบบเดิม: OAuth, โปรไฟล์/วิดีโอ, วิเคราะห์ผลงาน, AI Content Studio, ร่าง/อนุมัติ, ปฏิทิน และส่งวิดีโอเข้า Inbox แบบปิดการส่งจริงเป็นค่าเริ่มต้น
+
+**อัปเดตรอบ 2:** เตรียมร่าง TikTok ตามแบรนด์ได้โดยไม่ต้องมีคีย์หรือเชื่อมบัญชี เขียนเอง → ตรวจและอนุมัติ → ดาวน์โหลด TXT ภาษาไทย แล้วเลือกบัญชีภายหลังพร้อมอนุมัติใหม่ เพิ่มการเลือกคอนเทนต์ต้นทางเฉพาะแบรนด์และตรวจการแสดงผลมือถือ
+
+**เริ่มใช้งานบนเครื่องนี้:** เปิด PowerShell ที่โฟลเดอร์โปรเจ็กต์ แล้วใช้ `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/local.ps1 start` จากนั้นเปิด http://localhost:3000 และสมัครผู้ใช้ใหม่
+
+- [วิธีเปิดระบบและตั้งค่า TikTok / Gemini](docs/LOCAL_SETUP.md)
+- [คู่มือตั้งค่าและตรวจรับทุกโมดูล](docs/ALL_MODULES_CHECKLIST.md)
+- [Messenger AI: ตอบลูกค้าอัตโนมัติและเลือกเปิดรายเพจ](docs/MESSENGER.md)
+- [ผลตรวจ source และสิ่งที่แก้](docs/AUDIT_REPORT.md)
+- [ผลทดสอบล่าสุดและข้อจำกัด](docs/TEST_REPORT.md)
+- [สถาปัตยกรรม](docs/ARCHITECTURE.md) · [AI Provider](docs/AI_PROVIDER.md) · [แผน TikTok / API references](docs/TIKTOK_MODULE_PLAN.md)
+
+**ยังต้องใช้ credentials:** TikTok OAuth / สิทธิ์แอปจริง และ Google AI Studio API key ยังไม่ได้รับ จึงยืนยันการเชื่อมบริการจริงไม่ได้ การทดสอบภายนอกทั้งหมดใช้ mock การส่งเข้า TikTok Inbox ไม่ใช่ Direct Post และเจ้าของบัญชีต้องโพสต์ต่อเอง
+
+## ประวัติฟีเจอร์จาก source เดิม
+
+ข้อความด้านล่างเก็บรายละเอียดของโมดูลเดิมไว้ ตัวเลขผลทดสอบในประวัติให้ยึด TEST_REPORT.md ด้านบนเป็นสถานะล่าสุด
+
 # Facebook AI Page Manager
 
 AI Marketing Manager สำหรับเพจ Facebook — อ่านข้อมูลจริง → วิเคราะห์ → วางแผน → สร้างคอนเทนต์ → ขออนุมัติ → เผยแพร่ → วัดผล → เรียนรู้
 
-**ติดตั้งบน VPS:** [`docs/runbooks/deploy-production.md`](docs/runbooks/deploy-production.md) · **ขอ API key ทุกตัว:** [`docs/runbooks/api-keys.md`](docs/runbooks/api-keys.md) · **เริ่มใช้งานรับลูกค้า:** [`docs/runbooks/first-client.md`](docs/runbooks/first-client.md) · **อ่านก่อนเขียนโค้ด:** [`AGENTS.md`](AGENTS.md) คือคู่มือหลักของโปรเจกต์ · การตัดสินใจเชิงสถาปัตยกรรมอยู่ใน [`docs/architecture/`](docs/architecture/)
+**ขอ API key ทุกตัว (งานที่ต้องทำเอง):** [`docs/runbooks/api-keys.md`](docs/runbooks/api-keys.md) · **เริ่มใช้งานรับลูกค้า:** [`docs/runbooks/first-client.md`](docs/runbooks/first-client.md) · **อ่านก่อนเขียนโค้ด:** [`AGENTS.md`](AGENTS.md) คือคู่มือหลักของโปรเจกต์ · การตัดสินใจเชิงสถาปัตยกรรมอยู่ใน [`docs/architecture/`](docs/architecture/)
 
 ## สถานะ
 - **Phase 1 — ฐานระบบ** ✔ monorepo · Docker Compose · PostgreSQL + Redis · NestJS API + health + OpenAPI · Next.js · BullMQ worker · Prisma schema

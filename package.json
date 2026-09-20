@@ -8,14 +8,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/**' build && pnpm -r --filter './apps/**' --filter './workers/**' build",
+    "build": "pnpm -r --filter \"./packages/**\" build && pnpm -r --filter \"./apps/**\" --filter \"./workers/**\" build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
     "test:e2e": "playwright test",
-    "dev:api": "pnpm --filter @fbpm/api dev",
-    "dev:web": "pnpm --filter @fbpm/web dev",
-    "dev:worker": "pnpm --filter @fbpm/worker-scheduler dev",
+    "dev:api": "node scripts/run.mjs api",
+    "dev:web": "node scripts/run.mjs web",
+    "dev:worker": "node scripts/run.mjs worker",
+    "db:local": "node scripts/run.mjs migrate",
     "db:generate": "pnpm --filter @fbpm/database generate",
     "db:migrate": "pnpm --filter @fbpm/database migrate:dev",
     "db:deploy": "pnpm --filter @fbpm/database migrate:deploy"

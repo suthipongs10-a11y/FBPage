@@ -27,7 +27,7 @@ run('webhook endpoint (integration)', () => {
   beforeAll(async () => {
     process.env.APP_ENV = 'test'; process.env.AUTH_SECRET ??= 'integration-test-secret-at-least-32-chars'; process.env.META_APP_SECRET = 'whsecret'; process.env.META_WEBHOOK_VERIFY_TOKEN = 'verify-me';
     ({ app } = await createApp()); await app.listen(0, '127.0.0.1'); base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
-    const u = new URL(process.env.REDIS_URL!); q = new Queue(QUEUES.facebookWebhook, { connection: { host: u.hostname, port: Number(u.port) || 6379 } });
+    const u = new URL(process.env.REDIS_URL!); q = new Queue(QUEUES.facebookWebhook, { connection: { host: u.hostname, port: Number(u.port) || 6379, db: Number(u.pathname.slice(1)) || 0 } });
   }, 30_000);
   afterAll(async () => { delete process.env.META_APP_SECRET; delete process.env.META_WEBHOOK_VERIFY_TOKEN; await q.obliterate({ force: true }).catch(() => undefined); await q.close(); await app.close(); });
 

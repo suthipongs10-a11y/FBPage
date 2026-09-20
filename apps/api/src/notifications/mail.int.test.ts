@@ -68,7 +68,7 @@ run('email (integration)', () => {
     const before = smtp.state.messages.length;
     await notify(prisma, process.env.AUTH_SECRET!, ws, { type: 'info', severity: 'info', title: 'เฉยๆ' });
     await notify(prisma, process.env.AUTH_SECRET!, ws, { type: 'publish_failed', severity: 'bad', title: 'โพสต์ล้มเหลว X', body: 'Graph 190', href: '/content', dedupeKey: `mailtest:${stamp}` });
-    await new Promise(r => setTimeout(r, 300));
+    await expect.poll(() => smtp.state.messages.length, { timeout: 5000 }).toBe(before + 1);
     expect(smtp.state.messages).toHaveLength(before + 1); const m = smtp.state.messages.at(-1)!;
     expect(m.to).toEqual([A.email]); expect(m.subject).toContain('โพสต์ล้มเหลว X'); expect(decodeText(m.raw)).toContain('/content');
     await notify(prisma, process.env.AUTH_SECRET!, ws, { type: 'publish_failed', severity: 'bad', title: 'โพสต์ล้มเหลว X', dedupeKey: `mailtest:${stamp}` });

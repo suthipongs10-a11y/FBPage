@@ -90,7 +90,8 @@ export class GraphClient {
           res = await this.fetchImpl(url, { method, body });
         }
       } catch (e) {
-        if (attempt++ < this.maxRetries) { await this.sleep(300 * 2 ** attempt); continue; }
+        // A lost response to a write does not mean the write failed.
+        if (method === 'GET' && attempt++ < this.maxRetries) { await this.sleep(300 * 2 ** attempt); continue; }
         throw new FacebookApiError(`ต่อ Graph API ไม่ได้: ${(e as Error & { cause?: Error }).cause?.message ?? (e as Error).message}`, null, null, 0);
       }
       const text = await res.text();
@@ -98,7 +99,7 @@ export class GraphClient {
       try { json = JSON.parse(text); } catch { throw new FacebookApiError(`Graph ตอบกลับไม่ใช่ JSON (HTTP ${res.status})`, null, null, res.status); }
       if (json.error) {
         const err = new FacebookApiError(json.error.message ?? 'Unknown Graph error', json.error.code ?? null, json.error.error_subcode ?? null, res.status, json.error.type ?? null);
-        if (err.isRateLimited && attempt++ < this.maxRetries) {
+        if (method === 'GET' && err.isRateLimited && attempt++ < this.maxRetries) {
           const retryAfter = Number(res.headers.get('retry-after')) || 0;
           await this.sleep(retryAfter ? retryAfter * 1000 : 1000 * 2 ** attempt);
           continue;

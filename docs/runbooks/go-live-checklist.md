@@ -3,7 +3,6 @@
 ทุกข้ออยู่นอกโค้ด: ต้องมีบัญชี/สิทธิ์/เครื่องของคุณเอง ทำตามลำดับได้เลย ใช้เวลารวมประมาณครึ่งวัน (ไม่นับรอ Meta/Google อนุมัติ)
 
 > ขั้นตอนขอ key แต่ละตัวแบบละเอียดทีละคลิก (Meta, Google Cloud, PageSpeed, WordPress, Brevo/Resend, SMTP) อยู่ใน [`api-keys.md`](api-keys.md)
-> ติดตั้งบน VPS จริงพร้อมไฟล์ `.env` เต็มและ URL ที่ต้องวางในคอนโซลแต่ละเจ้า อยู่ใน [`deploy-production.md`](deploy-production.md)
 
 ## 0. เตรียมเครื่อง (VPS หรือเครื่องในออฟฟิศ)
 1. Ubuntu 22.04+ มี Docker + Docker Compose (ดู `docs/runbooks/ubuntu-vps.md`)
