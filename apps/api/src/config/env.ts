@@ -28,7 +28,6 @@ export const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   GOOGLE_AI_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   GOOGLE_AI_MODEL: z.string().trim().optional().transform(v => v || undefined),
-  MESSENGER_AI_MOCK_BASE_URL: optionalUrl,
   TIKTOK_CLIENT_KEY: z.string().trim().optional().transform(v => v || undefined),
   TIKTOK_CLIENT_SECRET: z.string().trim().optional().transform(v => v || undefined),
   TIKTOK_REDIRECT_URI: optionalUrl,

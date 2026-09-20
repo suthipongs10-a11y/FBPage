@@ -114,6 +114,16 @@ WEB_WP_ALLOW_INSECURE=false
 # ===== อีเมลการตลาด (API key ของ Brevo/Resend กรอกในหน้าเว็บ ไม่ใช่ที่นี่) =====
 EMAIL_SEND_ENABLED=false
 
+# ===== TikTok (ข้อ 8 ของ api-keys.md — เว้นว่างไว้ได้ถ้ายังไม่ใช้) =====
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+TIKTOK_REDIRECT_URI=https://fbm.ragalpha.com/api/tiktok/oauth/callback
+TIKTOK_VERIFIED_MEDIA_PREFIXES=
+SOCIAL_PUBLISHING_ENABLED=false
+
+# ===== แชทอัตโนมัติ (Messenger) — คีย์/โมเดล AI ใช้ของกลางจากหน้า "โมเดล AI" =====
+MESSENGER_AUTO_SEND_ENABLED=false
+
 # ===== อีเมลแจ้งเตือนภายใน — กรอกในข้อ 9 (ไม่บังคับ) =====
 SMTP_HOST=
 SMTP_PORT=587
@@ -158,6 +168,8 @@ grep -c '^META_WEBHOOK_VERIFY_TOKEN=.\{20,\}' .env
 | `DOMAIN` | Caddy ใช้ขอใบรับรอง HTTPS | ได้ |
 | `WEB_PUBLISH_ENABLED` | สวิตช์ใหญ่ของการโพสต์บทความขึ้นเว็บลูกค้า | ได้ (ค่าเริ่มต้นปิด) |
 | `EMAIL_SEND_ENABLED` | สวิตช์ใหญ่ของการส่งอีเมลการตลาด | ได้ (ค่าเริ่มต้นปิด) |
+| `SOCIAL_PUBLISHING_ENABLED` | สวิตช์ใหญ่ของการอัปโหลดคลิปขึ้น TikTok จริง | ได้ (ค่าเริ่มต้นปิด) |
+| `MESSENGER_AUTO_SEND_ENABLED` | ให้แชทส่งคำตอบเองโดยไม่รอคนตรวจ | ได้ (ค่าเริ่มต้นปิด = เก็บเป็นร่างให้แอดมินตรวจ) |
 | `*_MOCK_BASE_URL` | ชี้ไปเซิร์ฟเวอร์จำลองตอนทดสอบ | **ต้องว่างใน production** ไม่งั้นระบบจะคุยกับของปลอม |
 
 ---

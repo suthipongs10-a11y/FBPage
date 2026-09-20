@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AuthGuard } from '../auth/auth.guard';
@@ -7,7 +7,7 @@ import { RequirePermission } from '../workspaces/permissions';
 import { CurrentUser, RequestId, Tenant, type AuthUser, type TenantContext } from '../common/request-context';
 import { ZodPipe } from '../common/zod.pipe';
 import { MessengerService } from './messenger.service';
-const settingsSchema = z.object({ apiKey: z.string().trim().min(10).max(1000).optional(), model: z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9._:-]+$/), dailyLimit: z.number().int().min(1).max(10000) }).strict();
+const settingsSchema = z.object({ dailyLimit: z.number().int().min(1).max(10000) }).strict();
 const pageSchema = z.object({ enabled: z.boolean(), instructions: z.string().trim().max(5000), fallbackMessage: z.string().trim().min(1).max(1800) }).strict();
 const previewSchema = z.object({ text: z.string().trim().min(1).max(6000) }).strict();
 const modeSchema = z.object({ mode: z.enum(['AUTO', 'HUMAN']) }).strict();
@@ -18,7 +18,6 @@ export class MessengerController {
   constructor(@Inject(MessengerService) private readonly service: MessengerService) {}
   @Get('settings') @RequirePermission('messenger.read') settings(@Tenant() t: TenantContext) { return this.service.settings(t.workspaceId); }
   @Patch('settings') @RequirePermission('ai.configure', 'messenger.manage') saveSettings(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(settingsSchema)) b: z.infer<typeof settingsSchema>, @RequestId() rid: string) { return this.service.saveSettings(t.workspaceId, u.id, b, rid); }
-  @Delete('settings/key') @RequirePermission('ai.configure', 'messenger.manage') deleteKey(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @RequestId() rid: string) { return this.service.deleteKey(t.workspaceId, u.id, rid); }
   @Get('pages') @RequirePermission('messenger.read') pages(@Tenant() t: TenantContext) { return this.service.pages(t.workspaceId); }
   @Patch('pages/:id') @RequirePermission('messenger.manage') savePage(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(pageSchema)) b: z.infer<typeof pageSchema>, @RequestId() rid: string) { return this.service.savePage(t.workspaceId, u.id, id, b, rid); }
   @Post('pages/:id/subscribe') @HttpCode(200) @RequirePermission('messenger.manage', 'page.connect') subscribe(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.service.subscribe(t.workspaceId, u.id, id, rid); }

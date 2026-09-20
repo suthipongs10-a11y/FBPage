@@ -6,11 +6,11 @@ import { Queue, Worker } from '../../workers/scheduler/node_modules/bullmq';
 import { buildMessengerDeps, handleMessenger } from '../../workers/scheduler/dist/messenger.js';
 import { redisConnectionFromUrl } from '../../workers/scheduler/dist/queues.js';
 
-test('Messenger: separate OpenAI key, target Page toggle, automatic reply, takeover and mobile inbox', async ({ page }) => {
+test('Messenger: shared workspace AI key, target Page toggle, automatic reply, takeover and mobile inbox', async ({ page }) => {
   const mock = await startMockMessenger(4998); const db = new PrismaClient();
   const secret = process.env.AUTH_SECRET ?? 'e2e-only-secret-at-least-32-characters-long!!';
   const redis = redisConnectionFromUrl(process.env.REDIS_URL!); const queue = new Queue('messenger', { connection: redis });
-  const deps = buildMessengerDeps(db, secret, { APP_ENV: 'test', META_APP_ID: '123', META_GRAPH_BASE_URL: mock.url, MESSENGER_AI_MOCK_BASE_URL: `${mock.url}/v1` });
+  const deps = buildMessengerDeps(db, secret, { APP_ENV: 'test', META_APP_ID: '123', META_GRAPH_BASE_URL: mock.url });
   const worker = new Worker('messenger', job => handleMessenger(deps, queue, job), { connection: redis, concurrency: 2 });
   let ws = ''; let userId = ''; const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   try {
@@ -21,9 +21,13 @@ test('Messenger: separate OpenAI key, target Page toggle, automatic reply, takeo
     const brand = await db.brand.create({ data: { clientId: client.id, name: 'แบรนด์แชท', knowledge: { create: { type: 'price', title: 'บริการ', content: 'บริการทำความสะอาดเริ่มต้น 900 บาทค่ะ' } } } });
     const connection = await db.facebookConnection.create({ data: { workspaceId: ws, userId, providerUserId: `browser-${Date.now()}`, encryptedAccessToken: encryptSecret('BROWSER_USER_TOKEN', secret), scopes: ['pages_messaging'] } });
     const target = await db.facebookPage.create({ data: { brandId: brand.id, connectionId: connection.id, facebookPageId: `browser-page-${Date.now()}`, name: 'เพจเป้าหมายทดสอบ', pageAccessTokenEncrypted: encryptSecret('BROWSER_PAGE_TOKEN', secret) } });
+    // แชทใช้คีย์และโมเดล AI กลางของพื้นที่ทำงาน (บทบาท community) ไม่มีคีย์เฉพาะโมดูลอีกแล้ว
+    await db.aiProviderKey.create({ data: { workspaceId: ws, provider: 'openai', encryptedApiKey: encryptSecret('BROWSER_WORKSPACE_AI_KEY', secret), baseUrl: `${mock.url}/v1` } });
+    await db.aiRoleConfig.create({ data: { workspaceId: ws, role: 'community', provider: 'openai', model: 'mock-chat' } });
     await page.getByRole('link', { name: 'แชทอัตโนมัติ', exact: true }).click(); await expect(page.getByRole('heading', { name: 'แชทอัตโนมัติ', exact: true })).toBeVisible();
-    await page.getByLabel('API key สำหรับแชท', { exact: true }).fill('BROWSER_MESSENGER_KEY'); await page.getByLabel('โมเดล OpenAI', { exact: true }).fill('mock-chat');
-    await page.getByRole('button', { name: 'บันทึก', exact: true }).click(); await expect(page.getByLabel('API key สำหรับแชท').first()).toHaveValue('');
+    await expect(page.getByText('mock-chat', { exact: true })).toBeVisible();
+    await page.getByLabel('จำนวนเรียก AI สูงสุดต่อวัน', { exact: true }).fill('200');
+    await page.getByRole('button', { name: 'บันทึก', exact: true }).click(); await expect(page.getByRole('status')).toHaveText('บันทึกแล้ว');
     await page.getByRole('combobox', { name: 'เลือกเพจเป้าหมาย' }).selectOption(target.id);
     await expect(page.getByRole('button', { name: 'เปิดตอบอัตโนมัติ', exact: true })).toBeDisabled();
     await page.getByLabel('คำถามตัวอย่างจากลูกค้า').fill('บริการราคาเท่าไหร่คะ'); await page.getByRole('button', { name: 'วิเคราะห์และทดลองตอบ' }).click(); await expect(page.getByText('บริการทำความสะอาดเริ่มต้น 900 บาทค่ะ', { exact: true })).toBeVisible(); expect(mock.state.sends).toHaveLength(0);
@@ -36,7 +40,7 @@ test('Messenger: separate OpenAI key, target Page toggle, automatic reply, takeo
     await expect(page.getByText('ส่งแล้ว', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'หยุด AI และรับช่วง', exact: true }).click(); await expect(page.getByRole('button', { name: 'ให้ AI ตอบข้อความใหม่ต่อ' })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: 'test-results/messenger-mobile.png', fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-    expect(await page.locator('body').innerText()).not.toContain('BROWSER_MESSENGER_KEY'); expect(errors).toEqual([]);
+    expect(await page.locator('body').innerText()).not.toContain('BROWSER_WORKSPACE_AI_KEY'); expect(errors).toEqual([]);
     await page.getByRole('button', { name: 'ปิดตอบอัตโนมัติ', exact: true }).click(); await expect(page.getByRole('button', { name: 'เปิดตอบอัตโนมัติ', exact: true })).toBeVisible();
   } finally {
     await worker.close(); await queue.close();

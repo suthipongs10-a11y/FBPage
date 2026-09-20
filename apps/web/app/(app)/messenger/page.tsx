@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Kpi, Loading, Pill, Select, Textarea } from '@/components/ui';
@@ -24,9 +25,9 @@ function MessengerWorkspace({ workspaceId, can }: { workspaceId: string; can: (p
   return <div className="space-y-5"><div><h1 className="text-2xl font-bold">{mt.title}</h1><p className="mt-1 text-sm text-slate-400">{mt.subtitle}</p></div><ErrorBox error={error} />
     {!view ? <Loading /> : <>
       <p className="rounded-lg bg-amber-950 p-3 text-amber-200">{view.automaticSendEnabled ? 'โหมดส่งอัตโนมัติ: เพจที่เปิดใช้งานสามารถส่งคำตอบเองได้' : 'โหมดร่างรอตรวจ: ระบบเก็บคำตอบไว้ให้ตรวจและรับช่วง ยังไม่ส่งหาลูกค้า กรุณาตรวจร่างแล้วตอบผ่าน Meta Business Suite'}</p>
-      <div className="grid gap-3 sm:grid-cols-3"><Kpi label={mt.enabledPages} value={pages.filter(p => p.messengerConfig?.enabled).length} /><Kpi label={mt.used} value={`${view.requestsToday} / ${view.settings?.dailyLimit ?? '—'}`} /><Kpi label={mt.ai} value={view.settings ? (view.settings.validatedAt ? mt.validated : mt.notValidated) : mt.noKey} /></div>
+      <div className="grid gap-3 sm:grid-cols-3"><Kpi label={mt.enabledPages} value={pages.filter(p => p.messengerConfig?.enabled).length} /><Kpi label={mt.used} value={`${view.requestsToday} / ${view.settings?.dailyLimit ?? '—'}`} /><Kpi label={mt.ai} value={!view.ai ? mt.noAi : view.settings?.validatedAt ? mt.validated : mt.notValidated} /></div>
       {view.automationPaused && <p className="rounded-lg bg-amber-950 p-3 text-amber-200">{mt.paused}</p>}
-      {can('ai.configure') && can('messenger.manage') && <AiSettings key={`${view.settings?.keyHint ?? ''}:${view.settings?.model ?? ''}`} view={view} base={base} reload={reload} />}
+      {can('ai.configure') && can('messenger.manage') && <AiSettings view={view} base={base} reload={reload} />}
       <Field label={mt.page}><Select value={pageId} onChange={e => setPageId(e.target.value)}><option value="">{mt.choosePage}</option>{pages.map(p => <option key={p.id} value={p.id}>{p.name} · {p.brand.name} · {p.messengerConfig?.enabled ? mt.on : mt.off}</option>)}</Select></Field>
       {!pages.length && <Empty text={mt.noPages} />}
       {page && <PageChat key={page.id} page={page} base={base} view={view} can={can} reload={reload} />}
@@ -34,14 +35,14 @@ function MessengerWorkspace({ workspaceId, can }: { workspaceId: string; can: (p
   </div>;
 }
 function AiSettings({ view, base, reload }: { view: MessengerSettingsView; base: string; reload: () => Promise<void> }) {
-  const [key, setKey] = useState(''); const [model, setModel] = useState(view.settings?.model ?? 'gpt-5-mini'); const [limit, setLimit] = useState(view.settings?.dailyLimit ?? 500);
+  const [limit, setLimit] = useState(view.settings?.dailyLimit ?? 500);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null); const [saved, setSaved] = useState(false);
-  async function save(remove = false) { setBusy(true); setError(null); setSaved(false); try { if (remove) await api(`${base}/settings/key`, { method: 'DELETE' }); else await api(`${base}/settings`, { method: 'PATCH', body: { model, dailyLimit: limit, ...(key.trim() && { apiKey: key.trim() }) } }); setKey(''); await reload(); setSaved(true); } catch (e) { setError(e); } finally { setBusy(false); } }
-  return <Card title={mt.ai}><p className="mb-3 text-sm text-slate-400">{mt.dedicated}</p><div className="grid gap-3 md:grid-cols-3">
-    <Field label={mt.key} hint={view.settings ? `${mt.keyHint} · …${view.settings.keyHint}` : undefined}><Input type="password" autoComplete="new-password" value={key} onChange={e => setKey(e.target.value)} maxLength={1000} /></Field>
-    <Field label={mt.model}><Input value={model} onChange={e => setModel(e.target.value)} maxLength={120} /></Field>
+  async function save() { setBusy(true); setError(null); setSaved(false); try { await api(`${base}/settings`, { method: 'PATCH', body: { dailyLimit: limit } }); await reload(); setSaved(true); } catch (e) { setError(e); } finally { setBusy(false); } }
+  const source = view.ai?.source === 'auto' ? ` · ${mt.aiAuto}` : view.ai?.source === 'fallback' ? ` · ${mt.aiFallback}` : '';
+  return <Card title={mt.ai}><p className="mb-3 text-sm text-slate-400">{mt.dedicated}</p><div className="grid gap-3 md:grid-cols-2">
+    <Field label={mt.model} hint={view.ai ? `${view.ai.provider}${source}` : undefined}><p className="rounded-lg border border-slate-200 px-3 py-2 text-sm">{view.ai ? view.ai.model : mt.noAi}</p></Field>
     <Field label={mt.dailyLimit}><Input type="number" min={1} max={10000} value={limit} onChange={e => setLimit(Number(e.target.value))} /></Field>
-  </div><p className="my-3 text-xs text-slate-400">{mt.limitHint}</p><div className="flex flex-wrap items-center gap-3"><Button disabled={busy || !model.trim() || !Number.isInteger(limit) || limit < 1 || limit > 10000 || (!view.settings && !key.trim())} onClick={() => void save()}>{mt.save}</Button>{view.settings && <Button variant="danger" disabled={busy} onClick={() => void save(true)}>{mt.removeKey}</Button>}{saved && <span role="status" className="text-sm text-emerald-400">{mt.saved}</span>}</div><ErrorBox error={error} /></Card>;
+  </div><p className="my-3 text-xs text-slate-400">{mt.limitHint}</p><div className="flex flex-wrap items-center gap-3"><Button disabled={busy || !Number.isInteger(limit) || limit < 1 || limit > 10000} onClick={() => void save()}>{mt.save}</Button><Link className="text-sm text-sky-600 underline" href="/ai-models">{mt.aiLink}</Link>{saved && <span role="status" className="text-sm text-emerald-400">{mt.saved}</span>}</div><ErrorBox error={error} /></Card>;
 }
 function PageChat({ page, base, view, can, reload }: { page: MessengerPage; base: string; view: MessengerSettingsView; can: (p: string) => boolean; reload: () => Promise<void> }) {
   const [instructions, setInstructions] = useState(page.messengerConfig?.instructions ?? ''); const [fallback, setFallback] = useState(page.messengerConfig?.fallbackMessage ?? mt.fallbackDefault);

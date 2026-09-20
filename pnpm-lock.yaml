@@ -139,6 +139,9 @@ importers:
 
   packages/ai-core:
     dependencies:
+      '@fbpm/database':
+        specifier: workspace:*
+        version: link:../database
       '@fbpm/shared':
         specifier: workspace:*
         version: link:../shared
@@ -212,6 +215,9 @@ importers:
       '@fbpm/database':
         specifier: workspace:*
         version: link:../database
+      '@fbpm/shared':
+        specifier: workspace:*
+        version: link:../shared
       zod:
         specifier: 4.5.4
         version: 4.5.4
@@ -297,6 +303,9 @@ importers:
 
   workers/scheduler:
     dependencies:
+      '@fbpm/ai-core':
+        specifier: workspace:*
+        version: link:../../packages/ai-core
       '@fbpm/database':
         specifier: workspace:*
         version: link:../../packages/database

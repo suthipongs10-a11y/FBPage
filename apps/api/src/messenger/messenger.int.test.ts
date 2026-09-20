@@ -15,10 +15,10 @@ function client(base: string) {
   return async (method: string, path: string, body?: unknown) => {
     const r = await fetch(base + path, { method, headers: { 'content-type': 'application/json', cookie }, ...(body !== undefined && { body: JSON.stringify(body) }) });
     if (r.headers.get('set-cookie')) cookie = r.headers.get('set-cookie')!.split(';')[0]!;
-    const json = await r.json() as { workspace: { id: string }; user: { id: string }; settings: { validatedAt: string } | null; text: string; url: string }; return { status: r.status, json };
+    const json = await r.json() as { workspace: { id: string }; user: { id: string }; settings: { validatedAt: string } | null; ai: { provider: string; model: string } | null; text: string; url: string }; return { status: r.status, json };
   };
 }
-run('Messenger automatic replies (real DB/queue, local Meta/OpenAI fixtures)', () => {
+run('Messenger automatic replies (real DB/queue, local Meta/AI fixtures)', () => {
   let app: INestApplication; let db: PrismaClient; let mock: Awaited<ReturnType<typeof startMockMessenger>>; let deps: MessengerDeps;
   let a: ReturnType<typeof client>; let b: ReturnType<typeof client>; let base: string; let ws: string; let otherWs: string; let userId: string; let pageId: string; let secondId: string; let brandId: string; let q: Queue;
   const stamp = Date.now(); const fbId = `messenger-${stamp}`; let sequence = 0;
@@ -28,7 +28,7 @@ run('Messenger automatic replies (real DB/queue, local Meta/OpenAI fixtures)', (
   async function incoming(body = event()) { const ids = await ingestMessenger(deps, messengerEvents(body)); expect(ids).toHaveLength(1); return ids[0]!; }
   beforeAll(async () => {
     mock = await startMockMessenger();
-    Object.assign(process.env, { APP_ENV: 'test', AUTH_SECRET: secret, META_APP_ID: '123', META_APP_SECRET: 'meta-test-secret', META_WEBHOOK_VERIFY_TOKEN: 'messenger-verify', META_GRAPH_BASE_URL: mock.url, META_OAUTH_REDIRECT_URI: 'http://localhost:4000/facebook/oauth/callback', MESSENGER_AI_MOCK_BASE_URL: `${mock.url}/v1` });
+    Object.assign(process.env, { APP_ENV: 'test', AUTH_SECRET: secret, META_APP_ID: '123', META_APP_SECRET: 'meta-test-secret', META_WEBHOOK_VERIFY_TOKEN: 'messenger-verify', META_GRAPH_BASE_URL: mock.url, META_OAUTH_REDIRECT_URI: 'http://localhost:4000/facebook/oauth/callback' });
     _resetRateLimits(); ({ app } = await createApp()); await app.listen(0, '127.0.0.1'); base = await app.getUrl(); a = client(base); b = client(base); db = new PrismaClient();
     const reg = await a('POST', '/auth/register', { email: `messenger-a-${stamp}@test.local`, name: 'Messenger A', password: 'messenger-password-123' }); ws = reg.json.workspace.id; userId = reg.json.user.id;
     otherWs = (await b('POST', '/auth/register', { email: `messenger-b-${stamp}@test.local`, name: 'Messenger B', password: 'messenger-password-123' })).json.workspace.id;
@@ -42,36 +42,41 @@ run('Messenger automatic replies (real DB/queue, local Meta/OpenAI fixtures)', (
   afterAll(async () => {
     await q?.obliterate({ force: true }); await q?.close(); await app?.close();
     await db?.workspace.deleteMany({ where: { id: { in: [ws, otherWs].filter(Boolean) } } }); await db?.user.deleteMany({ where: { email: { in: [`messenger-a-${stamp}@test.local`, `messenger-b-${stamp}@test.local`] } } }); await db?.$disconnect(); mock?.server.close();
-    for (const k of ['META_APP_ID', 'META_APP_SECRET', 'META_WEBHOOK_VERIFY_TOKEN', 'META_GRAPH_BASE_URL', 'META_OAUTH_REDIRECT_URI', 'MESSENGER_AI_MOCK_BASE_URL']) delete process.env[k];
+    for (const k of ['META_APP_ID', 'META_APP_SECRET', 'META_WEBHOOK_VERIFY_TOKEN', 'META_GRAPH_BASE_URL', 'META_OAUTH_REDIRECT_URI']) delete process.env[k];
   });
-  it('starts off and requires a dedicated key, even when content OpenAI exists', async () => {
-    await db.aiProviderKey.create({ data: { workspaceId: ws, provider: 'openai', encryptedApiKey: encryptSecret('CONTENT_KEY_ONLY', secret) } });
+  it('starts off and stays off until the workspace has an AI key', async () => {
     expect((await a('GET', path('/settings'))).json.settings).toBeNull();
     expect((await a('POST', path(`/pages/${pageId}/preview`), { text: 'hello' })).status).toBe(502);
     expect(mock.state.aiCalls).toHaveLength(0);
     expect((await a('PATCH', path(`/pages/${pageId}`), { ...config, enabled: true })).status).toBe(422);
   });
-  it('stores an encrypted separate key and excludes secrets from views and audit', async () => {
-    const r = await a('PATCH', path('/settings'), { apiKey: 'MESSENGER_KEY_PRIVATE', model: 'mock-chat', dailyLimit: 100 }); expect(r.status).toBe(200);
-    expect(JSON.stringify(r.json)).not.toContain('MESSENGER_KEY_PRIVATE');
-    const row = await db.messengerSettings.findUniqueOrThrow({ where: { workspaceId: ws } }); expect(row.encryptedApiKey).not.toContain('MESSENGER_KEY_PRIVATE'); expect(decryptSecret(row.encryptedApiKey, secret)).toBe('MESSENGER_KEY_PRIVATE');
-    expect(JSON.stringify(await db.auditLog.findMany({ where: { workspaceId: ws } }))).not.toContain('MESSENGER_KEY_PRIVATE');
+  it('uses the workspace AI key and never stores or exposes a key of its own', async () => {
+    await db.aiProviderKey.create({ data: { workspaceId: ws, provider: 'openai', encryptedApiKey: encryptSecret('WORKSPACE_AI_KEY', secret), baseUrl: `${mock.url}/v1` } });
+    await db.aiRoleConfig.create({ data: { workspaceId: ws, role: 'community', provider: 'openai', model: 'mock-chat' } });
+    const r = await a('PATCH', path('/settings'), { dailyLimit: 100 }); expect(r.status).toBe(200);
+    expect(JSON.stringify(r.json)).not.toContain('WORKSPACE_AI_KEY');
+    expect(r.json.ai).toMatchObject({ provider: 'openai', model: 'mock-chat' });
+    const row = await db.messengerSettings.findUniqueOrThrow({ where: { workspaceId: ws } });
+    expect(Object.keys(row)).not.toContain('encryptedApiKey');
+    expect(decryptSecret((await db.aiProviderKey.findFirstOrThrow({ where: { workspaceId: ws } })).encryptedApiKey!, secret)).toBe('WORKSPACE_AI_KEY');
+    expect(JSON.stringify(await db.auditLog.findMany({ where: { workspaceId: ws } }))).not.toContain('WORKSPACE_AI_KEY');
   });
   it('enforces workspace isolation, permissions and input validation', async () => {
     expect((await b('GET', path('/pages'))).status).toBe(404);
     expect((await b('GET', `/workspaces/${otherWs}/messenger/conversations?pageId=${pageId}`)).status).toBe(404);
     expect((await b('PATCH', `/workspaces/${otherWs}/messenger/pages/${pageId}`, config)).status).toBe(404);
-    expect((await a('PATCH', path('/settings'), { model: '', dailyLimit: -1 })).status).toBe(400);
+    expect((await a('PATCH', path('/settings'), { dailyLimit: -1 })).status).toBe(400);
+    expect((await a('PATCH', path('/settings'), { dailyLimit: 100, apiKey: 'no-private-key-here' })).status).toBe(400);
     const member = await db.user.findFirstOrThrow({ where: { email: `messenger-b-${stamp}@test.local` } });
     await db.workspaceMember.create({ data: { workspaceId: ws, userId: member.id, role: 'viewer' } });
     expect((await b('GET', path('/pages'))).status).toBe(200);
     expect((await b('PATCH', path(`/pages/${pageId}`), config)).status).toBe(403);
     await db.workspaceMember.delete({ where: { workspaceId_userId: { workspaceId: ws, userId: member.id } } });
   });
-  it('previews a knowledge-based answer using the dedicated key and sends nothing to Meta', async () => {
+  it('previews a knowledge-based answer using the workspace AI key and sends nothing to Meta', async () => {
     expect((await a('PATCH', path(`/pages/${pageId}`), config)).status).toBe(200);
     const r = await a('POST', path(`/pages/${pageId}/preview`), { text: 'ราคาเท่าไหร่คะ' }); expect(r.status).toBe(200); expect(r.json.text).toContain('900');
-    expect(mock.state.aiCalls.at(-1)?.key).toBe('Bearer MESSENGER_KEY_PRIVATE'); expect(mock.state.sends).toHaveLength(0);
+    expect(mock.state.aiCalls.at(-1)?.key).toBe('Bearer WORKSPACE_AI_KEY'); expect(mock.state.sends).toHaveLength(0);
     expect((await a('GET', path('/settings'))).json.settings?.validatedAt).toBeTruthy();
   });
   it('requests Messenger scope only for the Messenger connect flow; subscribes then enables only target page', async () => {
@@ -185,8 +190,14 @@ run('Messenger automatic replies (real DB/queue, local Meta/OpenAI fixtures)', (
     const duplicate = await db.facebookPage.create({ data: { brandId: brand.id, connectionId: p.connectionId, facebookPageId: p.facebookPageId, name: 'Duplicate page', pageAccessTokenEncrypted: p.pageAccessTokenEncrypted, messengerConfig: { create: { subscribedAt: new Date() } } } });
     expect((await a('PATCH', path(`/pages/${duplicate.id}`), { ...config, enabled: true })).status).toBe(409); await db.brand.delete({ where: { id: brand.id } });
   });
-  it('deleting the chat key turns pages off and preserves the content key', async () => {
-    expect((await a('DELETE', path('/settings/key'))).status).toBe(200); expect((await a('GET', path('/settings'))).json.settings).toBeNull();
-    expect((await db.messengerPageConfig.findUniqueOrThrow({ where: { pageId } })).enabled).toBe(false); expect(await db.aiProviderKey.count({ where: { workspaceId: ws, provider: 'openai' } })).toBe(1);
+  it('stops answering and refuses to be enabled once the workspace AI key is gone', async () => {
+    await db.messengerPageConfig.update({ where: { pageId }, data: { enabled: false, revision: { increment: 1 } } });
+    await db.aiProviderKey.deleteMany({ where: { workspaceId: ws } });
+    expect((await a('GET', path('/settings'))).json.ai).toBeNull();
+    const calls = mock.state.aiCalls.length;
+    expect((await a('POST', path(`/pages/${pageId}/preview`), { text: 'ราคาเท่าไหร่คะ' })).status).toBe(502);
+    expect(mock.state.aiCalls).toHaveLength(calls);
+    await db.messengerSettings.update({ where: { workspaceId: ws }, data: { validatedAt: null } });
+    expect((await a('PATCH', path(`/pages/${pageId}`), { ...config, enabled: true })).status).toBe(422);
   });
 });

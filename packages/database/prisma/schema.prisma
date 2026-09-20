@@ -614,9 +614,6 @@ model AuditLog {
 // Messenger uses a dedicated credential, never the content/provider fallback keys.
 model MessengerSettings {
   workspaceId String @id
-  encryptedApiKey String
-  keyHint String
-  model String
   dailyLimit Int @default(500)
   validatedAt DateTime?
   revision Int @default(1)

@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AiProviderError, generateStructured } from '@fbpm/ai-core';
+import { AiBudgetExceededError, AiNotConfiguredError, AiProviderError, runStructuredTask, type AiTaskContext } from '@fbpm/ai-core';
 import { decryptSecret, type Prisma, type PrismaClient } from '@fbpm/database';
 import { inWindow, type MessengerEvent } from './events';
 import { MessengerSendError, type MessengerTransport } from './meta';
 
 export class MessengerError extends Error { constructor(public readonly code: string) { super(code); } }
-export interface MessengerDeps { prisma: PrismaClient; secret: string; transport: MessengerTransport; appId?: string; aiTestBaseUrl?: string; testMode?: boolean; allowAutomaticSend?: boolean }
+/** `ai` คือทางเดิน AI กลางของระบบ (งบ/บทบาท/BYOK/AiTaskLog) — Messenger ไม่มี key ของตัวเอง */
+export interface MessengerDeps { prisma: PrismaClient; secret: string; transport: MessengerTransport; ai: AiTaskContext; appId?: string; testMode?: boolean; allowAutomaticSend?: boolean }
 export const replySchema = z.object({ action: z.enum(['reply', 'clarify', 'handoff']), text: z.string().trim().min(1).max(1800), intent: z.string().max(120), evidenceIds: z.array(z.string()).max(20) });
 export type Reply = z.infer<typeof replySchema>;
 const pageInclude = { messengerConfig: true, connection: true, brand: { include: { knowledge: { where: { active: true }, orderBy: { updatedAt: 'desc' as const }, take: 100 }, client: { include: { workspace: { include: { messengerSettings: true } } } } } } } as const;
@@ -64,18 +65,16 @@ export async function ingestMessenger(d: MessengerDeps, events: MessengerEvent[]
 }
 
 export async function generateMessengerReply(d: MessengerDeps, workspaceId: string, pageId: string, history: { role: 'user' | 'assistant'; text: string }[]): Promise<{ reply: Reply; settingsRevision: number }> {
-  if (d.aiTestBaseUrl && !d.testMode) throw new MessengerError('TEST_ENDPOINT_FORBIDDEN');
   const page = await d.prisma.facebookPage.findFirst({ where: scopedPage(workspaceId, pageId), include: pageInclude });
   if (!page) throw new MessengerError('NOT_FOUND');
-  const settings = page.brand.client.workspace.messengerSettings;
-  if (!settings) throw new MessengerError('OPENAI_NOT_CONFIGURED');
+  // เพดานรายวันเป็นค่าเริ่มต้นได้ — key/โมเดลมาจากการตั้งค่า AI กลางของพื้นที่ทำงาน ไม่ได้เก็บไว้ที่นี่
+  const settings = page.brand.client.workspace.messengerSettings ?? await d.prisma.messengerSettings.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} });
   const day = dayKey();
   const reserved = await d.prisma.$transaction(async tx => {
     await tx.messengerDailyUsage.upsert({ where: { workspaceId_day: { workspaceId, day } }, create: { workspaceId, day }, update: {} });
     return tx.messengerDailyUsage.updateMany({ where: { workspaceId, day, requests: { lt: settings.dailyLimit } }, data: { requests: { increment: 1 } } });
   });
   if (!reserved.count) throw new MessengerError('DAILY_LIMIT');
-  const t0 = Date.now();
   // Lexical retrieval works for Thai fragments as well as space-separated languages. Always retain policy constraints.
   const question = history.filter(h => h.role === 'user').slice(-3).map(h => h.text).join(' ').toLocaleLowerCase();
   const fragments = question.match(/[\p{L}\p{N}]{2,}/gu) ?? [];
@@ -88,17 +87,19 @@ If information is missing, ask one useful clarifying question. If the customer a
 Operator instructions (subject to factuality and privacy rules): ${page.messengerConfig?.instructions ?? ''}
 Return action reply|clarify|handoff, text, intent, evidenceIds. Cite supporting knowledge IDs in evidenceIds, never expose these IDs in customer text. An unsupported factual business answer is not allowed; clarify or handoff instead.`;
   try {
-    const result = await generateStructured({ provider: 'openai', apiKey: decryptSecret(settings.encryptedApiKey, d.secret), model: settings.model, timeoutMs: 25_000, ...(d.aiTestBaseUrl && { baseUrl: d.aiTestBaseUrl }) }, {
+    // ผ่าน task runner กลาง: เลือกโมเดลตามบทบาท community, ใช้ key ของพื้นที่ทำงาน, ตัดงบเดือน และบันทึก AiTaskLog ให้เอง
+    const outcome = await runStructuredTask(d.ai, { workspaceId, taskType: 'messenger.reply', role: 'community', requestId: `messenger-${randomUUID()}`, resourceType: 'facebookPage', resourceId: pageId, promptVersion }, {
       system, prompt: JSON.stringify({ brand: { name: page.brand.name, description: page.brand.description, serviceArea: page.brand.serviceArea, website: page.brand.website }, knowledge, conversation: history.slice(-20).map(h => ({ role: h.role, text: h.text.slice(0, 6000) })) }),
       schemaDescription: '{"action":"reply|clarify|handoff","text":"customer-facing reply","intent":"short intent label","evidenceIds":["supplied knowledge ID"]}',
       validate: value => { const r = replySchema.parse(value); if (r.evidenceIds.some(id => !evidence.has(id))) throw new Error('Unknown evidence ID'); return r; }, maxTokens: 2200, retries: 0,
     });
-    await d.prisma.aiTaskLog.create({ data: { workspaceId, taskType: 'messenger.reply', role: 'messenger', provider: 'openai', model: result.model, promptVersion, latencyMs: Date.now() - t0, inputTokens: result.usage.input, outputTokens: result.usage.output, success: true, resourceType: 'facebookPage', resourceId: pageId, requestId: `messenger-${randomUUID()}` } });
-    return { reply: result.data, settingsRevision: settings.revision };
+    return { reply: outcome.result.data, settingsRevision: settings.revision };
   } catch (e) {
-    const code = e instanceof AiProviderError && e.isAuthError ? 'OPENAI_AUTH' : e instanceof AiProviderError && e.isRateLimited ? 'OPENAI_RATE_LIMIT' : 'OPENAI_FAILED';
-    await d.prisma.aiTaskLog.create({ data: { workspaceId, taskType: 'messenger.reply', role: 'messenger', provider: 'openai', model: settings.model, promptVersion, latencyMs: Date.now() - t0, success: false, resourceType: 'facebookPage', resourceId: pageId, requestId: `messenger-${randomUUID()}`, error: code } });
-    throw new MessengerError(code);
+    if (e instanceof AiNotConfiguredError) throw new MessengerError('AI_NOT_CONFIGURED');
+    if (e instanceof AiBudgetExceededError) throw new MessengerError('AI_BUDGET');
+    if (e instanceof AiProviderError && e.isAuthError) throw new MessengerError('AI_AUTH');
+    if (e instanceof AiProviderError && e.isRateLimited) throw new MessengerError('AI_RATE_LIMIT');
+    throw new MessengerError('AI_FAILED');
   }
 }
 
@@ -129,7 +130,7 @@ export async function processMessenger(d: MessengerDeps, conversationId: string)
       if (message.unsupported) reply = { action: 'clarify', text: 'ขอรายละเอียดเป็นข้อความเพิ่มเติมได้ไหมคะ ตอนนี้ผู้ช่วย AI ยังอ่านรูปภาพ ไฟล์ หรือข้อความที่ยาวมากในแชทนี้ไม่ได้ค่ะ', intent: 'unsupported_message', evidenceIds: [] };
       else { const r = await generateMessengerReply(d, ws.id, page.id, history); reply = r.reply; settingsRevision = r.settingsRevision; }
     } catch (e) {
-      reason = e instanceof MessengerError ? e.code : 'OPENAI_FAILED';
+      reason = e instanceof MessengerError ? e.code : 'AI_FAILED';
       reply = { action: 'handoff', text: config!.fallbackMessage, intent: 'service_unavailable', evidenceIds: [] };
     }
     if (reply.action === 'handoff' && !reason) reason = 'HANDOFF_REQUESTED';

@@ -16,7 +16,8 @@
 | 4 | WordPress ของลูกค้า | จำเป็นถ้าจะโพสต์บทความขึ้นเว็บ | Application Password (กรอกในหน้าเว็บ) |
 | 5 | Brevo หรือ Resend | จำเป็นถ้าจะส่งอีเมลการตลาด | API key + webhook secret (กรอกในหน้าเว็บ) |
 | 6 | SMTP แจ้งเตือนภายใน | ไม่บังคับ | `SMTP_HOST/PORT/USER/PASS/FROM` |
-| 7 | AI | เตรียมคีย์ผู้ให้บริการ เช่น Gemini | วาง key ในหน้า "โมเดล AI" |
+| 7 | AI | เตรียมคีย์ผู้ให้บริการ เช่น Gemini | วาง key ในหน้า "โมเดล AI" — ใช้ร่วมกันทุกโมดูล |
+| 8 | TikTok | TikTok for Developers → Content Posting API | `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` |
 
 ---
 
@@ -190,9 +191,34 @@ user = อีเมลที่ล็อกอิน, pass = SMTP key (คนล
 ไม่ต้องแตะ `.env` ก็ได้:
 1. หน้า **โมเดล AI** → ช่อง **Google AI (Gemini)** → วาง API key จาก <https://aistudio.google.com/apikey> → *ทดสอบ*
 2. ตั้งบทบาทให้โมเดล: `strategy`, `content`, `analysis`, `community`, `fast` (เลือก Gemini รุ่นที่มีสิทธิ์ใช้)
-3. หน้า **ตั้งค่า** → ใส่งบ AI ต่อเดือนและเพดานต่องาน — ถึงงบระบบจะหยุดเรียกเอง
+   - บทบาท `community` คือตัวที่ **ตอบคอมเมนต์และแชท Messenger** ใช้ — ไม่ต้องมีคีย์แยกให้แชทอีกแล้ว
+3. หน้า **ตั้งค่า** → ใส่งบ AI ต่อเดือนและเพดานต่องาน — ถึงงบระบบจะหยุดเรียกเอง ครอบคลุมทุกโมดูลรวมแชทและ TikTok
 
 ถ้าอยากให้ทุก workspace ใช้ key เดียวกันโดยไม่ต้องกรอก: ใส่ `GOOGLE_AI_API_KEY=` ใน `.env`
+
+---
+
+## 8. TikTok — TikTok for Developers (ทำทีหลังได้)
+
+ต้องมีก่อนเชื่อมช่อง TikTok ของลูกค้า:
+1. เข้า <https://developers.tiktok.com/> → *Manage apps* → **Create an app** (ใช้บัญชี TikTok ของเรา)
+2. ในแอป → *Add products* → เลือก **Login Kit** และ **Content Posting API**
+3. *Login Kit* → **Redirect URI** ใส่ `https://fbm.ragalpha.com/api/tiktok/oauth/callback`
+4. *Scopes* ที่ขอ: `user.info.basic`, `video.list`, `video.publish` (อันสุดท้ายต้องผ่านรีวิวของ TikTok)
+5. หน้า *App details* → คัดลอก **Client key** และ **Client secret** ลง `.env`:
+   ```
+   TIKTOK_CLIENT_KEY=...
+   TIKTOK_CLIENT_SECRET=...
+   TIKTOK_REDIRECT_URI=https://fbm.ragalpha.com/api/tiktok/oauth/callback
+   ```
+6. ถ้าจะอัปโหลดคลิปด้วย URL ต้องยืนยันโดเมนที่เก็บไฟล์กับ TikTok ก่อน แล้วใส่ prefix ที่ยืนยันแล้ว:
+   ```
+   TIKTOK_VERIFIED_MEDIA_PREFIXES=https://media.fbm.ragalpha.com/videos/
+   ```
+   ระบบรับเฉพาะ URL ที่เป็น https, ลงท้าย `.mp4`, ไม่มี query/fragment และตรงกับ prefix เหล่านี้
+7. การอัปโหลดจริงยังปิดอยู่จนกว่าจะตั้ง `SOCIAL_PUBLISHING_ENABLED=true` — ค่าเริ่มต้นคือปิด ร่างและอนุมัติได้ แต่ยังไม่ยิงขึ้นช่อง
+
+> ระหว่างรอรีวิว: เชื่อมช่อง อ่านคลิป ดู metric และให้ AI ร่างแคปชัน/สคริปต์ได้ตามปกติ แค่อัปโหลดจริงไม่ได้
 
 ---
 
@@ -203,5 +229,6 @@ user = อีเมลที่ล็อกอิน, pass = SMTP key (คนล
 3. Meta app (ข้อ 1) → เชื่อมเพจลูกค้ารายแรกด้วยวิธีวาง token
 4. Google Cloud (ข้อ 2) → เชื่อมช่อง YouTube และ Search Console
 5. เพิ่มเว็บลูกค้าเข้าหน้าเว็บไซต์ (ยังไม่ต้องมี key อะไรเลย) → ค่อยเติม PageSpeed key
+6. TikTok (ข้อ 8) ทำทีหลังได้ — ต้องผ่านรีวิวของ TikTok ก่อนถึงจะอัปโหลดคลิปจริง และระบบยังต้องตั้ง `SOCIAL_PUBLISHING_ENABLED=true` เพิ่มอีกชั้น
 6. เมื่อจะเริ่มทำบทความ: Application Password ของ WordPress (ข้อ 4)
 7. เมื่อจะเริ่มทำอีเมล: Brevo/Resend + ยืนยันโดเมน (ข้อ 5)
