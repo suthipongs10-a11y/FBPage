@@ -2,12 +2,14 @@
 /**
  * make-card.mjs — สร้างภาพประกอบโพสต์จากเทมเพลต (ไม่ต้องเขียน HTML ใหม่ทุกครั้ง)
  *
- *   node make-card.mjs <template> <data.json> <out.png> [--theme <ชื่อธีม>]
+ *   node make-card.mjs <template> <data.json> <out.png> [--theme <ชื่อธีม>] [--font <path>] [--font-bold <path>]
  *
  * เทมเพลต:  quote | stat | tips | hero
  * ธีม:      fadaeng | phuketmaids | rabiangboon | dark | default
  *
- * ภาพที่ได้เป็นงานต้นฉบับทั้งหมด ไม่มีภาพบุคคลจริง ไม่มีปัญหาลิขสิทธิ์
+ * ค่าเริ่มต้นเป็นงานต้นฉบับทั้งหมด (ไอคอน/emoji/SVG) ไม่มีภาพบุคคลจริง ไม่มีปัญหาลิขสิทธิ์
+ * ใส่รูปจริงในกรอบเล็กได้ด้วยคีย์ "photo" ใน data.json (path ไฟล์ในเครื่อง) — ต้องเป็นรูปที่มีสิทธิ์ใช้
+ * เชิงพาณิชย์แน่ชัด (เช่น Pexels/Unsplash License หรือรูปที่ลูกค้าถ่ายเอง) สคริปต์นี้ไม่ได้ตรวจสิทธิ์ให้
  * ต้องมี Chromium ในเครื่อง (ตั้ง path ผ่าน env CHROME_BIN ได้)
  */
 
@@ -17,8 +19,10 @@ import { execFileSync } from 'node:child_process';
 
 const CHROME = process.env.CHROME_BIN
   || '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
-const FONT = 'file:///usr/share/fonts/opentype/tlwg/Loma.otf';
-const FONT_BOLD = 'file:///usr/share/fonts/opentype/tlwg/Loma-Bold.otf';
+// ค่าเริ่มต้นคงเดิมเสมอ (Loma) เพื่อไม่ให้การ์ดของลูกค้ารายอื่นที่ทำไว้แล้วเปลี่ยนหน้าตาโดยไม่ตั้งใจ
+// ต้องการฟอนต์อื่น ระบุผ่าน --font/--font-bold (path ไฟล์ธรรมดา หรือ file:// ก็ได้)
+let FONT = 'file:///usr/share/fonts/opentype/tlwg/Loma.otf';
+let FONT_BOLD = 'file:///usr/share/fonts/opentype/tlwg/Loma-Bold.otf';
 const SIZE = 1080;
 
 const die = m => { console.error('✖', m); process.exit(1); };
@@ -50,6 +54,9 @@ const base = t => `
   .foot{position:absolute;left:74px;right:74px;bottom:44px;display:flex;
         justify-content:space-between;align-items:flex-end;font-size:25px;color:${t.dim};line-height:1.5}
   .brand{font-weight:700;color:${t.accent};font-size:30px;white-space:nowrap;padding-left:24px}
+  .photo-frame{position:absolute;top:70px;right:74px;width:190px;height:190px;border-radius:24px;
+        overflow:hidden;border:6px solid ${t.card};box-shadow:0 10px 30px rgba(0,0,0,.18)}
+  .photo-frame img{width:100%;height:100%;object-fit:cover;display:block}
 `;
 
 // ---------- เทมเพลต ----------
@@ -154,6 +161,7 @@ function buildHtml(name, data, theme) {
   return `<!doctype html><meta charset="utf-8"><style>${base(t)}${tpl.css}
     .card{${cardStyle}}</style>
     <div class="card">${tpl.body}
+      ${data.photo ? `<div class="photo-frame"><img src="${asFileUrl(data.photo)}"></div>` : ''}
       ${(data.footer || data.brand) ? `<div class="foot">
         <div>${rich(data.footer || '')}</div>
         <div class="brand">${esc(data.brand || '')}</div></div>` : ''}
@@ -162,13 +170,18 @@ function buildHtml(name, data, theme) {
 
 const [, , name, dataPath, outPath, ...rest] = process.argv;
 if (!name || !dataPath || !outPath) {
-  die('ใช้: node make-card.mjs <template> <data.json> <out.png> [--theme <ธีม>]\n' +
+  die('ใช้: node make-card.mjs <template> <data.json> <out.png> [--theme <ธีม>] [--font <path>] [--font-bold <path>]\n' +
       `  template: ${Object.keys(TEMPLATES).join(' | ')}\n` +
       `  theme:    ${Object.keys(THEMES).join(' | ')}`);
 }
 const ti = rest.indexOf('--theme');
 const theme = ti >= 0 ? rest[ti + 1] : (JSON.parse(readFileSync(resolve(dataPath), 'utf8')).theme || 'default');
 if (!existsSync(resolve(dataPath))) die(`ไม่พบไฟล์ข้อมูล: ${dataPath}`);
+const asFileUrl = p => (p.startsWith('file://') ? p : `file://${resolve(p)}`);
+const fi = rest.indexOf('--font');
+if (fi >= 0) FONT = asFileUrl(rest[fi + 1]);
+const fbi = rest.indexOf('--font-bold');
+if (fbi >= 0) FONT_BOLD = asFileUrl(rest[fbi + 1]);
 
 const data = JSON.parse(readFileSync(resolve(dataPath), 'utf8'));
 const html = buildHtml(name, data, theme);
