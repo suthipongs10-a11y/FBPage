@@ -72,9 +72,9 @@ URL ที่ระบบสร้างเองและส่งออกไ�
 ตรวจด้วย `ss -ltn | grep -E ':(80|443) '` — ถ้ามีคนฟังอยู่แล้ว **ห้ามใช้ Caddy** (จะแย่งพอร์ตกับเว็บอื่นบนเครื่อง) ให้ทำแบบนี้แทน:
 
 - **ข้ามข้อ 0.3 (ufw)** — พอร์ต 80/443 เปิดอยู่แล้วเพราะ nginx ใช้ และการเปิด ufw บนเครื่องที่มีบริการอื่นอาจตัดบริการนั้น
-- ข้อ 1 สร้าง `.env` ตามปกติ แล้ว**เพิ่มบรรทัดนี้** ทุกคำสั่ง `docker compose` จะปิด Caddy และเปิด api/web ที่ `127.0.0.1:4100` / `127.0.0.1:3100` ให้ nginx เรียก พร้อมเพดาน RAM ต่อคอนเทนเนอร์
+- ข้อ 1 ใช้สคริปต์แทน heredoc — สุ่มความลับ ไม่พิมพ์ค่าลับ ไม่เขียนทับ `.env` เดิม และใส่ `COMPOSE_FILE` ให้ ทุกคำสั่ง `docker compose` จะปิด Caddy และเปิด api/web ที่ `127.0.0.1:4100` / `127.0.0.1:3100` ให้ nginx เรียก พร้อมเพดาน RAM ต่อคอนเทนเนอร์
   ```bash
-  echo 'COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.host-nginx.yml' >> .env
+  bash deploy/make-env.sh <โดเมน> --host-nginx
   docker compose --profile automation config --services   # ต้องไม่มี caddy ในรายการ
   ```
 - **ถ้าไม่มี swap** (`free -m` แถว Swap เป็น 0) เพิ่มก่อน build — build ครั้งแรกกิน RAM หลาย GB ถ้าไม่มี swap เครื่องอาจฆ่าบริการอื่นทิ้ง
