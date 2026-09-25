@@ -47,7 +47,9 @@
 **ระหว่างยังไม่ผ่าน App Review** ใช้ได้เฉพาะเพจที่บัญชีของคุณอยู่ใน Roles ของแอป
 (App settings → Roles → เพิ่มตัวเองเป็น Admin/Developer/Tester)
 ทางลัดสำหรับเพจลูกค้าที่เชิญคุณเป็นแอดมินแล้ว: Graph API Explorer → เลือกแอป → ขอสิทธิ์ข้างบน →
-Generate Access Token → เอา token มาวางในช่อง *วาง token* ในหน้าเพจ (ระบบขยายเป็น long-lived ให้เอง)
+Generate Access Token → **Access Token Debugger → Extend Access Token** (อายุ ~60 วัน) → เอา token ที่ extend แล้วมาวางในช่อง *วาง token* ในหน้าเพจ
+(ทางวาง token ระบบ**ไม่**แลกเป็น long-lived ให้ — แลกเฉพาะทาง OAuth · token สั้นจาก Explorer หมดอายุใน 1–2 ชม. และ page token ที่ได้จากมันก็หมดตาม ·
+page token ที่ได้จาก user token แบบยาวจะไม่หมดอายุตราบที่ยังเป็นแอดมินเพจ · เพจที่อยู่ใน Business portfolio ถ้าไม่ขึ้นรายการ ให้เพิ่มสิทธิ์ `business_management`)
 
 ---
 
