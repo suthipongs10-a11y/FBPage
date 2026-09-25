@@ -8,6 +8,10 @@ Ubuntu 24.04.5, x86_64, 4 CPU, 5.9 GB RAM (~4.8 GB available), **no swap**, 45 G
 
 Decision: integrate with host nginx, not Caddy — `deploy/docker-compose.host-nginx.yml` (Caddy off, api/web on loopback 4100/3100, per-container memory caps) + `deploy/nginx-fbpm.conf` + certbot. Add 4 GB swap and build images one at a time before first start. Fresh install (no data migration) unless the owner reports real data on the Windows instance.
 
+## Installed — 2026-09-25 (owner ran each step over SSH)
+
+Fresh install at `/opt/fbpm`, branch `claude/check-job-data-0irw8i`, `.env` from `deploy/make-env.sh fbm.ragalpha.com --host-nginx`. 4 GB swap added. Images built one at a time; 19 migrations applied to a new database; postgres/redis/api/web/worker running (~220 MB total at idle). Host nginx site `/etc/nginx/sites-enabled/fbpm.conf` → 127.0.0.1:4100/3100; Let's Encrypt certificate via `certbot --nginx` (expires 2026-12-24, auto-renew). `https://fbm.ragalpha.com/api/health` → ok. All publish/send switches off. Not yet done: first owner account, off-host `.env` + database backup, AI key, live platform connections.
+
 ## Required preflight
 
 Execute `bash deploy/preflight.sh` on the VPS through an approved SSH profile. It only reports OS/architecture, CPU count, memory/swap, disk/inodes, listening ports, running service names and Docker resource inventory. It does not install, restart, prune, inspect environment variables or print service arguments. Verify SSH host fingerprint out of band if not already trusted. Never paste the private key/password into chat.
