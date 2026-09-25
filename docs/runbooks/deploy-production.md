@@ -89,8 +89,9 @@ URL ที่ระบบสร้างเองและส่งออกไ�
 - หลังข้อ 2 เปิดบริการแล้ว ต่อ nginx เข้ามา (แทน `fbm.example.com` ด้วยโดเมนจริง)
   ```bash
   sed 's/fbm.example.com/<โดเมน>/' deploy/nginx-fbpm.conf > /etc/nginx/sites-available/fbpm
-  ln -s /etc/nginx/sites-available/fbpm /etc/nginx/sites-enabled/fbpm
-  nginx -t && systemctl reload nginx
+  ln -sf /etc/nginx/sites-available/fbpm /etc/nginx/sites-enabled/fbpm.conf   # ลงท้าย .conf — บางเครื่อง include เฉพาะ *.conf
+  nginx -t && systemctl reload nginx || rm -f /etc/nginx/sites-enabled/fbpm.conf
+  curl -s -H 'Host: <โดเมน>' http://127.0.0.1/api/health   # ต้องได้ JSON ของ API ไม่ใช่หน้า 404 ของ nginx
   apt install -y certbot python3-certbot-nginx   # ข้ามถ้ามีแล้ว (certbot --version)
   certbot --nginx -d <โดเมน>
   ```
