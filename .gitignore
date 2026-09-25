@@ -1,0 +1,34 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.log
+build/
+.local-tools/
+.local-data/
+pages.json
+.claude/settings.local.json
+
+node_modules/
+.DS_Store
+
+# แดชบอร์ด — เก็บ API key ของ AI และ token โฆษณา
+config.json
+post/img/upload-*
+post/img/card-*
+
+# monorepo (AGENTS.md stack)
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+.turbo/
+coverage/
+packages/database/generated/
+
+# media service output (§63)
+data/
+
+# Playwright
+test-results/
+playwright-report/

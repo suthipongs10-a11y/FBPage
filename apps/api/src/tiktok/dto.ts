@@ -1,0 +1,11 @@
+import { z } from 'zod';
+export const connectSchema = z.object({ brandId: z.string().min(1), profile: z.boolean().default(false), stats: z.boolean().default(false), upload: z.boolean().default(false) });
+const draftFields = z.object({ brandId: z.string().min(1).optional(), accountId: z.string().min(1).optional(), title: z.string().trim().min(1).max(150), caption: z.string().trim().max(2200).default(''), hook: z.string().max(500).default(''), script: z.string().max(15000).default(''), hashtags: z.array(z.string().max(80)).max(30).default([]), sourceUrl: z.union([z.literal(''), z.string().url().max(2000)]).default('') });
+export const draftSchema = draftFields.refine(b => !!(b.accountId || b.brandId), 'ต้องเลือกแบรนด์หรือบัญชี');
+export const editSchema = draftFields.omit({ accountId: true, brandId: true });
+export const assignSchema = z.object({ accountId: z.string().min(1) });
+export const studioSchema = z.object({ task: z.enum(['ideas', 'hook', 'script', 'caption', 'hashtags', 'repurpose']), brief: z.string().trim().min(1).max(5000), sourceContentId: z.string().optional() });
+export const approvalSchema = z.object({ approve: z.boolean(), comment: z.string().max(2000).optional() });
+export const submitSchema = z.object({ reviewed: z.literal(true) });
+export const sendSchema = z.object({ confirm: z.literal(true), scheduledLocal: z.iso.datetime({ local: true, precision: -1 }).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).optional(), timezone: z.string().optional() });
+export const studioOutput = z.object({ title: z.string().min(1).max(150), caption: z.string().max(2200), hook: z.string().max(500), script: z.string().max(15000), hashtags: z.array(z.string().max(80)).max(30), ideas: z.array(z.object({ title: z.string(), hook: z.string(), concept: z.string(), estimatedDurationSeconds: z.number().positive().max(600), cta: z.string() })).max(10), missingFacts: z.array(z.string()).max(30) });

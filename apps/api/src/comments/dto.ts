@@ -1,0 +1,18 @@
+import { z } from 'zod';
+import { COMMENT_CLASSES, LEAD_STATUSES, REPLY_STATUSES } from '@fbpm/shared';
+export const listCommentsSchema = z.object({ pageId: z.string().optional(), classification: z.enum(COMMENT_CLASSES).optional(), replyStatus: z.enum(REPLY_STATUSES).optional(), unresolved: z.enum(['1', '0']).optional(), unclassified: z.enum(['1', '0']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
+export type ListCommentsDto = z.infer<typeof listCommentsSchema>;
+export const syncCommentsSchema = z.object({ days: z.coerce.number().int().min(1).max(180).optional() }).optional();
+export type SyncCommentsDto = z.infer<typeof syncCommentsSchema>;
+export const classifySchema = z.object({ pageId: z.string().optional(), commentIds: z.array(z.string()).max(50).optional(), limit: z.coerce.number().int().min(1).max(50).default(20) }).optional();
+export type ClassifyDto = z.infer<typeof classifySchema>;
+export const updateCommentSchema = z.object({ draftReply: z.string().trim().max(2000).optional(), resolved: z.boolean().optional(), classification: z.enum(COMMENT_CLASSES).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
+export type UpdateCommentDto = z.infer<typeof updateCommentSchema>;
+export const replySchema = z.object({ message: z.string().trim().min(1).max(2000).optional() });
+export type ReplyDto = z.infer<typeof replySchema>;
+export const insightsSchema = z.object({ pageId: z.string().optional(), days: z.coerce.number().int().min(1).max(365).default(30) });
+export type InsightsDto = z.infer<typeof insightsSchema>;
+export const listLeadsSchema = z.object({ status: z.enum(LEAD_STATUSES).optional(), pageId: z.string().optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
+export type ListLeadsDto = z.infer<typeof listLeadsSchema>;
+export const updateLeadSchema = z.object({ status: z.enum(LEAD_STATUSES).optional(), notes: z.string().trim().max(2000).optional(), name: z.string().trim().max(120).optional(), phone: z.string().trim().max(40).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
+export type UpdateLeadDto = z.infer<typeof updateLeadSchema>;

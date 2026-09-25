@@ -1,0 +1,27 @@
+{
+  "name": "@fbpm/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Next.js dashboard — Overview, Clients, Pages, AI Command, Content, Calendar, Analytics (AGENTS.md §35)",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"(no tests yet — Phase 1 shell only)\""
+  },
+  "dependencies": {
+    "@fbpm/shared": "workspace:*",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3"
+  }
+}

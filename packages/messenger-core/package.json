@@ -1,0 +1,23 @@
+{
+  "name": "@fbpm/messenger-core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fbpm/ai-core": "workspace:*",
+    "@fbpm/database": "workspace:*",
+    "@fbpm/shared": "workspace:*",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

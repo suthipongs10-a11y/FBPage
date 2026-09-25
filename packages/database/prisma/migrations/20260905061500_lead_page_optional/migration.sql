@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Lead" ALTER COLUMN "pageId" DROP NOT NULL;
+
