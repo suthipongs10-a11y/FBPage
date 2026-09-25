@@ -67,6 +67,37 @@ URL ที่ระบบสร้างเองและส่งออกไ�
 
 ---
 
+## 0.5 เครื่องที่มี nginx ถือพอร์ต 80/443 อยู่แล้ว (VPS 43.228.86.7 เป็นแบบนี้)
+
+ตรวจด้วย `ss -ltn | grep -E ':(80|443) '` — ถ้ามีคนฟังอยู่แล้ว **ห้ามใช้ Caddy** (จะแย่งพอร์ตกับเว็บอื่นบนเครื่อง) ให้ทำแบบนี้แทน:
+
+- **ข้ามข้อ 0.3 (ufw)** — พอร์ต 80/443 เปิดอยู่แล้วเพราะ nginx ใช้ และการเปิด ufw บนเครื่องที่มีบริการอื่นอาจตัดบริการนั้น
+- ข้อ 1 สร้าง `.env` ตามปกติ แล้ว**เพิ่มบรรทัดนี้** ทุกคำสั่ง `docker compose` จะปิด Caddy และเปิด api/web ที่ `127.0.0.1:4100` / `127.0.0.1:3100` ให้ nginx เรียก พร้อมเพดาน RAM ต่อคอนเทนเนอร์
+  ```bash
+  echo 'COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.host-nginx.yml' >> .env
+  docker compose --profile automation config --services   # ต้องไม่มี caddy ในรายการ
+  ```
+- **ถ้าไม่มี swap** (`free -m` แถว Swap เป็น 0) เพิ่มก่อน build — build ครั้งแรกกิน RAM หลาย GB ถ้าไม่มี swap เครื่องอาจฆ่าบริการอื่นทิ้ง
+  ```bash
+  fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  ```
+- ข้อ 2 ให้ build **ทีละตัว** แทน `docker compose build` เพื่อไม่ให้ RAM พุ่งพร้อมกัน
+  ```bash
+  docker compose build api && docker compose build worker && docker compose build web && docker compose --profile maintenance build migrate
+  ```
+- หลังข้อ 2 เปิดบริการแล้ว ต่อ nginx เข้ามา (แทน `fbm.example.com` ด้วยโดเมนจริง)
+  ```bash
+  sed 's/fbm.example.com/<โดเมน>/' deploy/nginx-fbpm.conf > /etc/nginx/sites-available/fbpm
+  ln -s /etc/nginx/sites-available/fbpm /etc/nginx/sites-enabled/fbpm
+  nginx -t && systemctl reload nginx
+  apt install -y certbot python3-certbot-nginx   # ข้ามถ้ามีแล้ว (certbot --version)
+  certbot --nginx -d <โดเมน>
+  ```
+  ตรวจ: `curl -s http://127.0.0.1:4100/health` (ตรงเข้า API) และ `curl -s https://<โดเมน>/api/health` (ผ่าน nginx)
+
+---
+
 ## 1. สร้างไฟล์ config `.env`
 
 รันคำสั่งนี้ **ครั้งเดียว** ที่ `/opt/fbpm` — มันจะสุ่มความลับให้เองทั้งหมด ไม่ต้องคิดเอง

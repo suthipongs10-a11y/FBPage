@@ -1,0 +1,37 @@
+# ใช้บนเครื่องที่มี nginx ถือพอร์ต 80/443 อยู่แล้ว (เช่น VPS 43.228.86.7) — ปิด Caddy แล้วให้ nginx ของเครื่องส่งต่อเข้ามา
+# เปิดใช้โดยใส่ใน .env:  COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.host-nginx.yml
+# ถ้าไม่ใส่ `docker compose` จะเปิด Caddy แย่งพอร์ต nginx และ api/web จะไม่มีพอร์ตให้ nginx เรียก → 502
+# เพดาน RAM กันไม่ให้ stack นี้กินหน่วยความจำจนบริการอื่นบนเครื่องโดน OOM — ปรับได้เมื่อวัดการใช้งานจริงแล้ว
+
+services:
+  caddy:
+    profiles: !override [caddy]
+
+  api:
+    ports:
+      - "127.0.0.1:${FBPM_API_HOST_PORT:-4100}:4000"
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  web:
+    ports:
+      - "127.0.0.1:${FBPM_WEB_HOST_PORT:-3100}:3000"
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  worker:
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  postgres:
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  redis:
+    deploy:
+      resources:
+        limits: { memory: 256m }

@@ -2,6 +2,12 @@
 
 2026-09-14. Host: 43.228.86.7. This plan supersedes the old automatic-install runbook. Docker has not been built/tested on this workstation (Docker unavailable). Do not run a production migration yet.
 
+## Preflight result — 2026-09-25 (owner ran `deploy/preflight.sh` as root)
+
+Ubuntu 24.04.5, x86_64, 4 CPU, 5.9 GB RAM (~4.8 GB available), **no swap**, 45 GB free disk. Docker 29.8.1 + Compose v5.5.1 already installed. **Host nginx owns 80/443** and fronts other services: `ai-reels-factory` containers on 127.0.0.1:8080/8081, something on 127.0.0.1:5000, `rorebuild` (Ragnarok game server), fail2ban. Pending "System restart required" — not needed for this install; schedule separately since other services run here.
+
+Decision: integrate with host nginx, not Caddy — `deploy/docker-compose.host-nginx.yml` (Caddy off, api/web on loopback 4100/3100, per-container memory caps) + `deploy/nginx-fbpm.conf` + certbot. Add 4 GB swap and build images one at a time before first start. Fresh install (no data migration) unless the owner reports real data on the Windows instance.
+
 ## Required preflight
 
 Execute `bash deploy/preflight.sh` on the VPS through an approved SSH profile. It only reports OS/architecture, CPU count, memory/swap, disk/inodes, listening ports, running service names and Docker resource inventory. It does not install, restart, prune, inspect environment variables or print service arguments. Verify SSH host fingerprint out of band if not already trusted. Never paste the private key/password into chat.
