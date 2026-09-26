@@ -1,5 +1,6 @@
 'use client';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
+import Link from 'next/link';
 import { ApiError } from '@/lib/api';
 import { t } from '@/lib/i18n';
 
@@ -45,6 +46,14 @@ export function Pill({ children, tone }: { children: ReactNode; tone?: 'ok' | 'w
   const c = { ok: 'bg-emerald-950 text-emerald-300', warn: 'bg-amber-950 text-amber-300', bad: 'bg-rose-950 text-rose-300', muted: 'bg-slate-800 text-slate-400' }[tone ?? 'muted'];
   return <span className={cx('rounded-full px-2 py-0.5 text-xs font-semibold', c)}>{children}</span>;
 }
+/** ข้อความ error ที่บอกให้ไปตั้งค่าที่หน้าอื่น → ปุ่มพาไปหน้านั้นเลย (ผู้ใช้หาเมนูเองไม่เจอ) */
+function fixLink(msg: string | undefined): { href: string; label: string } | null {
+  if (!msg) return null;
+  if (/โมเดล AI|ตั้งค่า AI|API key ของ|งบ AI|ภาพ AI/.test(msg)) return { href: '/ai-models', label: t('common.goAiKeys') };
+  if (/คีย์ค้นเว็บ|Tavily/.test(msg)) return { href: '/news', label: t('common.goNewsKey') };
+  if (/token.*(หมดอายุ|ไม่มีสิทธิ์)|เชื่อมต่อใหม่/.test(msg)) return { href: '/pages', label: t('common.goPages') };
+  return null;
+}
 export function ErrorBox({ error }: { error: unknown }) {
   if (!error) return null;
   const e = error as ApiError | Error;
@@ -52,6 +61,7 @@ export function ErrorBox({ error }: { error: unknown }) {
   return (
     <div className="rounded-lg border border-rose-900 bg-rose-950/60 p-3 text-sm text-rose-200">
       <div>✖ {e.message || t('common.error')}</div>
+      {fixLink(e.message) && <Link href={fixLink(e.message)!.href} className="mt-2 inline-block rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500">{fixLink(e.message)!.label} →</Link>}
       {issues.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs">{issues.map(i => <li key={i.path}>{i.path}: {i.message}</li>)}</ul>}
     </div>
   );

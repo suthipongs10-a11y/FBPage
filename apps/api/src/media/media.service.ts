@@ -44,7 +44,7 @@ export class MediaService {
     } catch (e) { throw new UnprocessableEntityException(`เรนเดอร์ภาพไม่สำเร็จ: ${(e as Error).message.slice(0, 200)}`); }
     finally { await rm(tmp, { force: true }); }
     if (!existsSync(out)) throw new UnprocessableEntityException('เรนเดอร์ภาพไม่สำเร็จ (ไม่มีไฟล์ออก)');
-    const asset = await this.prisma.mediaAsset.create({ data: { workspaceId, contentId, kind: 'card', template: dto.template, theme: dto.data.theme ?? 'default', path: out, mimeType: 'image/png', width: CARD_SIZE, height: CARD_SIZE, bytes: statSync(out).size, meta: { data: dto.data, ai } as Prisma.InputJsonValue, createdById: userId }, select: ASSET_SELECT });
+    const asset = await this.prisma.mediaAsset.create({ data: { workspaceId, contentId, kind: 'card', template: dto.template, theme: dto.data.theme ?? 'default', path: out, mimeType: 'image/png', width: CARD_SIZE, height: CARD_SIZE, bytes: statSync(out).size, meta: { data: { ...dto.data, photo: dto.data.photo ? '(ภาพฝัง — ไม่เก็บซ้ำ)' : undefined }, ai } as Prisma.InputJsonValue, createdById: userId }, select: ASSET_SELECT });
     if (contentId && dto.attach) await this.prisma.contentItem.update({ where: { id: contentId }, data: { mediaPaths: { push: out }, contentType: 'photo' } });
     await this.audit.log({ workspaceId, userId, action: 'media.card.render', resourceType: 'mediaAsset', resourceId: asset.id, after: { template: dto.template, theme: asset.theme, contentId, attached: !!contentId && dto.attach, ai }, requestId });
     return asset;

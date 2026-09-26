@@ -13,6 +13,7 @@ import { QUEUES } from '@fbpm/shared';
 import { createApp } from '../app.factory';
 import { _resetRateLimits } from '../common/rate-limit.guard';
 import { findChrome } from '../media/chromium';
+import { NewsAutomationService } from './automation.service';
 
 const HAS_DB = !!process.env.DATABASE_URL && !!process.env.REDIS_URL;
 const run = HAS_DB ? describe : describe.skip;
@@ -36,7 +37,7 @@ run('news room (integration)', () => {
   const A = { email: `news-a-${stamp}@test.local`, name: 'Alice', password: 'alice-password-123' };
   const B = { email: `news-b-${stamp}@test.local`, name: 'Bob', password: 'bobby-password-123' };
   let a: ReturnType<typeof client>; let b: ReturnType<typeof client>;
-  let wsA = ''; let wsB = ''; let brandA = ''; let brandOther = ''; let pageA = '';
+  let wsA = ''; let wsB = ''; let brandA = ''; let brandOther = ''; let pageA = ''; let aiConn = '';
 
   beforeAll(async () => {
     graph = await startMockGraph(); ai = await startMockAi(); web = await startMockWeb();
@@ -54,7 +55,7 @@ run('news room (integration)', () => {
     graph.state.validUserTokens.add('USER_OK_LONG_TOKEN_FOR_NEWS_TEST');
     const conn = await a.http('POST', `/workspaces/${wsA}/facebook/connections/token`, { accessToken: 'USER_OK_LONG_TOKEN_FOR_NEWS_TEST' });
     pageA = (await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/pages/connect`, { connectionId: conn.json.connection.id, facebookPageId: '111' })).json.id;
-    const aiConn = (await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-research', 'm-content', 'm-fast'] })).json.id;
+    aiConn = (await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'custom', label: 'Mock AI', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['m-research', 'm-content', 'm-fast'] })).json.id;
     await a.http('PUT', `/workspaces/${wsA}/ai/roles`, { roles: { research: { connectionId: aiConn, model: 'm-research' }, content: { connectionId: aiConn, model: 'm-content' }, fast: { connectionId: aiConn, model: 'm-fast' } } });
   }, 30_000);
   afterAll(async () => {
@@ -171,5 +172,113 @@ run('news room (integration)', () => {
     expect((await a.http('PATCH', `/workspaces/${wsA}/news/items/${fresh.id}`, { status: 'DISMISSED' })).json.status).toBe('DISMISSED');
     expect((await a.http('GET', `/workspaces/${wsA}/news/items?brandId=${brandA}`)).json.some((i: { id: string }) => i.id === fresh.id)).toBe(false);
     expect((await a.http('PATCH', `/workspaces/${wsA}/news/items/${drafted.id}`, { status: 'DISMISSED' })).status).toBe(422);
+  });
+
+  // ---------- N-3 ภาพจาก AI ----------
+  it('AI image config: only image-capable keys, safety suffix, idempotency, per-run override, failures recorded, monthly limit', async () => {
+    const claude = (await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'anthropic', label: 'Claude', apiKey: 'sk-ant-test-key-123', models: ['claude-sonnet-5'] })).json.id;
+    expect((await a.http('PUT', `/workspaces/${wsA}/media/ai-config`, { connectionId: claude, model: 'claude-sonnet-5' })).status).toBe(422);
+    const gem = (await a.http('POST', `/workspaces/${wsA}/ai/connections`, { preset: 'gemini', label: 'Gemini ภาพ', apiKey: 'MOCK_KEY', baseUrl: ai.url, models: ['gemini-2.5-flash-image'] })).json.id;
+    const cfg = await a.http('PUT', `/workspaces/${wsA}/media/ai-config`, { connectionId: gem, model: 'gemini-2.5-flash-image', unitCostUsd: 0.04 });
+    expect(cfg.status).toBe(200); expect(cfg.json.image).toMatchObject({ connectionId: gem, model: 'gemini-2.5-flash-image', unitCostUsd: 0.04 });
+
+    const one = await a.http('POST', `/workspaces/${wsA}/media/ai-image`, { prompt: 'ลูกช้างในป่าฝน', attach: false });
+    expect(one.status).toBe(200); expect(one.json.asset).toMatchObject({ aiGenerated: true, mimeType: 'image/png', kind: 'ai' });
+    expect(ai.state.imageRequests.at(-1)).toMatchObject({ style: 'gemini', model: 'gemini-2.5-flash-image' });
+    expect(ai.state.imageRequests.at(-1)!.prompt).toMatch(/no identifiable real people/);
+    expect((await fetch(`${(await app.getUrl()).replace('[::1]', '127.0.0.1')}/workspaces/${wsA}/media/${one.json.asset.id}/file`, { headers: { cookie: a.cookie } })).headers.get('content-type')).toBe('image/png');
+
+    const n = ai.state.imageRequests.length;
+    const k1 = await a.http('POST', `/workspaces/${wsA}/media/ai-image`, { prompt: 'x ภาพ', attach: false, idempotencyKey: 'same-key-123' });
+    const k2 = await a.http('POST', `/workspaces/${wsA}/media/ai-image`, { prompt: 'x ภาพ', attach: false, idempotencyKey: 'same-key-123' });
+    expect(k2.json).toMatchObject({ reused: true }); expect(k2.json.asset.id).toBe(k1.json.asset.id); expect(ai.state.imageRequests.length).toBe(n + 1);
+
+    const ov = await a.http('POST', `/workspaces/${wsA}/media/ai-image`, { prompt: 'ภาพจากอีกเจ้า', attach: false, modelOverride: { connectionId: aiConn, model: 'gpt-image-1' } });
+    expect(ov.status).toBe(200); expect(ai.state.imageRequests.at(-1)).toMatchObject({ style: 'openai', model: 'gpt-image-1' });
+
+    ai.state.imageFailNext = 1;
+    const fail = await a.http('POST', `/workspaces/${wsA}/media/ai-image`, { prompt: 'จะล้ม', attach: false });
+    expect(fail.status).toBe(502); expect(fail.json.message).toMatch(/IMAGE_SAFETY/);
+    expect(await prisma.mediaJob.count({ where: { workspaceId: wsA, status: 'FAILED' } })).toBe(1);
+
+    await a.http('PUT', `/workspaces/${wsA}/media/ai-config`, { monthlyImageLimit: 3 });   // ใช้ไป 3 (งานที่ล้มไม่นับ)
+    const over = await a.http('POST', `/workspaces/${wsA}/media/ai-image`, { prompt: 'เกินเพดาน', attach: false });
+    expect(over.status).toBe(402); expect(over.json.message).toMatch(/เพดาน/);
+    const view = await a.http('GET', `/workspaces/${wsA}/media/ai-config`);
+    expect(view.json).toMatchObject({ usedThisMonth: 3, monthlyImageLimit: 3 });
+    expect(view.text).not.toContain('MOCK_KEY');
+    await a.http('PUT', `/workspaces/${wsA}/media/ai-config`, { monthlyImageLimit: null });
+  });
+
+  it('news draft with aiImage embeds an AI picture in the headline card', async () => {
+    web.state.news.rssItems.push({ title: 'นักบินอวกาศปลูกผักกาดบนสถานีอวกาศสำเร็จ', link: 'https://news.example.com/a/space-lettuce', description: 'ผักกาดโตในสภาวะไร้น้ำหนัก', pubDate: new Date().toUTCString() });
+    await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/fetch`);
+    const item = ((await a.http('GET', `/workspaces/${wsA}/news/items?brandId=${brandA}&status=NEW`)).json as { id: string; title: string }[]).find(i => i.title.includes('ผักกาด'))!;
+    ai.state.replies.push({ text: JSON.stringify({ title: 'ผักบนอวกาศ', caption: '🥬 ผักกาดต้นแรกที่โตได้ในสภาวะไร้น้ำหนัก ก้าวเล็ก ๆ ของการปลูกอาหารนอกโลก\n\nถ้าได้ไปอวกาศ อยากกินผักอะไร?', hashtags: [], card: { kicker: 'อวกาศ', headline: 'ปลูก*ผักกาด*บนอวกาศสำเร็จ' }, risk: 'LOW', riskReasons: [], needsCheck: [], imagePrompt: 'A lettuce sprout floating inside a space station window, soft light' }) });
+    const r = await a.http('POST', `/workspaces/${wsA}/news/items/${item.id}/draft`, { pageId: pageA, aiImage: true, theme: 'ocean' });
+    expect(r.status).toBe(200); expect(r.json.imageError).toBeNull();
+    expect(ai.state.imageRequests.at(-1)!.prompt).toContain('lettuce sprout');
+    const assets = (await a.http('GET', `/workspaces/${wsA}/media?contentId=${r.json.content.id}`)).json as { kind: string; aiGenerated: boolean }[];
+    expect(assets.some(x => x.kind === 'ai')).toBe(true);
+    if (findChrome(process.env.CHROME_BIN)) { expect(r.json.aiImage).toBe(true); expect(r.json.content.mediaPaths).toHaveLength(1); expect(assets.some(x => x.kind === 'card')).toBe(true); }
+    const stored = await prisma.mediaAsset.findMany({ where: { contentId: r.json.content.id, kind: 'card' }, select: { meta: true } });
+    for (const x of stored) expect(JSON.stringify(x.meta)).not.toContain('base64');   // ไม่เก็บภาพฝังซ้ำใน DB
+  });
+
+  // ---------- N-4 อัตโนมัติ ----------
+  it('automation: fetch → shortlist → draft within the daily quota, skipping high-risk stories; never publishes', async () => {
+    const bad = await a.http('PUT', `/workspaces/${wsA}/brands/${brandOther}/news/automation`, { enabled: true, pageId: pageA });
+    expect(bad.status).toBe(400);
+    const set = await a.http('PUT', `/workspaces/${wsA}/brands/${brandA}/news/automation`, { enabled: true, pageId: pageA, draftsPerDay: 4, minScore: 50, skipHighRisk: true, postingSlots: ['19:00', '09:00', '09:00'] });
+    expect(set.status).toBe(200); expect(set.json.postingSlots).toEqual(['09:00', '19:00']);
+    web.state.news.rssItems.push(
+      { title: 'ตำรวจรวบผู้ต้องหาคดีฉ้อโกงออนไลน์', link: 'https://news.example.com/a/fraud', description: 'จับกุมแล้ว', pubDate: new Date().toUTCString() },
+      { title: 'เต่าทะเลวางไข่ชายหาดภูเก็ตครั้งแรกในรอบ 5 ปี', link: 'https://news.example.com/a/turtle', description: 'พบรังไข่ 80 ฟอง', pubDate: new Date().toUTCString() },
+    );
+    const auto = app.get(NewsAutomationService);
+    // ต้นรอบ: ดึงได้ 2 ข่าวใหม่ → AI คัด (ตอบ 2 ข่าว: เสี่ยง 90, ไม่เสี่ยง 80) → เขียนเฉพาะข่าวไม่เสี่ยง
+    const snapshot = async () => (await a.http('GET', `/workspaces/${wsA}/news/items?brandId=${brandA}&status=NEW`)).json as { id: string; title: string }[];
+    const beforeReplies = ai.state.replies.length;
+    const origFetch = auto.runOne.bind(auto);
+    // ใส่คำตอบ AI หลังรู้ id (ดึงข่าวก่อน แล้วค่อยรันส่วนที่เหลือ)
+    await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/fetch`);
+    const fresh = await snapshot();
+    const fraud = fresh.find(i => i.title.includes('ฉ้อโกง'))!; const turtle = fresh.find(i => i.title.includes('เต่า'))!;
+    ai.state.replies.push({ text: JSON.stringify({ picks: [
+      { id: fraud.id, score: 90, headlineTh: 'รวบแก๊งฉ้อโกง', why: 'ใกล้ตัว', category: 'อาชญากรรม', risk: 'HIGH', riskReasons: ['อาชญากรรม'] },
+      { id: turtle.id, score: 80, headlineTh: 'เต่าทะเลกลับมาวางไข่', why: 'ข่าวดี', category: 'สัตว์', risk: 'LOW', riskReasons: [] },
+    ] }) });
+    ai.state.replies.push({ text: JSON.stringify({ title: 'เต่าทะเลวางไข่', caption: '🐢 ข่าวดีจากภูเก็ต! เต่าทะเลกลับมาวางไข่ที่ชายหาดอีกครั้งในรอบ 5 ปี พบรังไข่ราว 80 ฟอง\n\nใครเคยเห็นเต่าทะเลตัวจริงบ้าง?', hashtags: [], card: { headline: 'เต่าทะเลกลับมา*วางไข่*' }, risk: 'LOW', riskReasons: [], needsCheck: [] }) });
+    const r1 = await origFetch(wsA, brandA);
+    expect(ai.state.replies.length).toBe(beforeReplies);   // ใช้คำตอบ AI ครบพอดี
+    expect(r1).toMatchObject({ shortlisted: 2, drafted: 1, draftedToday: 3 });
+    expect((await prisma.newsItem.findUniqueOrThrow({ where: { id: fraud.id } })).status).toBe('SHORTLISTED');
+    const turtleItem = await prisma.newsItem.findUniqueOrThrow({ where: { id: turtle.id } });
+    expect(turtleItem.status).toBe('DRAFTED');
+    const c = await prisma.contentItem.findUniqueOrThrow({ where: { id: turtleItem.contentId! } });
+    expect(c.status).toBe('READY_FOR_APPROVAL');   // ไม่โพสต์ ไม่ตั้งเวลาเอง
+    const stateNow = (await a.http('GET', `/workspaces/${wsA}/brands/${brandA}/news/automation`)).json;
+    expect(stateNow.lastResult).toMatchObject({ drafted: 1 }); expect(stateNow.lastRunAt).toBeTruthy();
+  });
+
+  it('tick respects the kill switch and the fetch interval', async () => {
+    const auto = app.get(NewsAutomationService);
+    await prisma.workspace.update({ where: { id: wsA }, data: { automationPaused: true } });
+    await prisma.newsAutomation.update({ where: { brandId: brandA }, data: { lastFetchAt: null } });
+    expect((await auto.tick()).runs.find(x => x.brandId === brandA)).toBeUndefined();
+    await prisma.workspace.update({ where: { id: wsA }, data: { automationPaused: false } });
+    await prisma.newsAutomation.update({ where: { brandId: brandA }, data: { lastFetchAt: new Date() } });
+    expect((await auto.tick()).runs.find(x => x.brandId === brandA)).toBeUndefined();   // ยังไม่ถึงรอบ 3 ชม.
+  });
+
+  it('next free posting slot follows the brand slots in the page time zone', async () => {
+    const r = await a.http('GET', `/workspaces/${wsA}/news/next-slot?pageId=${pageA}`);
+    expect(r.status).toBe(200); expect(r.json.slots).toEqual(['09:00', '19:00']);
+    expect(r.json.scheduledLocal).toMatch(/T(09|19):00$/);
+    // จองช่องนั้นไว้แล้ว → ช่องถัดไปต้องเลื่อน
+    const taken = r.json.scheduledLocal as string;
+    await prisma.contentItem.create({ data: { pageId: pageA, status: 'SCHEDULED', caption: 'จองช่อง', scheduledLocal: taken, scheduledTz: 'Asia/Bangkok', scheduledAt: new Date(Date.now() + 86_400_000) } });
+    const next = await a.http('GET', `/workspaces/${wsA}/news/next-slot?pageId=${pageA}`);
+    expect(next.json.scheduledLocal).not.toBe(taken);
   });
 });

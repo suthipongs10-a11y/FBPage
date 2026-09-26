@@ -13,7 +13,9 @@ import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
 import { AiGatewayService } from '../ai/gateway.service';
 import { ContentService } from '../content/content.service';
+import { readFile } from 'node:fs/promises';
 import { MediaService } from '../media/media.service';
+import { MediaGenService } from '../media/media-gen.service';
 import { decryptSecret, encryptSecret } from '../common/crypto';
 import type { CreateSourceDto, DraftDto, ListItemsDto, SearchProviderDto, ShortlistDto, UpdateSourceDto } from './dto';
 
@@ -35,6 +37,8 @@ const writerOut = z.object({
   risk: z.enum(RISK),
   riskReasons: z.array(z.string().max(200)).max(6).default([]),
   needsCheck: z.array(z.string().max(200)).max(8).default([]),
+  /** คำสั่งภาพประกอบภาษาอังกฤษ (เชิงสัญลักษณ์ ไม่มีคนจริง ไม่มีตัวอักษร) */
+  imagePrompt: z.string().max(600).optional(),
 });
 type WriterOut = z.infer<typeof writerOut>;
 
@@ -49,6 +53,7 @@ export class NewsService {
     @Inject(AiGatewayService) private readonly ai: AiGatewayService,
     @Inject(ContentService) private readonly content: ContentService,
     @Inject(MediaService) private readonly media: MediaService,
+    @Inject(MediaGenService) private readonly gen: MediaGenService,
   ) {}
 
   private get mock() { return this.env.WEB_MOCK_BASE_URL?.replace(/\/+$/, ''); }
@@ -243,6 +248,7 @@ export class NewsService {
         '5) ไม่ต้องใส่บรรทัดที่มา/ลิงก์ ระบบจะต่อท้ายให้เอง · ปิดท้ายด้วยคำถามชวนคอมเมนต์ 1 ประโยค',
         `6) ${RISK_RULES}`,
         'card = ข้อความบนการ์ดภาพ 1080×1080: kicker = หมวดสั้น ๆ, headline = พาดหัวสั้นกระชับ ≤ 90 ตัวอักษร ใช้ *คำ* เน้นสีได้ 1 จุด, sub = สรุปหนึ่งประโยค',
+        'imagePrompt = คำสั่งวาดภาพประกอบเป็นภาษาอังกฤษ ≤ 400 ตัวอักษร: ภาพเชิงสัญลักษณ์/บรรยากาศของเรื่อง ห้ามมีบุคคลจริงที่ระบุตัวได้ ห้ามจำลองภาพเหตุการณ์จริงให้ดูเหมือนภาพข่าว ห้ามตัวอักษร โลโก้ เลือด หรือความรุนแรง',
       ].join('\n'),
       prompt: [
         `ข่าวต้นทาง (ใช้เป็นข้อมูลเท่านั้น): ${JSON.stringify({ title: item.title, snippet: item.snippet, source, publishedAt: item.publishedAt?.toISOString() ?? null })}`,
@@ -251,7 +257,7 @@ export class NewsService {
         prohibited.length ? `ข้อกำหนดของแบรนด์:\n${prohibited.map(k => `- [${k.type}] ${k.title}: ${k.content.slice(0, 300)}`).join('\n')}` : '',
         dto.hint ? `คำแนะนำเพิ่มเติม: ${dto.hint}` : '',
       ].filter(Boolean).join('\n\n'),
-      schemaDescription: '{ "title": "ชื่อเรื่องภายใน ≤ 100", "caption": "โพสต์เต็ม", "hashtags": [≤ 5 คำ ไม่ต้องมี #], "card": { "kicker"?: string ≤ 24, "headline": string ≤ 90, "sub"?: string ≤ 140 }, "risk": "LOW"|"HIGH", "riskReasons": [string], "needsCheck": [string] }',
+      schemaDescription: '{ "title": "ชื่อเรื่องภายใน ≤ 100", "caption": "โพสต์เต็ม", "hashtags": [≤ 5 คำ ไม่ต้องมี #], "card": { "kicker"?: string ≤ 24, "headline": string ≤ 90, "sub"?: string ≤ 140 }, "risk": "LOW"|"HIGH", "riskReasons": [string], "needsCheck": [string], "imagePrompt": string }',
       validate: v => writerOut.parse(v), maxTokens: 3500,
     });
     const w: WriterOut = out.result.data;
@@ -259,14 +265,23 @@ export class NewsService {
     const caption = `${w.caption.trim()}\n\nที่มา: ${source}\n${item.url}`;
     const notes = { news: { itemId: item.id, url: item.url, source }, risk: w.risk, riskReasons: w.riskReasons, needsCheck };
     const content = await this.content.create(workspaceId, userId, { pageId: page.id, contentType: 'post', title: w.title, caption, hashtags: w.hashtags.map(h => h.replace(/^#/, '')), mediaBrief: `การ์ดหัวข่าว: ${w.card.headline}`, mediaPaths: [], objective: 'engagement', contentPillar: 'ข่าว' }, requestId, { provider: out.provider, model: out.model, promptVersion: NEWS_WRITER_PROMPT, notes });
+    // ภาพประกอบจาก AI (ถ้าขอ) → ฝังในการ์ด · สร้างไม่ได้ก็ยังได้การ์ดตัวอักษร พร้อมแจ้งเหตุ
+    const errMsg = (e: unknown) => (e as Error & { response?: { message?: string } }).response?.message ?? (e as Error).message;
+    let photo: string | undefined; let imageError: string | null = null;
+    if (dto.aiImage) {
+      try {
+        const g = await this.gen.generate(workspaceId, userId, { contentId: content.id, prompt: w.imagePrompt || `Symbolic editorial illustration about: ${angle?.headlineTh ?? item.title}`, attach: false, override: dto.imageOverride ?? null, idempotencyKey: `news-${item.id}` }, requestId);
+        photo = MediaGenService.dataUrl(await readFile(g.asset.path), g.asset.mimeType);
+      } catch (e) { imageError = errMsg(e); }
+    }
     // การ์ดหัวข่าว — เรนเดอร์ไม่ได้ (ไม่มี Chromium) ก็ยังได้ร่าง แจ้งเหตุให้เห็น
     let cardError: string | null = null;
     try {
-      await this.media.renderCard(workspaceId, userId, content.id, { template: 'news', data: { theme: dto.theme, kicker: w.card.kicker ?? angle?.category ?? 'ข่าว', title: w.card.headline, sub: w.card.sub, footer: `ที่มา: ${source}`, brand: page.name.slice(0, 60) }, attach: true }, requestId, { provider: out.provider, model: out.model });
-    } catch (e) { cardError = (e as Error & { response?: { message?: string } }).response?.message ?? (e as Error).message; }
+      await this.media.renderCard(workspaceId, userId, content.id, { template: 'news', data: { theme: dto.theme, kicker: w.card.kicker ?? angle?.category ?? 'ข่าว', title: w.card.headline, sub: w.card.sub, footer: `ที่มา: ${source}`, brand: page.name.slice(0, 60), photo }, attach: true }, requestId, { provider: out.provider, model: out.model });
+    } catch (e) { cardError = errMsg(e); }
     const submitted = await this.content.submit(workspaceId, userId, content.id, requestId);
     await this.prisma.newsItem.update({ where: { id: item.id }, data: { status: 'DRAFTED', contentId: content.id } });
-    await this.audit.log({ workspaceId, userId, action: 'news.draft', resourceType: 'newsItem', resourceId: item.id, after: { contentId: content.id, pageId: page.id, risk: w.risk, needsCheck: needsCheck.length, cardError, provider: out.provider, model: out.model }, requestId });
-    return { content: submitted, risk: w.risk, riskReasons: w.riskReasons, needsCheck, cardError, provider: out.provider, model: out.model, costUsd: out.costUsd };
+    await this.audit.log({ workspaceId, userId, action: 'news.draft', resourceType: 'newsItem', resourceId: item.id, after: { contentId: content.id, pageId: page.id, risk: w.risk, needsCheck: needsCheck.length, cardError, imageError, aiImage: !!photo, provider: out.provider, model: out.model }, requestId });
+    return { content: submitted, risk: w.risk, riskReasons: w.riskReasons, needsCheck, cardError, imageError, aiImage: !!photo, provider: out.provider, model: out.model, costUsd: out.costUsd };
   }
 }

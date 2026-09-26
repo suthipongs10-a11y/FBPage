@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { api, type AiConnectionsView, type NewsItemRow, type NewsSourceRow, type PageRow, type SearchProviderView } from '@/lib/api';
+import { api, type AiConnectionsView, type NewsAutomationRow, type NewsItemRow, type NewsSourceRow, type PageRow, type SearchProviderView } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } from '@/components/ui';
@@ -25,6 +25,10 @@ export default function NewsPage() {
   const [src, setSrc] = useState({ kind: 'RSS' as 'RSS' | 'SEARCH', label: '', value: '' }); const [key, setKey] = useState('');
   const [max, setMax] = useState(5); const [aiResearch, setAiResearch] = useState(''); const [aiWriter, setAiWriter] = useState('');
   const [pageFor, setPageFor] = useState<Record<string, string>>({}); const [theme, setTheme] = useState('dark'); const [when, setWhen] = useState<Record<string, string>>({});
+  const [aiImage, setAiImage] = useState(false); const [aiImageModel, setAiImageModel] = useState('');
+  const [slotOf, setSlotOf] = useState<Record<string, string>>({});
+  const [auto, setAuto] = useState({ enabled: false, pageId: '', fetchEveryHours: 3, draftsPerDay: 3, minScore: 60, skipHighRisk: true, aiImage: false, theme: 'dark', slots: '09:00, 12:30, 19:00' });
+  const [autoRow, setAutoRow] = useState<NewsAutomationRow | null>(null);
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
 
   const brands = useMemo(() => { const m = new Map<string, string>(); for (const p of pages ?? []) m.set(p.brand.id, `${p.brand.client.name} / ${p.brand.name}`); return [...m].map(([id, name]) => ({ id, name })); }, [pages]);
@@ -38,8 +42,13 @@ export default function NewsPage() {
   }, [base, can]);
   const load = useCallback(async () => {
     if (!brandId) return;
-    const [s, i] = await Promise.all([api<NewsSourceRow[]>(`${base}/brands/${brandId}/news/sources`), api<NewsItemRow[]>(`${base}/news/items?brandId=${brandId}&status=${tab}`)]);
-    setSources(s); setItems(i);
+    const [s, i, au] = await Promise.all([api<NewsSourceRow[]>(`${base}/brands/${brandId}/news/sources`), api<NewsItemRow[]>(`${base}/news/items?brandId=${brandId}&status=${tab}`), api<NewsAutomationRow | null>(`${base}/brands/${brandId}/news/automation`)]);
+    setSources(s); setItems(i); setAutoRow(au);
+    if (au) setAuto({ enabled: au.enabled, pageId: au.pageId, fetchEveryHours: au.fetchEveryHours, draftsPerDay: au.draftsPerDay, minScore: au.minScore, skipHighRisk: au.skipHighRisk, aiImage: au.aiImage, theme: au.theme, slots: au.postingSlots.join(', ') });
+    // เวลาที่เสนอตอนอนุมัติ = ช่องเวลาว่างถัดไปของแต่ละเพจ
+    const pageIds = [...new Set(i.map(x => x.content?.status === 'READY_FOR_APPROVAL' ? x.content.pageId : null).filter((x): x is string => !!x))];
+    const slots = await Promise.all(pageIds.map(id => api<{ scheduledLocal: string | null }>(`${base}/news/next-slot?pageId=${id}`).then(r => [id, r.scheduledLocal ?? ''] as const).catch(() => [id, ''] as const)));
+    setSlotOf(Object.fromEntries(slots));
   }, [base, brandId, tab]);
   useEffect(() => { setItems(null); void load().catch(setError); }, [load]);
   const run = async (k: string, fn: () => Promise<string | void>) => { setBusy(k); setError(null); setNotice(''); try { const n = await fn(); if (n) setNotice(n); await load(); } catch (e) { setError(e); } finally { setBusy(''); } };
@@ -51,12 +60,24 @@ export default function NewsPage() {
   const saveKey = () => run('key', async () => { setProvider(await api<SearchProviderView>(`${base}/news/search-provider`, { method: 'PUT', body: { apiKey: key } })); setKey(''); });
   const shortlist = () => run('short', async () => { const r = await api<{ picked: number; model?: string }>(`${base}/brands/${brandId}/news/shortlist`, { method: 'POST', body: { max, ...(toOverride(aiResearch) && { modelOverride: toOverride(aiResearch) }) } }); setTab('SHORTLISTED'); return `AI คัดได้ ${r.picked} ข่าว${r.model ? ` (${r.model})` : ''}`; });
   const write = (i: NewsItemRow) => run(`w:${i.id}`, async () => {
-    const r = await api<{ needsCheck: string[]; risk: string; cardError: string | null; model: string }>(`${base}/news/items/${i.id}/draft`, { method: 'POST', body: { pageId: pageFor[i.id] || brandPages[0]?.id, theme, ...(toOverride(aiWriter) && { modelOverride: toOverride(aiWriter) }) } });
+    const r = await api<{ needsCheck: string[]; risk: string; cardError: string | null; imageError: string | null; model: string }>(`${base}/news/items/${i.id}/draft`, { method: 'POST', body: { pageId: pageFor[i.id] || brandPages[0]?.id, theme, aiImage, ...(toOverride(aiWriter) && { modelOverride: toOverride(aiWriter) }), ...(aiImage && toOverride(aiImageModel) && { imageOverride: toOverride(aiImageModel) }) } });
     setTab('DRAFTED');
-    return `เขียนเสร็จ (${r.model}) — รออนุมัติ${r.needsCheck.length ? ` · มี ${r.needsCheck.length} จุดต้องยืนยัน` : ''}${r.cardError ? ` · ${t('news.cardError')}: ${r.cardError}` : ''}`;
+    return `เขียนเสร็จ (${r.model}) — รออนุมัติ${r.needsCheck.length ? ` · มี ${r.needsCheck.length} จุดต้องยืนยัน` : ''}${r.imageError ? ` · ${t('news.imageError')}: ${r.imageError}` : ''}${r.cardError ? ` · ${t('news.cardError')}: ${r.cardError}` : ''}`;
   });
   const setStatus = (i: NewsItemRow, status: 'NEW' | 'DISMISSED') => run(`st:${i.id}`, async () => { await api(`${base}/news/items/${i.id}`, { method: 'PATCH', body: { status } }); });
-  const approve = (i: NewsItemRow) => run(`ap:${i.id}`, async () => { await api(`${base}/content/${i.contentId}/approve-schedule`, { method: 'POST', body: { scheduledLocal: when[i.id] || nextSlot(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } }); return t('news.scheduledAt'); });
+  const slotFor = (i: NewsItemRow) => when[i.id] || (i.content?.pageId && slotOf[i.content.pageId]) || nextSlot();
+  const approve = (i: NewsItemRow) => run(`ap:${i.id}`, async () => {
+    // เวลาจากช่องเวลาของเพจ (เขตเวลาเพจ) ส่งไปตามนั้น — ถ้าผู้ใช้แก้เวลาเองใช้เขตเวลาของเครื่อง
+    const own = !!when[i.id];
+    await api(`${base}/content/${i.contentId}/approve-schedule`, { method: 'POST', body: { scheduledLocal: slotFor(i), ...(own && { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) } });
+    return `${t('news.scheduledAt')} ${slotFor(i).replace('T', ' ')}`;
+  });
+  const saveAuto = () => run('auto', async () => {
+    const slots = auto.slots.split(',').map(x => x.trim()).filter(Boolean);
+    await api(`${base}/brands/${brandId}/news/automation`, { method: 'PUT', body: { enabled: auto.enabled, pageId: auto.pageId || brandPages[0]?.id, fetchEveryHours: auto.fetchEveryHours, draftsPerDay: auto.draftsPerDay, minScore: auto.minScore, skipHighRisk: auto.skipHighRisk, aiImage: auto.aiImage, theme: auto.theme, postingSlots: slots } });
+    return t('common.save');
+  });
+  const runAuto = () => run('autorun', async () => { const r = await api<{ fetched: number; shortlisted: number; drafted: number; errors: string[] }>(`${base}/brands/${brandId}/news/automation/run`, { method: 'POST' }); setTab('DRAFTED'); return `+${r.fetched} ข่าว · คัด ${r.shortlisted} · เขียน ${r.drafted}${r.errors.length ? ` · ${r.errors[0]}` : ''}`; });
 
   if (!pages) return <div><ErrorBox error={error} /><Loading /></div>;
   if (!brands.length) return <div className="space-y-2"><h1 className="text-2xl font-semibold">{t('news.title')}</h1><Empty text={t('news.noPages')} /></div>;
@@ -108,6 +129,31 @@ export default function NewsPage() {
             <Field label={t('news.theme')}><Select value={theme} onChange={e => setTheme(e.target.value)}>{THEMES.map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
             <Button disabled={busy === 'short'} onClick={shortlist}>{busy === 'short' ? '…' : t('news.shortlist')}</Button>
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={aiImage} onChange={e => setAiImage(e.target.checked)} /> {t('news.aiImage')}</label>
+            {aiImage && <div className="w-72"><Select value={aiImageModel} onChange={e => setAiImageModel(e.target.value)}><option value="">{t('news.aiImageModel')}: {t('news.aiDefault')}</option>{modelOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></div>}
+          </div>
+        </Card>
+      )}
+
+      {canAi && (
+        <Card title={t('news.auto')} actions={<div className="flex items-center gap-2">{autoRow?.lastRunAt && <span className="text-xs text-slate-400">{t('news.lastRun')} {fmt(autoRow.lastRunAt)}{autoRow.lastResult ? ` · เขียน ${autoRow.lastResult.drafted}` : ''}</span>}{autoRow && <Button variant="ghost" disabled={busy === 'autorun'} onClick={runAuto}>{busy === 'autorun' ? '…' : t('news.runNow')}</Button>}</div>}>
+          <p className="text-xs text-slate-400">{t('news.autoHelp')}</p>
+          {autoRow?.lastError && <p className="mt-1 text-xs text-rose-400">{autoRow.lastError}</p>}
+          <div className="mt-2 grid items-end gap-2 md:grid-cols-4">
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={auto.enabled} onChange={e => setAuto({ ...auto, enabled: e.target.checked })} /> {t('news.autoOn')}</label>
+            <Field label={t('news.page')}><Select value={auto.pageId || brandPages[0]?.id || ''} onChange={e => setAuto({ ...auto, pageId: e.target.value })}>{brandPages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+            <Field label={t('news.every')}><Input type="number" min={1} max={24} value={auto.fetchEveryHours} onChange={e => setAuto({ ...auto, fetchEveryHours: Number(e.target.value) })} /></Field>
+            <Field label={t('news.perDay')}><Input type="number" min={0} max={20} value={auto.draftsPerDay} onChange={e => setAuto({ ...auto, draftsPerDay: Number(e.target.value) })} /></Field>
+            <Field label={t('news.minScore')}><Input type="number" min={0} max={100} value={auto.minScore} onChange={e => setAuto({ ...auto, minScore: Number(e.target.value) })} /></Field>
+            <Field label={t('news.slots')}><Input value={auto.slots} onChange={e => setAuto({ ...auto, slots: e.target.value })} /></Field>
+            <Field label={t('news.theme')}><Select value={auto.theme} onChange={e => setAuto({ ...auto, theme: e.target.value })}>{THEMES.map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
+            <div className="flex flex-col gap-1 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={auto.skipHighRisk} onChange={e => setAuto({ ...auto, skipHighRisk: e.target.checked })} /> {t('news.skipHigh')}</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={auto.aiImage} onChange={e => setAuto({ ...auto, aiImage: e.target.checked })} /> {t('news.aiImage')}</label>
+            </div>
+            <Button disabled={busy === 'auto' || !brandPages.length} onClick={saveAuto}>{t('common.save')}</Button>
+          </div>
         </Card>
       )}
 
@@ -145,7 +191,7 @@ export default function NewsPage() {
                   </div>
                   {i.content.status === 'READY_FOR_APPROVAL' && canApprove && (
                     <div className="flex flex-wrap gap-2">
-                      <Input type="datetime-local" className="w-56" value={when[i.id] ?? nextSlot()} onChange={e => setWhen({ ...when, [i.id]: e.target.value })} />
+                      <Input type="datetime-local" className="w-56" value={slotFor(i)} onChange={e => setWhen({ ...when, [i.id]: e.target.value })} />
                       <Button disabled={busy === `ap:${i.id}` || needs.length > 0} onClick={() => approve(i)}>{t('news.approveSchedule')}</Button>
                     </div>
                   )}

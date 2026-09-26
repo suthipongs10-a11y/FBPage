@@ -51,6 +51,8 @@ export const envSchema = z.object({
   PAGESPEED_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   WEB_MOCK_BASE_URL: optionalUrl,
   WEB_ALLOW_PRIVATE_TARGETS: z.string().optional().transform(v => v === 'true' || v === '1'),
+  /** ห้องข่าวอัตโนมัติ (ดึง/คัด/เขียนร่างตามรอบ) — เปิดเป็นค่าเริ่มต้น แต่แต่ละแบรนด์ต้องเปิดเองในหน้าห้องข่าว; ร่างทุกชิ้นยังรออนุมัติ */
+  NEWS_AUTOMATION_ENABLED: z.string().optional().transform(v => v !== 'false' && v !== '0'),
   /** W-3: เปิดให้โพสต์บทความขึ้น WordPress ของลูกค้าจริง (ค่าเริ่มต้นปิด — เปิดเมื่อพร้อม) · WEB_WP_ALLOW_INSECURE = ยอม http:// (mock/test เท่านั้น) */
   WEB_PUBLISH_ENABLED: z.string().optional().transform(v => v === 'true' || v === '1'),
   WEB_WP_ALLOW_INSECURE: z.string().optional().transform(v => v === 'true' || v === '1'),

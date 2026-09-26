@@ -192,6 +192,8 @@ model Workspace {
   /// ปลายทางแจ้งเตือนภายนอก (§65) — URL เข้ารหัส เพราะมักมี token อยู่ในตัว (Discord/LINE/Slack webhook)
   notifyWebhookEncrypted String?
   notifyWebhookHint      String?
+  /// เพดานจำนวนภาพ AI ต่อเดือน (แยกจากงบข้อความ เพราะราคาต่อชิ้นต่างกันมาก) — null = ไม่จำกัด
+  mediaMonthlyImageLimit Int?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -214,6 +216,9 @@ model Workspace {
   emailProvider     EmailProviderAccount?
   emailCampaigns    EmailCampaign[]
   searchProvider    SearchProviderAccount?
+  mediaConfigs      MediaModelConfig[]
+  mediaJobs         MediaJob[]
+  newsAutomations   NewsAutomation[]
 }
 
 enum WorkspaceRole {
@@ -282,12 +287,13 @@ model Brand {
   pages           FacebookPage[]
   youtubeChannels YouTubeChannel[]
   tiktokAccounts  TikTokAccount[]
-  tiktokDrafts    ContentItem[] @relation("TikTokDraftBrand")
+  tiktokDrafts    ContentItem[]        @relation("TikTokDraftBrand")
   topics          Topic[]
   insights        BrandInsight[]
   emailLists      EmailList[]
   newsSources     NewsSource[]
   newsItems       NewsItem[]
+  newsAutomation  NewsAutomation?
 
   @@index([clientId])
 }
@@ -374,17 +380,17 @@ model FacebookPage {
   createdAt                DateTime        @default(now())
   updatedAt                DateTime        @updatedAt
 
-  brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  connection FacebookConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  posts      FacebookPost[]
-  content    ContentItem[]
-  analyses   PageAnalysis[]
-  plans      ContentPlan[]
-  reports    Report[]
-  comments   PageComment[]
+  brand           Brand                   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection      FacebookConnection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  posts           FacebookPost[]
+  content         ContentItem[]
+  analyses        PageAnalysis[]
+  plans           ContentPlan[]
+  reports         Report[]
+  comments        PageComment[]
   messengerConfig MessengerPageConfig?
-  conversations MessengerConversation[]
-  leads      Lead[]
+  conversations   MessengerConversation[]
+  leads           Lead[]
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -494,7 +500,7 @@ model ContentItem {
   youtubeChannel YouTubeChannel?          @relation(fields: [youtubeChannelId], references: [id], onDelete: Cascade)
   tiktokAccount  TikTokAccount?           @relation(fields: [tiktokAccountId], references: [id], onDelete: Restrict)
   tiktokMeta     TikTokContentMetadata?
-  tiktokBrand    Brand? @relation("TikTokDraftBrand", fields: [tiktokBrandId], references: [id], onDelete: Restrict)
+  tiktokBrand    Brand?                   @relation("TikTokDraftBrand", fields: [tiktokBrandId], references: [id], onDelete: Restrict)
   site           Site?                    @relation(fields: [siteId], references: [id], onDelete: Cascade)
   webMeta        WebContentMetadata?
   emailCampaigns EmailCampaign[]
@@ -619,73 +625,76 @@ model AuditLog {
 /// BYOK (§42) — key ของผู้ให้บริการ AI ต่อ workspace เข้ารหัสด้วย AUTH_SECRET ห้าม log/ส่งไปหน้าเว็บ
 // Messenger uses a dedicated credential, never the content/provider fallback keys.
 model MessengerSettings {
-  workspaceId String @id
-  dailyLimit Int @default(500)
+  workspaceId String    @id
+  dailyLimit  Int       @default(500)
   validatedAt DateTime?
-  revision Int @default(1)
-  updatedAt DateTime @updatedAt
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  revision    Int       @default(1)
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 model MessengerDailyUsage {
   workspaceId String
-  day String
-  requests Int @default(0)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  day         String
+  requests    Int       @default(0)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   @@id([workspaceId, day])
 }
 
 model MessengerPageConfig {
-  pageId String @id
-  enabled Boolean @default(false)
-  enabledAt DateTime?
-  instructions String @default("")
-  fallbackMessage String @default("ได้รับข้อความแล้วค่ะ ขณะนี้ยังตรวจสอบคำตอบให้ไม่ได้ กรุณาฝากรายละเอียดเพิ่มเติม ทีมงานจะเข้ามาดูแลต่อค่ะ")
-  subscribedAt DateTime?
-  revision Int @default(1)
-  updatedAt DateTime @updatedAt
-  page FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  pageId          String       @id
+  enabled         Boolean      @default(false)
+  enabledAt       DateTime?
+  instructions    String       @default("")
+  fallbackMessage String       @default("ได้รับข้อความแล้วค่ะ ขณะนี้ยังตรวจสอบคำตอบให้ไม่ได้ กรุณาฝากรายละเอียดเพิ่มเติม ทีมงานจะเข้ามาดูแลต่อค่ะ")
+  subscribedAt    DateTime?
+  revision        Int          @default(1)
+  updatedAt       DateTime     @updatedAt
+  page            FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
 }
 
 model MessengerConversation {
-  id String @id @default(cuid())
-  pageId String
-  psid String
-  mode String @default("AUTO")
+  id              String             @id @default(cuid())
+  pageId          String
+  psid            String
+  mode            String             @default("AUTO")
   latestInboundId String?
-  lastCustomerAt DateTime?
-  needsAttention Boolean @default(false)
-  lastError String?
-  revision Int @default(1)
-  leaseToken String?
-  leaseUntil DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  page FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  messages MessengerMessage[]
+  lastCustomerAt  DateTime?
+  needsAttention  Boolean            @default(false)
+  lastError       String?
+  revision        Int                @default(1)
+  leaseToken      String?
+  leaseUntil      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  page            FacebookPage       @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages        MessengerMessage[]
+
   @@unique([pageId, psid])
   @@index([pageId, updatedAt])
 }
 
 model MessengerMessage {
-  id String @id @default(cuid())
+  id             String                @id @default(cuid())
   conversationId String
-  externalId String
-  direction String
-  text String
-  unsupported Boolean @default(false)
-  occurredAt DateTime
+  externalId     String
+  direction      String
+  text           String
+  unsupported    Boolean               @default(false)
+  occurredAt     DateTime
   // PENDING -> GENERATING -> SENDING -> SENT / FAILED / UNKNOWN; terminal rows never auto-retry.
-  status String @default("PENDING")
-  replyText String?
-  replyAction String?
+  status         String                @default("PENDING")
+  replyText      String?
+  replyAction    String?
   replyMessageId String?
-  error String?
-  processingAt DateTime?
-  sentAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  conversation MessengerConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  error          String?
+  processingAt   DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  conversation   MessengerConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
   @@unique([conversationId, externalId])
   @@index([status, updatedAt])
   @@index([conversationId, occurredAt])
@@ -714,8 +723,9 @@ model AiConnection {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  roles     AiRoleConfig[]
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  roles        AiRoleConfig[]
+  mediaConfigs MediaModelConfig[]
 
   @@unique([workspaceId, label])
   @@index([workspaceId, kind])
@@ -771,6 +781,10 @@ model MediaAsset {
   height      Int?
   bytes       Int?
   meta        Json?
+  /// ภาพที่ระบบสั่ง AI สร้างเอง — ข้อเท็จจริงที่ระบบรู้แน่ ไม่ใช่การเดา (ใช้ติดป้าย/ตอบฟิลด์นโยบาย)
+  aiGenerated Boolean  @default(false)
+  sha256      String?
+  mediaJobId  String?
   createdById String?
   createdAt   DateTime @default(now())
 
@@ -1752,4 +1766,86 @@ model NewsItem {
   @@unique([brandId, urlHash])
   @@index([brandId, status, fetchedAt])
   @@index([brandId, titleHash])
+}
+
+// ---------- สื่อจาก AI (N-3) — ใช้คีย์ AiConnection เดิม (OpenAI/Gemini/OpenRouter/compatible) ไม่ต้องใส่คีย์ซ้ำ ----------
+
+/// "งานประเภทนี้ ใช้คีย์ใบนี้ โมเดลนี้" — เทียบเท่า AiRoleConfig ของฝั่งข้อความ
+model MediaModelConfig {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  /// IMAGE_POST
+  purpose      String
+  connectionId String
+  model        String
+  /// ราคาต่อภาพ (USD) ที่ผู้ใช้กรอกเอง — API ไม่ส่งราคากลับมา ไม่กรอก = null ห้ามเดา ห้ามเป็น 0
+  unitCostUsd  Decimal? @db.Decimal(10, 4)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connection AiConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, purpose])
+}
+
+/// งานสร้างภาพหนึ่งครั้ง — บันทึกทุกครั้งรวมที่ล้มเหลว (ใช้นับเพดานรายเดือนและย้อนดูว่าใช้เจ้าไหน)
+model MediaJob {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  contentId      String?
+  purpose        String
+  connectionId   String?
+  provider       String
+  model          String
+  prompt         String
+  /// RUNNING | SUCCEEDED | FAILED
+  status         String    @default("RUNNING")
+  /// กันกดซ้ำ/ยิงซ้ำ — คีย์เดิมที่สำเร็จแล้วคืนภาพเดิม
+  idempotencyKey String    @unique
+  costUsd        Decimal?  @db.Decimal(10, 4)
+  outputAssetId  String?
+  error          String?
+  durationMs     Int?
+  requestedById  String?
+  createdAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+/// ห้องข่าวอัตโนมัติ (N-4) ต่อแบรนด์ — ดึง → คัด → เขียนร่างรออนุมัติ; ไม่โพสต์เองเด็ดขาด
+model NewsAutomation {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  brandId         String    @unique
+  enabled         Boolean   @default(false)
+  /// เพจที่จะเขียนร่างให้ (ต้องอยู่แบรนด์เดียวกัน)
+  pageId          String
+  fetchEveryHours Int       @default(3)
+  /// ร่างใหม่สูงสุดต่อวัน (นับตามเขตเวลาของ workspace)
+  draftsPerDay    Int       @default(3)
+  /// คะแนนขั้นต่ำจาก AI ที่จะเขียนเป็นร่าง
+  minScore        Int       @default(60)
+  /// ข้ามข่าวที่ AI ติดป้ายเสี่ยง (ต้องคัด/เขียนด้วยมือแทน)
+  skipHighRisk    Boolean   @default(true)
+  aiImage         Boolean   @default(false)
+  theme           String    @default("dark")
+  /// ช่องเวลาโพสต์ของเพจ "HH:MM" — ใช้เสนอเวลาตอนกดอนุมัติ
+  postingSlots    String[]  @default(["09:00", "12:30", "19:00"])
+  /// ผู้ที่เปิดอัตโนมัติ — ร่างที่ระบบสร้างบันทึกในนามคนนี้ (audit)
+  createdById     String
+  lastRunAt       DateTime?
+  lastFetchAt     DateTime?
+  lastResult      Json?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
 }

@@ -8,13 +8,14 @@ import { AuthGuard } from '../auth/auth.guard';
 import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { NewsService } from './news.service';
-import { createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { NewsAutomationService } from './automation.service';
+import { automationSchema, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
 @UseGuards(AuthGuard, TenantGuard)
 export class NewsController {
-  constructor(@Inject(NewsService) private readonly news: NewsService) {}
+  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService) {}
 
   // ---- คีย์ค้นเว็บ ----
   @Get('news/search-provider') @RequirePermission('content.read')
@@ -45,4 +46,14 @@ export class NewsController {
   shortlist(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(shortlistSchema)) dto: ShortlistDto, @RequestId() rid: string) { return this.news.shortlist(t.workspaceId, u.id, brandId, dto, rid); }
   @Post('news/items/:id/draft') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
   draft(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(draftSchema)) dto: DraftDto, @RequestId() rid: string) { return this.news.draft(t.workspaceId, u.id, id, dto, rid); }
+
+  // ---- อัตโนมัติ (N-4) ----
+  @Get('brands/:brandId/news/automation') @RequirePermission('content.read')
+  automation(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.auto.get(t.workspaceId, brandId); }
+  @Put('brands/:brandId/news/automation') @RequirePermission('content.create', 'ai.use')
+  setAutomation(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(automationSchema)) dto: AutomationDto, @RequestId() rid: string) { return this.auto.set(t.workspaceId, u.id, brandId, dto, rid); }
+  @Post('brands/:brandId/news/automation/run') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  runAutomation(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.auto.runOne(t.workspaceId, brandId); }
+  @Get('news/next-slot') @RequirePermission('content.read')
+  nextSlot(@Tenant() t: TenantContext, @Query(new ZodPipe(nextSlotSchema)) q: z.infer<typeof nextSlotSchema>) { return this.auto.nextSlot(t.workspaceId, q.pageId); }
 }

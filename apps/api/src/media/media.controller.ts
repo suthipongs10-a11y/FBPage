@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ZodPipe } from '../common/zod.pipe';
@@ -7,13 +7,14 @@ import { AuthGuard } from '../auth/auth.guard';
 import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { MediaService } from './media.service';
-import { aiCardSchema, renderCardSchema, type AiCardDto, type RenderCardDto } from './dto';
+import { MediaGenService } from './media-gen.service';
+import { aiCardSchema, aiImageSchema, aiMediaConfigSchema, renderCardSchema, type AiCardDto, type AiImageDto, type AiMediaConfigDto, type RenderCardDto } from './dto';
 
 @ApiTags('media')
 @Controller('workspaces/:workspaceId')
 @UseGuards(AuthGuard, TenantGuard)
 export class MediaController {
-  constructor(@Inject(MediaService) private readonly media: MediaService) {}
+  constructor(@Inject(MediaService) private readonly media: MediaService, @Inject(MediaGenService) private readonly gen: MediaGenService) {}
 
   @Get('media/capabilities') @RequirePermission('content.read')
   capabilities() { return this.media.capabilities(); }
@@ -32,6 +33,14 @@ export class MediaController {
 
   @Post('content/:contentId/media/card/ai') @HttpCode(200) @RequirePermission('content.edit', 'ai.use')
   aiCard(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('contentId') contentId: string, @Body(new ZodPipe(aiCardSchema)) dto: AiCardDto, @RequestId() rid: string) { return this.media.aiCard(t.workspaceId, u.id, contentId, dto, rid); }
+
+  // ---- ภาพจาก AI (N-3) ----
+  @Get('media/ai-config') @RequirePermission('content.read')
+  aiConfig(@Tenant() t: TenantContext) { return this.gen.getConfig(t.workspaceId); }
+  @Put('media/ai-config') @RequirePermission('ai.configure')
+  setAiConfig(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(aiMediaConfigSchema)) dto: AiMediaConfigDto, @RequestId() rid: string) { return this.gen.setConfig(t.workspaceId, u.id, dto, rid); }
+  @Post('media/ai-image') @HttpCode(200) @RequirePermission('content.edit', 'ai.use')
+  aiImage(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(aiImageSchema)) dto: AiImageDto, @RequestId() rid: string) { return this.gen.generate(t.workspaceId, u.id, { contentId: dto.contentId ?? null, prompt: dto.prompt, attach: dto.attach, override: dto.modelOverride ?? null, idempotencyKey: dto.idempotencyKey }, rid); }
 
   @Delete('media/:id') @RequirePermission('content.edit')
   remove(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.media.remove(t.workspaceId, u.id, id, rid); }

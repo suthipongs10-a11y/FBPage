@@ -4,7 +4,8 @@ import { ContentModule } from '../content/content.module';
 import { MediaModule } from '../media/media.module';
 import { NewsController } from './news.controller';
 import { NewsService } from './news.service';
+import { NewsAutomationService } from './automation.service';
 
 /** ห้องข่าว — แหล่งข่าว → คัด → เขียนโพสต์ของเพจ → รออนุมัติ */
-@Module({ imports: [AiModule, ContentModule, MediaModule], controllers: [NewsController], providers: [NewsService] })
+@Module({ imports: [AiModule, ContentModule, MediaModule], controllers: [NewsController], providers: [NewsService, NewsAutomationService], exports: [NewsAutomationService] })
 export class NewsModule {}
