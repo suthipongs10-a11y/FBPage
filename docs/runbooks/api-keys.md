@@ -51,6 +51,15 @@ Generate Access Token → **Access Token Debugger → Extend Access Token** (อ
 (ทางวาง token ระบบ**ไม่**แลกเป็น long-lived ให้ — แลกเฉพาะทาง OAuth · token สั้นจาก Explorer หมดอายุใน 1–2 ชม. และ page token ที่ได้จากมันก็หมดตาม ·
 page token ที่ได้จาก user token แบบยาวจะไม่หมดอายุตราบที่ยังเป็นแอดมินเพจ · เพจที่อยู่ใน Business portfolio ถ้าไม่ขึ้นรายการ ให้เพิ่มสิทธิ์ `business_management`)
 
+**ปัญหาที่เจอจริงตอนออก token (2026-09-26)**
+- `Invalid Scopes: pages_read_user_content` ทั้งที่ไม่ได้เลือกตัวนี้ → Explorer เติมมันให้เองเพราะ `pages_manage_engagement` ต้องใช้คู่กัน
+  แก้ที่แอป: **Use cases → จัดการเพจ → Customize → กด "+ เพิ่ม" ที่ `pages_read_user_content`** จนขึ้น "พร้อมทดสอบ" แล้วค่อย Generate
+- แท็บ **Configurations** ใน Explorer ใช้ชุดสิทธิ์ของ Facebook Login for Business ที่ล็อกไว้ (เพิ่มสิทธิ์ในแอปแล้วก็ไม่ตามมา) →
+  ใช้แท็บ **Permissions** เลือกทีละตัว หรือแก้ configuration นั้นให้มีสิทธิ์ครบ
+- กดตกลงในหน้าต่าง error แล้วไม่มีอะไรเกิดขึ้น / เห็น 0 เพจ → ลบแอปที่ Facebook *การตั้งค่า → การผสานการทำงานทางธุรกิจ*
+  (`facebook.com/settings?tab=business_tools`) แล้ว Generate ใหม่ เพื่อให้หน้าต่างเลือกเพจเด้งมาเต็ม — **อย่าลบ "ads MCP server"** ถ้าใช้ตัวเชื่อมโฆษณาอยู่
+- ชุดที่ใช้ได้จริง 8 ตัว: สิทธิ์ 7 ตัวข้างบน + `business_management` → ตรวจใน Access Token Debugger ว่าขอบเขตครบและหมดอายุ ~2 เดือน
+
 ---
 
 ## 2. Google Cloud — ใช้ร่วมกันทั้ง YouTube และ Search Console
