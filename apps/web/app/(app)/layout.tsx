@@ -33,14 +33,14 @@ function Shell({ children }: { children: ReactNode }) {
           </Select>
           <NotificationBell />
         </div>
-        <nav className="flex flex-wrap gap-1 md:flex-col">
+        <nav className="flex flex-wrap gap-1 md:-mr-2 md:min-h-0 md:flex-1 md:flex-nowrap md:flex-col md:overflow-y-auto md:pr-2">
           {NAV.map(n => n.href ? (
             <Link key={n.key} href={n.href} className={`rounded-md px-3 py-2 text-sm ${active === n.href ? 'bg-sky-500/10 text-sky-600 font-semibold' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}>{t(n.key)}</Link>
           ) : (
             <span key={n.key} className="rounded-md px-3 py-2 text-sm text-slate-600" title={t('nav.soon')}>{t(n.key)} <span className="text-[10px]">· {t('nav.soon')}</span></span>
           ))}
         </nav>
-        <div className="mt-auto border-t border-slate-800 pt-3 text-xs text-slate-500">
+        <div className="mt-auto shrink-0 border-t border-slate-800 pt-3 text-xs text-slate-500">
           <div className="truncate text-slate-300">{me.user.name}</div>
           <div className="truncate">{me.user.email} · {t(`role.${ws.role}` as MessageKey)}</div>
           <button onClick={logout} className="mt-2 text-sky-400 hover:underline">{t('auth.logout')}</button>
