@@ -213,6 +213,7 @@ model Workspace {
   externalOps       ExternalOperation[]
   emailProvider     EmailProviderAccount?
   emailCampaigns    EmailCampaign[]
+  searchProvider    SearchProviderAccount?
 }
 
 enum WorkspaceRole {
@@ -285,6 +286,8 @@ model Brand {
   topics          Topic[]
   insights        BrandInsight[]
   emailLists      EmailList[]
+  newsSources     NewsSource[]
+  newsItems       NewsItem[]
 
   @@index([clientId])
 }
@@ -1670,4 +1673,83 @@ model TikTokContentMetadata {
   confirmedById String?
   lastPolledAt  DateTime?
   content       ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+}
+
+// ---------- ห้องข่าว (News) — ดึงหัวข้อข่าว → AI คัด → AI เขียนโพสต์ของเพจเอง → รออนุมัติ ----------
+
+/// คีย์ค้นเว็บของ workspace (ตอนนี้รองรับ Tavily) — เข้ารหัสด้วย AUTH_SECRET ห้ามอยู่ใน select/response/audit
+model SearchProviderAccount {
+  id          String    @id @default(cuid())
+  workspaceId String    @unique
+  /// tavily
+  provider    String    @default("tavily")
+  apiKeyEnc   String
+  keyHint     String?
+  /// UNKNOWN | OK | AUTH_FAILED | ERROR
+  status      String    @default("UNKNOWN")
+  lastError   String?
+  verifiedAt  DateTime?
+  /// จำนวนคำขอค้นที่ยิงไปแล้ว (นับทุกครั้ง รวมที่ล้มเหลว) — ไว้ดูโควตา
+  callCount   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+/// แหล่งข่าวของแบรนด์: RSS (url) หรือคำค้น (query ผ่าน SearchProviderAccount)
+model NewsSource {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  brandId       String
+  /// RSS | SEARCH
+  kind          String    @default("RSS")
+  label         String
+  url           String?
+  query         String?
+  enabled       Boolean   @default(true)
+  lastFetchedAt DateTime?
+  lastError     String?
+  /// จำนวนข่าวใหม่ที่ได้ในรอบล่าสุด
+  lastNewCount  Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  brand Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  items NewsItem[]
+
+  @@index([brandId])
+}
+
+/// ข่าวหนึ่งชิ้นที่ดึงมา — เก็บแค่หัวข้อ/เกริ่นสั้น/ลิงก์ต้นทางเป็นหลักฐาน ไม่เก็บเนื้อหาเต็มหรือรูปของสำนักข่าว
+model NewsItem {
+  id          String    @id @default(cuid())
+  workspaceId String
+  brandId     String
+  sourceId    String?
+  url         String
+  /// sha256 ของ URL มาตรฐาน (ตัดพารามิเตอร์ติดตาม) — ข่าวเดียวกันจากหลายแหล่งเก็บครั้งเดียว
+  urlHash     String
+  /// sha256 ของหัวข้อที่ normalize แล้ว — กันข่าวเดียวกันคนละลิงก์
+  titleHash   String
+  title       String
+  snippet     String?
+  sourceName  String?
+  publishedAt DateTime?
+  fetchedAt   DateTime  @default(now())
+  /// NEW | SHORTLISTED | DRAFTED | DISMISSED
+  status      String    @default("NEW")
+  /// คะแนนความน่าสนใจ 0–100 จาก AI (null = ยังไม่ได้คัด)
+  score       Int?
+  /// ผลคัดของ AI: { headlineTh, why, category, risk: LOW|HIGH, riskReasons[] }
+  angle       Json?
+  contentId   String?
+  updatedAt   DateTime  @updatedAt
+
+  brand  Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  source NewsSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@unique([brandId, urlHash])
+  @@index([brandId, status, fetchedAt])
+  @@index([brandId, titleHash])
 }

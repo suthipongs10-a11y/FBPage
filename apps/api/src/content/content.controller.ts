@@ -7,7 +7,7 @@ import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { ContentService } from './content.service';
 import { ContentAgentsService } from './agents.service';
-import { calendarSchema, createContentSchema, generateSchema, listContentSchema, planSchema, reviewCommentSchema, scheduleSchema, updateContentSchema, type CalendarDto, type CreateContentDto, type GenerateDto, type ListContentDto, type PlanDto, type ReviewCommentDto, type ScheduleDto, type UpdateContentDto } from './dto';
+import { approveScheduleSchema, calendarSchema, createContentSchema, generateSchema, listContentSchema, planSchema, reviewCommentSchema, scheduleSchema, updateContentSchema, type ApproveScheduleDto, type CalendarDto, type CreateContentDto, type GenerateDto, type ListContentDto, type PlanDto, type ReviewCommentDto, type ScheduleDto, type UpdateContentDto } from './dto';
 
 @ApiTags('content')
 @Controller('workspaces/:workspaceId')
@@ -64,6 +64,9 @@ export class ContentController {
 
   @Post('content/:id/schedule') @HttpCode(200) @RequirePermission('content.publish')
   schedule(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(scheduleSchema)) dto: ScheduleDto, @RequestId() rid: string) { return this.content.schedule(t.workspaceId, u.id, id, dto, rid); }
+
+  @Post('content/:id/approve-schedule') @HttpCode(200) @RequirePermission('content.approve', 'content.publish')
+  approveSchedule(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(approveScheduleSchema)) dto: ApproveScheduleDto, @RequestId() rid: string) { return this.content.approveAndSchedule(t.workspaceId, u.id, id, dto, rid); }
 
   @Post('content/:id/publish') @HttpCode(200) @RequirePermission('content.publish')
   publish(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.content.publishNow(t.workspaceId, u.id, id, rid); }

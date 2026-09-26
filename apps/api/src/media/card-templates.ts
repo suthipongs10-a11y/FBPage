@@ -3,7 +3,7 @@
  * ภาพเป็นงานต้นฉบับทั้งหมด (ตัวอักษร + SVG) ไม่มีภาพบุคคล ไม่มีปัญหาลิขสิทธิ์
  */
 export const CARD_SIZE = 1080;
-export const CARD_TEMPLATES = ['quote', 'stat', 'tips', 'hero'] as const;
+export const CARD_TEMPLATES = ['quote', 'stat', 'tips', 'hero', 'news'] as const;
 export type CardTemplate = (typeof CARD_TEMPLATES)[number];
 export interface Theme { bg1: string; bg2: string; ink: string; dim: string; accent: string; onAccent: string; card: string; line: string }
 export const THEMES: Record<string, Theme> = {
@@ -58,6 +58,15 @@ const TEMPLATES: Record<CardTemplate, Tpl> = {
     body: `${d.kicker ? `<div class="kicker">${esc(d.kicker)}</div>` : ''}<h1>${rich(d.title)}</h1>${d.sub ? `<div class="sub">${rich(d.sub)}</div>` : ''}${d.svg ? `<div class="art">${safeSvg(d.svg)}</div>` : ''}${d.punch ? `<div class="punch">${esc(d.punch)}</div>` : ''}${d.stat ? `<div class="stat">${rich(d.stat)}</div>` : ''}`,
     align: 'center',
   }),
+  /** การ์ดหัวข่าวของเพจ — ตัวอักษรล้วน ไม่ใช้รูปของสำนักข่าว (footer ใส่ "ที่มา: ...") */
+  news: (d, t) => {
+    const n = (d.title ?? '').length;
+    return {
+      css: `.bar{position:absolute;left:0;right:0;top:0;height:16px;background:${t.accent}}h1{font-size:${n > 70 ? 70 : n > 44 ? 82 : 100}px;font-weight:700;line-height:1.24;margin-top:38px}.rule{width:130px;height:7px;background:${t.accent};margin-top:46px}.sub{font-size:40px;color:${t.dim};margin-top:34px;line-height:1.55}`,
+      body: `<div class="bar"></div>${d.kicker ? `<div class="kicker">${esc(d.kicker)}</div>` : ''}<h1>${rich(d.title)}</h1><div class="rule"></div>${d.sub ? `<div class="sub">${rich(d.sub)}</div>` : ''}`,
+      center: true,
+    };
+  },
 };
 
 export function buildCardHtml(name: CardTemplate, data: CardData, themeName: string, fonts: { regular: string; bold: string }): string {

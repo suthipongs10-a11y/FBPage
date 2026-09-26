@@ -27,6 +27,8 @@ export const scheduleSchema = z.object({
   timezone: z.string().trim().min(1).max(64).optional(),
 });
 export type ScheduleDto = z.infer<typeof scheduleSchema>;
+export const approveScheduleSchema = scheduleSchema.extend({ comment: z.string().trim().max(1000).optional() });
+export type ApproveScheduleDto = z.infer<typeof approveScheduleSchema>;
 
 export const planSchema = z.object({ days: z.coerce.number().int().min(3).max(31).default(7), postsPerWeek: z.coerce.number().int().min(1).max(14).default(3), objective: opt(300), notes: opt(1000) }).optional();
 export type PlanDto = z.infer<typeof planSchema>;

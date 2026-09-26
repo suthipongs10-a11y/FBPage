@@ -156,6 +156,20 @@ export class ContentService {
     return this.load(workspaceId, id);
   }
 
+  /** อนุมัติ + ตั้งเวลาในคลิกเดียว (ห้องข่าว) — ตรวจเวลาและจุด [ต้องยืนยัน] ก่อน เพื่อไม่ให้ค้างครึ่งทางที่ APPROVED โดยตั้งเวลาไม่ได้ */
+  async approveAndSchedule(workspaceId: string, userId: string, id: string, dto: ScheduleDto & { comment?: string }, requestId: string) {
+    const c = await this.load(workspaceId, id);
+    if (c.status !== 'READY_FOR_APPROVAL') throw new ConflictException('คอนเทนต์นี้ไม่ได้อยู่ในคิวรออนุมัติ');
+    if (/\[ต้องยืนยัน/.test(c.caption ?? '')) throw new UnprocessableEntityException('ยังมีจุด [ต้องยืนยัน ...] ในโพสต์ — แก้ข้อความก่อนอนุมัติ');
+    const ws = await this.prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
+    const tz = dto.timezone ?? c.page?.timezone ?? ws.timezone;
+    if (!isValidTimeZone(tz)) throw new BadRequestException('เขตเวลาไม่ถูกต้อง');
+    const mins = (localToUtc(dto.scheduledLocal, tz).getTime() - Date.now()) / 60_000;
+    if (mins < 10 || mins > 75 * 1440) throw new BadRequestException('ตั้งเวลาต้องล่วงหน้า 10 นาที ถึง 75 วัน');
+    await this.approve(workspaceId, userId, id, dto.comment, requestId);
+    return this.schedule(workspaceId, userId, id, { scheduledLocal: dto.scheduledLocal, timezone: tz }, requestId);
+  }
+
   /** โพสต์ตอนนี้ (ต้อง APPROVED) — รัน publisher ทันทีในคำขอนี้เพื่อให้ผู้ใช้เห็นผลเลย */
   async publishNow(workspaceId: string, userId: string, id: string, requestId: string): Promise<{ outcome: PublishOutcome; content: Awaited<ReturnType<ContentService['load']>> }> {
     const c = await this.load(workspaceId, id);

@@ -20,8 +20,9 @@ import { CommentsModule } from './comments/comments.module';
 import { YoutubeModule } from './youtube/youtube.module';
 import { WebModule } from './web/web.module';
 import { EmailModule } from './email/email.module';
+import { NewsModule } from './news/news.module';
 
 @Module({
-  imports: [TikTokModule, ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, WebModule, EmailModule, HealthModule],
+  imports: [TikTokModule, ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, WebModule, EmailModule, NewsModule, HealthModule],
 })
 export class AppModule {}

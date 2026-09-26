@@ -158,3 +158,14 @@ export interface EmailCampaignRow { id: string; listId: string; name: string; su
 export interface EmailSummary { lists: number; subscribers: number; drafts: number; pendingApproval: number; scheduled: number; sent: number; failed: number; totals: { sent: number | null; opened: number | null; clicked: number | null } }
 export interface EmailStats { campaign: EmailCampaignRow; sends: Record<string, number>; events: { type: string; email: string | null; occurredAt: string; provider: string }[]; limitations: string[] }
 export interface EmailSendOutcome { status: 'SENT' | 'PARTIAL' | 'FAILED' | 'SKIPPED'; reason?: string; sent: number; failed: number; skipped: number; total: number; retryable: boolean }
+
+// ---------- ห้องข่าว ----------
+export interface NewsSourceRow { id: string; brandId: string; kind: 'RSS' | 'SEARCH'; label: string; url: string | null; query: string | null; enabled: boolean; lastFetchedAt: string | null; lastError: string | null; lastNewCount: number; createdAt: string }
+export interface NewsAngle { headlineTh?: string; why?: string; category?: string; risk?: 'LOW' | 'HIGH'; riskReasons?: string[] }
+export interface NewsNotes { risk?: 'LOW' | 'HIGH'; riskReasons?: string[]; needsCheck?: string[] }
+export interface NewsItemRow {
+  id: string; brandId: string; sourceId: string | null; url: string; title: string; snippet: string | null; sourceName: string | null; publishedAt: string | null; fetchedAt: string;
+  status: 'NEW' | 'SHORTLISTED' | 'DRAFTED' | 'DISMISSED'; score: number | null; angle: NewsAngle | null; contentId: string | null;
+  content: { id: string; status: string; title: string | null; caption: string | null; scheduledAt: string | null; scheduledLocal: string | null; publishedAt: string | null; pageId: string | null; aiNotes: NewsNotes | null; lastError: string | null; imageAssetId: string | null } | null;
+}
+export type SearchProviderView = { configured: false } | { configured: true; provider: string; keyHint: string | null; status: string; lastError: string | null; verifiedAt: string | null; callCount: number };

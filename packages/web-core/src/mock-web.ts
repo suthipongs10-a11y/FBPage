@@ -12,6 +12,8 @@ export interface MockWebState {
   accessTokens: Set<string>; requests: string[];
   /** WordPress REST จำลอง (W-3) — Basic auth username `wpadmin` + Application Password `abcd EFGH ijkl MNOP` */
   wp: { posts: MockWpPost[]; tags: { id: number; name: string }[]; categories: { id: number; name: string }[]; disabled: boolean; authFail: boolean; failNext: number; roles: string[] };
+  /** ห้องข่าว: ฟีด RSS จำลองที่ `/news/rss.xml` (+ `/news/atom.xml`, `/news/redirect`) และ Tavily ที่ `POST /tavily/search` (Bearer `TAVILY_OK`) */
+  news: { rssItems: { title: string; link: string; description: string; pubDate: string }[]; tavilyResults: { title: string; url: string; content: string; published_date?: string }[]; tavilyQueries: string[] };
 }
 export interface MockWpPost { id: number; title: string; content: string; excerpt: string; slug: string; status: string; date: string; tags: number[]; categories: number[] }
 export const MOCK_WP_USER = 'wpadmin'; export const MOCK_WP_APP_PASSWORD = 'abcd EFGH ijkl MNOP';
@@ -25,6 +27,18 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
     scRows: {}, scQueries: [{ query: 'ทำความสะอาดบ้าน ภูเก็ต', clicks: 42, impressions: 900 }, { query: 'แม่บ้านรายวัน', clicks: 18, impressions: 620 }], scPages: [{ page: 'SELF/services', clicks: 30, impressions: 700 }, { page: 'SELF/', clicks: 25, impressions: 800 }],
     accessTokens: new Set(['ACCESS_OK']), requests: [],
     wp: { posts: [], tags: [{ id: 11, name: 'ภูเก็ต' }], categories: [{ id: 1, name: 'Uncategorized' }], disabled: false, authFail: false, failNext: 0, roles: ['editor'] },
+    news: {
+      rssItems: [
+        { title: 'ทีมกู้ภัยช่วยลูกช้างตกบ่อได้สำเร็จ', link: 'https://news.example.com/a/elephant?utm_source=rss', description: '&lt;p&gt;เจ้าหน้าที่ใช้เวลา 3 ชั่วโมงช่วยลูกช้างออกจากบ่อน้ำ&lt;/p&gt;', pubDate: new Date(Date.now() - 3_600_000).toUTCString() },
+        { title: 'ญี่ปุ่นเปิดตัวรถไฟความเร็วสูงรุ่นใหม่ วิ่งได้ 400 กม./ชม.', link: 'https://news.example.com/a/train', description: '<![CDATA[รถไฟรุ่นใหม่ทดสอบวิ่งครั้งแรก]]>', pubDate: new Date(Date.now() - 7_200_000).toUTCString() },
+        { title: 'ข่าวที่ไม่มีลิงก์', link: '', description: 'ข้าม', pubDate: '' },
+      ],
+      tavilyResults: [
+        { title: 'Scientists find new deep-sea species', url: 'https://science.example.org/deep-sea', content: 'Researchers discovered 12 new species near a hydrothermal vent.', published_date: new Date(Date.now() - 5_400_000).toUTCString() },
+        { title: 'ทีมกู้ภัยช่วยลูกช้างตกบ่อได้สำเร็จ', url: 'https://www.news.example.com/a/elephant/', content: 'ซ้ำกับฟีด', published_date: new Date().toUTCString() },
+      ],
+      tavilyQueries: [],
+    },
   };
   let nextId = 100;
   for (let i = 1; i <= 28; i++) { const d = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10); state.scRows[d] = { clicks: 5 + (i % 7), impressions: 120 + (i % 5) * 20, ctr: 0.05, position: 8.2 }; }
@@ -83,6 +97,21 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
         const t = { id: nextId++, name }; list.push(t); return json(201, t);
       }
       return json(404, { code: 'rest_no_route', message: 'No route' });
+    }
+    // ---- ห้องข่าว ----
+    if (u.pathname === '/news/rss.xml') {
+      const items = state.news.rssItems.map(i => `<item><title>${i.title}</title><link>${i.link}</link><description>${i.description}</description><pubDate>${i.pubDate}</pubDate></item>`).join('');
+      res.writeHead(200, { 'content-type': 'application/rss+xml; charset=utf-8' }); return res.end(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>ข่าวจำลอง</title>${items}</channel></rss>`);
+    }
+    if (u.pathname === '/news/atom.xml') { res.writeHead(200, { 'content-type': 'application/atom+xml' }); return res.end('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Atom จำลอง</title><entry><title type="html">Mars &amp;amp; Moon</title><link rel="alternate" href="https://atom.example.com/mars"/><summary>Rover update</summary><updated>2026-09-01T10:00:00Z</updated></entry></feed>'); }
+    if (u.pathname === '/news/redirect') { res.writeHead(302, { location: '/news/rss.xml' }); return res.end(); }
+    if (u.pathname === '/news/not-a-feed') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html><body>hello</body></html>'); }
+    if (u.pathname === '/admin/feed.xml') { res.writeHead(200, { 'content-type': 'application/rss+xml' }); return res.end('<rss><channel></channel></rss>'); }
+    if (u.pathname === '/tavily/search' && req.method === 'POST') {
+      if (req.headers.authorization !== 'Bearer TAVILY_OK') return json(401, { detail: { error: 'Unauthorized: missing or invalid API key.' } });
+      const body = JSON.parse(bodyText || '{}') as { query?: string; topic?: string };
+      state.news.tavilyQueries.push(String(body.query ?? ''));
+      return json(200, { query: body.query, results: state.news.tavilyResults });
     }
     // ---- เว็บลูกค้าจำลอง ----
     if (state.slowMs) await new Promise(r => setTimeout(r, state.slowMs));
