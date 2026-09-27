@@ -22,6 +22,8 @@ export interface PublishResult { externalId: string; permalink: string; schedule
 export interface PageComment { id: string; postId: string; parentId: string | null; fromId: string | null; fromName: string | null; message: string | null; createdTime: Date; permalink: string | null; isHidden: boolean; raw: Record<string, unknown> }
 export class CommentsPermissionError extends Error { constructor(public readonly graphError: FacebookApiError) { super('อ่านคอมเมนต์ไม่ได้ — token ต้องมีสิทธิ์ pages_read_user_content (และ pages_manage_engagement เพื่อตอบ)'); this.name = 'CommentsPermissionError'; } }
 
+export class MessagingPermissionError extends Error { constructor(public readonly graphError: FacebookApiError) { super(`ส่งข้อความไม่ได้ — ${/window|7 days|once|already/i.test(graphError.message) ? 'คอมเมนต์นี้เกิน 7 วันหรือเคยส่งข้อความไปแล้ว (Meta ให้ส่งได้ครั้งเดียวต่อคอมเมนต์)' : 'token ต้องมีสิทธิ์ pages_messaging และเพจต้องเปิดรับข้อความ'}`); this.name = 'MessagingPermissionError'; } }
+
 export const PAGE_FIELDS = [
   'id', 'name', 'username', 'link', 'category', 'about', 'description', 'phone', 'website', 'emails', 'single_line_address', 'hours',
   'cover', 'picture{url,is_silhouette}', 'is_published', 'fan_count',
@@ -154,6 +156,26 @@ export class FacebookService {
   async replyToComment(commentId: string, pageToken: string, message: string): Promise<{ externalId: string }> {
     try { const r = await this.graph.call<{ id: string }>(`${commentId}/comments`, { token: pageToken, method: 'POST', params: { message } }); return { externalId: r.id }; }
     catch (e) { if (e instanceof FacebookApiError && e.isPermissionError) throw new CommentsPermissionError(e); throw e; }
+  }
+
+  /** กดไลค์คอมเมนต์ในนามเพจ — ต้องมี pages_manage_engagement */
+  async likeComment(commentId: string, pageToken: string): Promise<void> {
+    try { await this.graph.call(`${commentId}/likes`, { token: pageToken, method: 'POST' }); }
+    catch (e) { if (e instanceof FacebookApiError && e.isPermissionError) throw new CommentsPermissionError(e); throw e; }
+  }
+
+  /**
+   * Private reply: ส่งข้อความเข้าอินบ็อกซ์ของคนที่คอมเมนต์ (Messenger) — ต้องมี pages_messaging
+   * Meta จำกัด 1 ข้อความต่อคอมเมนต์ และภายใน 7 วันหลังคอมเมนต์ · ลูกค้าตอบกลับแล้วเข้าระบบแชทตามปกติ
+   */
+  async privateReply(facebookPageId: string, commentId: string, pageToken: string, text: string): Promise<{ messageId: string | null; recipientId: string | null }> {
+    try {
+      const r = await this.graph.call<{ message_id?: string; recipient_id?: string }>(`${facebookPageId}/messages`, { token: pageToken, method: 'POST', params: { recipient: { comment_id: commentId }, message: { text } } });
+      return { messageId: r.message_id ?? null, recipientId: r.recipient_id ?? null };
+    } catch (e) {
+      if (e instanceof FacebookApiError && e.isPermissionError) throw new MessagingPermissionError(e);
+      throw e;
+    }
   }
 
   async hideComment(commentId: string, pageToken: string, hidden = true): Promise<void> {

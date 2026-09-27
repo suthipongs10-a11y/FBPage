@@ -89,31 +89,42 @@ model Notification {
 
 /// คอมเมนต์บนโพสต์ของเพจ (§23, §33) — ต้องมีสิทธิ์ pages_read_user_content จึงอ่านได้
 model PageComment {
-  id                String    @id @default(cuid())
-  pageId            String
-  postId            String?
-  facebookCommentId String
-  parentCommentId   String?
-  fromId            String?
-  fromName          String?
-  message           String?
-  createdTime       DateTime
-  permalink         String?
+  id                 String    @id @default(cuid())
+  pageId             String
+  postId             String?
+  facebookCommentId  String
+  parentCommentId    String?
+  fromId             String?
+  fromName           String?
+  message            String?
+  createdTime        DateTime
+  permalink          String?
   /// QUESTION | LEAD | COMPLAINT | PRAISE | SPAM | PRICE_QUERY | LOCATION_QUERY | SERVICE_QUERY | OTHER
-  classification    String?
-  sentiment         String?
-  riskFlag          Boolean   @default(false)
-  aiSummary         String?
-  draftReply        String?
+  classification     String?
+  sentiment          String?
+  riskFlag           Boolean   @default(false)
+  aiSummary          String?
+  draftReply         String?
   /// NONE | DRAFTED | APPROVED | SENT | FAILED | SKIPPED
-  replyStatus       String    @default("NONE")
-  replyExternalId   String?
-  repliedAt         DateTime?
-  resolvedAt        DateTime?
-  isHidden          Boolean   @default(false)
-  rawData           Json?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  replyStatus        String    @default("NONE")
+  replyExternalId    String?
+  repliedAt          DateTime?
+  resolvedAt         DateTime?
+  isHidden           Boolean   @default(false)
+  /// กดไลค์ในนามเพจแล้ว
+  likedAt            DateTime?
+  /// ข้อความส่งเข้าอินบ็อกซ์ของคนคอมเมนต์ (private reply — Meta ให้ครั้งเดียวต่อคอมเมนต์ ภายใน 7 วัน)
+  privateReplyText   String?
+  /// NONE | DRAFTED | SENT | FAILED | SKIPPED
+  privateReplyStatus String    @default("NONE")
+  privateReplyAt     DateTime?
+  privateReplyError  String?
+  privateMessageId   String?
+  /// ระบบอัตโนมัติจัดการคอมเมนต์นี้แล้ว (ไลค์/ตอบ/ส่งแชท) — กันทำซ้ำ
+  autoHandledAt      DateTime?
+  rawData            Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   page FacebookPage  @relation(fields: [pageId], references: [id], onDelete: Cascade)
   post FacebookPost? @relation(fields: [postId], references: [id], onDelete: SetNull)
@@ -197,32 +208,33 @@ model Workspace {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  aiConnections     AiConnection[]
-  messengerSettings MessengerSettings?
-  messengerUsage    MessengerDailyUsage[]
-  aiRoleConfigs     AiRoleConfig[]
-  notifications     Notification[]
-  invites           WorkspaceInvite[]
-  leads             Lead[]
-  googleConnections GoogleConnection[]
-  youtubeApiUsage   YouTubeApiUsage[]
-  members           WorkspaceMember[]
-  clients           Client[]
-  connections       FacebookConnection[]
-  approvals         ApprovalRequest[]
-  auditLogs         AuditLog[]
-  aiTaskLogs        AiTaskLog[]
-  externalOps       ExternalOperation[]
-  emailProvider     EmailProviderAccount?
-  emailCampaigns    EmailCampaign[]
-  searchProviders   SearchProviderAccount[]
-  mediaConfigs      MediaModelConfig[]
-  mediaJobs         MediaJob[]
-  newsAutomations   NewsAutomation[]
-  contentInboxes    ContentInbox[]
-  contentImports    ContentImport[]
-  researchBriefs    ResearchBrief[]
-  pageScouts        PageScout[]
+  aiConnections      AiConnection[]
+  messengerSettings  MessengerSettings?
+  messengerUsage     MessengerDailyUsage[]
+  aiRoleConfigs      AiRoleConfig[]
+  notifications      Notification[]
+  invites            WorkspaceInvite[]
+  leads              Lead[]
+  googleConnections  GoogleConnection[]
+  youtubeApiUsage    YouTubeApiUsage[]
+  members            WorkspaceMember[]
+  clients            Client[]
+  connections        FacebookConnection[]
+  approvals          ApprovalRequest[]
+  auditLogs          AuditLog[]
+  aiTaskLogs         AiTaskLog[]
+  externalOps        ExternalOperation[]
+  emailProvider      EmailProviderAccount?
+  emailCampaigns     EmailCampaign[]
+  searchProviders    SearchProviderAccount[]
+  mediaConfigs       MediaModelConfig[]
+  mediaJobs          MediaJob[]
+  newsAutomations    NewsAutomation[]
+  contentInboxes     ContentInbox[]
+  contentImports     ContentImport[]
+  researchBriefs     ResearchBrief[]
+  pageScouts         PageScout[]
+  commentAutomations CommentAutomation[]
 }
 
 enum WorkspaceRole {
@@ -387,18 +399,19 @@ model FacebookPage {
   createdAt                DateTime        @default(now())
   updatedAt                DateTime        @updatedAt
 
-  brand           Brand                   @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  connection      FacebookConnection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  posts           FacebookPost[]
-  content         ContentItem[]
-  analyses        PageAnalysis[]
-  plans           ContentPlan[]
-  reports         Report[]
-  comments        PageComment[]
-  messengerConfig MessengerPageConfig?
-  conversations   MessengerConversation[]
-  leads           Lead[]
-  scout           PageScout?
+  brand             Brand                   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection        FacebookConnection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  posts             FacebookPost[]
+  content           ContentItem[]
+  analyses          PageAnalysis[]
+  plans             ContentPlan[]
+  reports           Report[]
+  comments          PageComment[]
+  messengerConfig   MessengerPageConfig?
+  conversations     MessengerConversation[]
+  leads             Lead[]
+  scout             PageScout?
+  commentAutomation CommentAutomation?
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -657,6 +670,8 @@ model MessengerPageConfig {
   instructions    String       @default("")
   fallbackMessage String       @default("ได้รับข้อความแล้วค่ะ ขณะนี้ยังตรวจสอบคำตอบให้ไม่ได้ กรุณาฝากรายละเอียดเพิ่มเติม ทีมงานจะเข้ามาดูแลต่อค่ะ")
   subscribedAt    DateTime?
+  /// true = เพจนี้ให้ AI ร่างคำตอบรอคนกดส่งเสมอ แม้ระบบเปิดส่งอัตโนมัติ (MESSENGER_AUTO_SEND_ENABLED) ไว้
+  reviewDrafts    Boolean      @default(false)
   revision        Int          @default(1)
   updatedAt       DateTime     @updatedAt
   page            FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
@@ -1975,4 +1990,36 @@ model PageScout {
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   page      FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+/// ระบบดูแลคอมเมนต์อัตโนมัติต่อเพจ — จำแนกคอมเมนต์ใหม่ด้วย AI แล้ว (ตามที่เปิด) กดไลค์ / ตอบใต้คอมเมนต์ / ส่งรายละเอียดเข้าอินบ็อกซ์
+/// ทุกสวิตช์ค่าเริ่มต้นปิด · คอมเมนต์เสี่ยง/ร้องเรียน/สแปม ไม่ถูกตอบหรือไลค์อัตโนมัติ · เคารพสวิตช์ฉุกเฉินและการหยุดโพสต์ของเพจ
+model CommentAutomation {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  pageId           String    @unique
+  /// จำแนกคอมเมนต์ใหม่อัตโนมัติ (ร่างคำตอบ + จับลีด) — ต้องเปิดก่อนสวิตช์อื่นจะทำงาน
+  enabled          Boolean   @default(false)
+  /// เวลาที่เปิดล่าสุด — ทำงานอัตโนมัติเฉพาะคอมเมนต์ที่เข้ามาหลังจากนี้ (ไม่ย้อนตอบของเก่า)
+  enabledAt        DateTime?
+  /// กดไลค์คอมเมนต์เชิงบวก/คำถาม/สนใจซื้อ
+  autoLike         Boolean   @default(false)
+  /// ตอบใต้คอมเมนต์เองสำหรับกลุ่มปลอดภัย (คำถาม ราคา ที่อยู่ บริการ คำชม)
+  autoReply        Boolean   @default(false)
+  /// ส่งรายละเอียดเข้าอินบ็อกซ์ให้คนที่สนใจซื้อ/ถามราคา แล้วตอบใต้คอมเมนต์ด้วย publicAckText
+  autoPrivateReply Boolean   @default(false)
+  publicAckText    String    @default("ส่งรายละเอียดให้ทางแชทแล้วนะคะ 😊 เช็คกล่องข้อความได้เลยค่ะ")
+  /// จำนวนคอมเมนต์สูงสุดต่อรอบ (กันค่า AI บาน)
+  maxPerRun        Int       @default(20)
+  createdById      String
+  lastRunAt        DateTime?
+  lastResult       Json?
+  lastError        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  page      FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
 }

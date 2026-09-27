@@ -8,7 +8,8 @@ import { CurrentUser, RequestId, Tenant, type AuthUser, type TenantContext } fro
 import { ZodPipe } from '../common/zod.pipe';
 import { MessengerService } from './messenger.service';
 const settingsSchema = z.object({ dailyLimit: z.number().int().min(1).max(10000) }).strict();
-const pageSchema = z.object({ enabled: z.boolean(), instructions: z.string().trim().max(5000), fallbackMessage: z.string().trim().min(1).max(1800) }).strict();
+const pageSchema = z.object({ enabled: z.boolean(), instructions: z.string().trim().max(5000), fallbackMessage: z.string().trim().min(1).max(1800), reviewDrafts: z.boolean().optional() }).strict();
+const sendSchema = z.object({ text: z.string().trim().min(1).max(1800), messageId: z.string().min(1).optional(), resumeAi: z.boolean().optional() }).strict();
 const previewSchema = z.object({ text: z.string().trim().min(1).max(6000) }).strict();
 const modeSchema = z.object({ mode: z.enum(['AUTO', 'HUMAN']) }).strict();
 @ApiTags('messenger')
@@ -22,7 +23,9 @@ export class MessengerController {
   @Patch('pages/:id') @RequirePermission('messenger.manage') savePage(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(pageSchema)) b: z.infer<typeof pageSchema>, @RequestId() rid: string) { return this.service.savePage(t.workspaceId, u.id, id, b, rid); }
   @Post('pages/:id/subscribe') @HttpCode(200) @RequirePermission('messenger.manage', 'page.connect') subscribe(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.service.subscribe(t.workspaceId, u.id, id, rid); }
   @Post('pages/:id/preview') @HttpCode(200) @RequirePermission('messenger.manage', 'ai.use') preview(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(previewSchema)) b: z.infer<typeof previewSchema>, @RequestId() rid: string) { return this.service.preview(t.workspaceId, u.id, id, b.text, rid); }
+  @Get('pages/:id/readiness') @RequirePermission('messenger.read') readiness(@Tenant() t: TenantContext, @Param('id') id: string) { return this.service.readiness(t.workspaceId, id); }
   @Get('conversations') @RequirePermission('messenger.read') conversations(@Tenant() t: TenantContext, @Query('pageId', new ZodPipe(z.string().min(1))) pageId: string) { return this.service.conversations(t.workspaceId, pageId); }
   @Get('conversations/:id') @RequirePermission('messenger.read') conversation(@Tenant() t: TenantContext, @Param('id') id: string) { return this.service.conversation(t.workspaceId, id); }
   @Patch('conversations/:id/mode') @RequirePermission('messenger.reply') mode(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(modeSchema)) b: z.infer<typeof modeSchema>, @RequestId() rid: string) { return this.service.mode(t.workspaceId, u.id, id, b.mode, rid); }
+  @Post('conversations/:id/send') @HttpCode(200) @RequirePermission('messenger.reply') send(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(sendSchema)) b: z.infer<typeof sendSchema>, @RequestId() rid: string) { return this.service.send(t.workspaceId, u.id, id, b, rid); }
 }

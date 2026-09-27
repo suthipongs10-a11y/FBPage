@@ -190,6 +190,56 @@ run('Messenger automatic replies (real DB/queue, local Meta/AI fixtures)', () =>
     const duplicate = await db.facebookPage.create({ data: { brandId: brand.id, connectionId: p.connectionId, facebookPageId: p.facebookPageId, name: 'Duplicate page', pageAccessTokenEncrypted: p.pageAccessTokenEncrypted, messengerConfig: { create: { subscribedAt: new Date() } } } });
     expect((await a('PATCH', path(`/pages/${duplicate.id}`), { ...config, enabled: true })).status).toBe(409); await db.brand.delete({ where: { id: brand.id } });
   });
+  it('per-page draft review keeps drafts even when auto send is on; staff send the edited draft once, echo stays ours', async () => {
+    expect((await a('PATCH', path(`/pages/${pageId}`), { ...config, enabled: true, reviewDrafts: true })).status).toBe(200);
+    const ready = await a('GET', path(`/pages/${pageId}/readiness`)); expect(ready.status).toBe(200);
+    const r = ready.json as unknown as { mode: string; reviewDrafts: boolean; checks: { key: string; ok: boolean }[] };
+    expect(r.mode).toBe('DRAFT_REVIEW'); expect(r.reviewDrafts).toBe(true);
+    expect(Object.fromEntries(r.checks.map(c => [c.key, c.ok]))).toMatchObject({ webhook: true, page: true, scope: true, subscribed: true, ai: true, tested: true, enabled: true, received: true });
+    expect(JSON.stringify(ready.json)).not.toMatch(/PAGE_TOKEN_FIXTURE|WORKSPACE_AI_KEY|meta-test-secret|messenger-verify/);
+    expect((await b('GET', `/workspaces/${otherWs}/messenger/pages/${pageId}/readiness`)).status).toBe(404);
+    const cid = await incoming(event('draft-person')); const before = mock.state.sends.length;
+    expect(await processMessenger(deps, cid)).toEqual({ status: 'DRAFT' }); expect(mock.state.sends.length).toBe(before);
+    const draft = await db.messengerMessage.findFirstOrThrow({ where: { conversationId: cid, direction: 'IN' } }); expect(draft.status).toBe('DRAFT');
+    expect((await b('POST', `/workspaces/${otherWs}/messenger/conversations/${cid}/send`, { text: 'x', messageId: draft.id })).status).toBe(404);
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: '' })).status).toBe(400);
+    const sent = await a('POST', path(`/conversations/${cid}/send`), { text: 'แก้แล้วค่ะ เริ่มต้น 900 บาท', messageId: draft.id }); expect(sent.status).toBe(200);
+    expect(mock.state.sends.length).toBe(before + 1); expect(mock.state.sends.at(-1)).toMatchObject({ text: 'แก้แล้วค่ะ เริ่มต้น 900 บาท', metadata: `fbpm-messenger:${draft.id}`, psid: 'draft-person' });
+    expect(await db.messengerMessage.findUniqueOrThrow({ where: { id: draft.id } })).toMatchObject({ status: 'SENT', replyText: 'แก้แล้วค่ะ เริ่มต้น 900 บาท', replyMessageId: mock.state.sends.at(-1)!.mid });
+    expect(await db.messengerConversation.findUniqueOrThrow({ where: { id: cid } })).toMatchObject({ mode: 'AUTO', needsAttention: false, lastError: null });
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: 'ซ้ำ', messageId: draft.id })).status).toBe(409); expect(mock.state.sends.length).toBe(before + 1);
+    const s = mock.state.sends.at(-1)!;
+    await ingestMessenger(deps, messengerEvents(event('unused', s.text, { sender: { id: fbId }, recipient: { id: 'draft-person' }, message: { mid: s.mid, text: s.text, is_echo: true, app_id: '123', metadata: s.metadata } })));
+    expect((await db.messengerConversation.findUniqueOrThrow({ where: { id: cid } })).mode).toBe('AUTO');
+    // ข้อความถัดไปของลูกค้าได้ร่างใหม่ (AI กลับมาทำงานหลังส่ง) และประวัติมีคำตอบที่แอดมินแก้
+    const next = await incoming(event('draft-person', 'จองได้วันไหนคะ')); expect(next).toBe(cid);
+    expect(await processMessenger(deps, cid)).toEqual({ status: 'DRAFT' }); expect(mock.state.aiCalls.at(-1)!.prompt).toContain('แก้แล้วค่ะ เริ่มต้น 900 บาท');
+    await a('PATCH', path(`/pages/${pageId}`), { ...config, enabled: true, reviewDrafts: false });
+  });
+  it('staff can type a reply, stay in human mode, and failed or uncertain sends are never silently retried', async () => {
+    const cid = await incoming(event('manual-person')); await db.messengerConversation.update({ where: { id: cid }, data: { mode: 'HUMAN' } });
+    await db.messengerMessage.updateMany({ where: { conversationId: cid, status: 'PENDING' }, data: { status: 'SKIPPED' } });
+    const before = mock.state.sends.length;
+    const r = await a('POST', path(`/conversations/${cid}/send`), { text: 'สวัสดีค่ะ แอดมินตอบเอง', resumeAi: false }); expect(r.status).toBe(200);
+    const out = await db.messengerMessage.findFirstOrThrow({ where: { conversationId: cid, direction: 'OUT' } });
+    expect(out).toMatchObject({ status: 'SENT', text: 'สวัสดีค่ะ แอดมินตอบเอง' }); expect(out.externalId).toMatch(/^manual:/);
+    expect(mock.state.sends.at(-1)?.metadata).toBe(`fbpm-messenger:${out.id}`); expect((await db.messengerConversation.findUniqueOrThrow({ where: { id: cid } })).mode).toBe('HUMAN');
+    mock.state.sendError = 400;
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: 'ลองอีกครั้ง' })).status).toBe(502);
+    const failed = await db.messengerMessage.findFirstOrThrow({ where: { conversationId: cid, status: 'FAILED' } });
+    mock.state.sendError = 0;
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: 'ลองอีกครั้ง', messageId: failed.id })).status).toBe(200);
+    expect((await db.messengerMessage.findUniqueOrThrow({ where: { id: failed.id } })).status).toBe('SENT');
+    mock.state.sendError = 500;
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: 'ไม่แน่ใจ' })).status).toBe(502);
+    const unknown = await db.messengerMessage.findFirstOrThrow({ where: { conversationId: cid, status: 'UNKNOWN' } }); mock.state.sendError = 0;
+    const count = mock.state.sends.length;
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: 'ไม่แน่ใจ', messageId: unknown.id })).status).toBe(409); expect(mock.state.sends.length).toBe(count);
+    expect(count).toBe(before + 4);
+    await db.messengerConversation.update({ where: { id: cid }, data: { lastCustomerAt: new Date(Date.now() - 25 * 3600000) } });
+    expect((await a('POST', path(`/conversations/${cid}/send`), { text: 'เกินเวลา' })).status).toBe(422); expect(mock.state.sends.length).toBe(count);
+    expect(await db.auditLog.count({ where: { workspaceId: ws, action: 'messenger.manual_send', resourceId: cid } })).toBe(2);
+  });
   it('stops answering and refuses to be enabled once the workspace AI key is gone', async () => {
     await db.messengerPageConfig.update({ where: { pageId }, data: { enabled: false, revision: { increment: 1 } } });
     await db.aiConnection.deleteMany({ where: { workspaceId: ws } });

@@ -14,6 +14,12 @@ export interface MockState {
   denyComments: boolean;
   comments: Record<string, { id: string; message: string; created_time: string; from: { id: string; name: string }; parent?: string }[]>;   // postId → comments
   replies: { commentId: string; body: Record<string, string> }[];
+  /** กดไลค์คอมเมนต์ (POST /{comment-id}/likes) */
+  likes: string[];
+  /** private reply (POST /{page-id}/messages recipient.comment_id) — Meta ให้ส่งได้ครั้งเดียวต่อคอมเมนต์ */
+  privateReplies: { pageId: string; commentId: string; text: string }[];
+  /** จำลองยังไม่มีสิทธิ์ pages_messaging */
+  denyMessaging: boolean;
   rateLimitNext: number;                     // จำนวนคำขอถัดไปที่จะตอบ code 4
   published: { pageId: string; body: Record<string, string> }[];
   requests: string[];
@@ -39,7 +45,7 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
         { id: 'c3', message: 'รับสมัครงานออนไลน์ รายได้ดี ทักมา', created_time: new Date(Date.now() - 1000_000).toISOString(), from: { id: 'u_c', name: 'spam' } },
       ],
       '111_2': [],
-    }, replies: [],
+    }, replies: [], likes: [], privateReplies: [], denyMessaging: false,
   };
   const err = (res: import('node:http').ServerResponse, code: number, message: string, status = 400, type = 'OAuthException') => {
     res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message, code, type } }));
@@ -75,6 +81,12 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
       if (req.method === 'POST') { state.replies.push({ commentId: cm[1]!, body: Object.fromEntries(params) } as never); return ok({ id: `${cm[1]}_reply${state.replies.length}` }); }
       return ok({ data: (state.comments[cm[1]!] ?? []).map(c => ({ id: c.id, message: c.message, created_time: c.created_time, from: c.from, ...(c.parent && { parent: { id: c.parent } }), permalink_url: `http://x/${c.id}`, is_hidden: false })) });
     }
+    const lk = path.match(/^([\w]+)\/likes$/);
+    if (lk && req.method === 'POST') {
+      if (!pageByToken) return err(res, 190, 'Invalid OAuth access token', 401);
+      if (state.denyComments) return err(res, 200, '(#200) Requires pages_manage_engagement permission', 400, 'OAuthException');
+      state.likes.push(lk[1]!); return ok({ success: true });
+    }
     if (/^c\d+$/.test(path) && req.method === 'POST') { if (state.denyComments) return err(res, 200, 'Permissions error', 400, 'OAuthException'); return ok({ success: true }); }
 
     const m = path.match(/^(\d+)(?:\/(\w+))?$/);
@@ -92,6 +104,14 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
         if (state.denyEngagementSummary && /summary\(true\)/.test(fields)) return err(res, 10, "This endpoint requires the 'pages_read_engagement' permission or the 'Page Public Content Access' feature.", 400, 'OAuthException');
         const since = Number(params.get('since')) || 0;
         return ok({ data: (state.posts[pageId] ?? []).filter(p => new Date(p.created_time).getTime() / 1000 >= since).map(p => ({ id: p.id, message: p.message, created_time: p.created_time, permalink_url: `http://x/${p.id}`, ...(fields.includes('shares') && p.shares != null && { shares: { count: p.shares } }) })) });
+      }
+      if (edge === 'messages' && req.method === 'POST') {
+        if (state.denyMessaging) return err(res, 10, '(#10) Requires pages_messaging permission to manage the object', 400, 'OAuthException');
+        const recipient = JSON.parse(params.get('recipient') ?? '{}') as { comment_id?: string }; const message = JSON.parse(params.get('message') ?? '{}') as { text?: string };
+        if (!recipient.comment_id) return err(res, 100, '(#100) recipient required', 400);
+        if (state.privateReplies.some(r => r.commentId === recipient.comment_id)) return err(res, 10, '(#10) This comment has already been replied to privately (only once)', 400, 'OAuthException');
+        state.privateReplies.push({ pageId, commentId: recipient.comment_id, text: message.text ?? '' });
+        return ok({ recipient_id: `psid_${recipient.comment_id}`, message_id: `m_${state.privateReplies.length}` });
       }
       if (edge === 'photos') { state.published.push({ pageId, body: Object.fromEntries(params) }); return ok({ id: `ph_${state.published.length}` }); }
     }

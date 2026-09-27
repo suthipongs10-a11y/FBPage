@@ -37,7 +37,8 @@ export async function ingestMessenger(d: MessengerDeps, events: MessengerEvent[]
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`messenger-ingest:${page.id}:${e.psid}`}))::text`;
         const c = await tx.messengerConversation.upsert({ where: { pageId_psid: { pageId: page.id, psid: e.psid } }, create: { pageId: page.id, psid: e.psid }, update: {} });
         if (e.echo) {
-          const own = await tx.messengerMessage.findFirst({ where: { conversationId: c.id, direction: 'IN', OR: [{ replyMessageId: e.mid }, ...(e.appId === d.appId && e.metadata?.startsWith('fbpm-messenger:') ? [{ id: e.metadata.slice('fbpm-messenger:'.length), status: { in: ['SENDING', 'UNKNOWN', 'SENT'] } }] : [])] } });
+          // ข้อความที่ระบบส่งเอง (AI หรือแอดมินกดส่งจากแอป) — จับคู่ด้วย mid หรือ metadata ที่เราแนบไป ไม่นับเป็น "แอดมินตอบเองนอกระบบ"
+          const own = await tx.messengerMessage.findFirst({ where: { conversationId: c.id, OR: [{ replyMessageId: e.mid }, { direction: 'OUT', externalId: e.mid }, ...(e.appId === d.appId && e.metadata?.startsWith('fbpm-messenger:') ? [{ id: e.metadata.slice('fbpm-messenger:'.length), status: { in: ['SENDING', 'UNKNOWN', 'SENT'] } }] : [])] } });
           if (own) {
             await tx.messengerMessage.update({ where: { id: own.id }, data: { status: 'SENT', replyMessageId: e.mid, sentAt: e.at } });
             return null;
@@ -134,6 +135,8 @@ export async function processMessenger(d: MessengerDeps, conversationId: string)
       reply = { action: 'handoff', text: config!.fallbackMessage, intent: 'service_unavailable', evidenceIds: [] };
     }
     if (reply.action === 'handoff' && !reason) reason = 'HANDOFF_REQUESTED';
+    // ส่งเองได้เมื่อระบบเปิด (MESSENGER_AUTO_SEND_ENABLED) และเพจไม่ได้เลือกให้ร่างรอคนกดส่ง
+    const autoSend = !!d.allowAutomaticSend && !config?.reviewDrafts;
     const sendGate = await d.prisma.$transaction(async tx => {
       // Serialize the claim with per-page settings mutations (network send runs after this transaction).
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`messenger-page:${page.facebookPageId}`}))::text`;
@@ -141,14 +144,14 @@ export async function processMessenger(d: MessengerDeps, conversationId: string)
       const freshWs = fresh.page.brand.client.workspace;
       const allowed = fresh.mode === 'AUTO' && fresh.revision === conv.revision && fresh.latestInboundId === message.id && fresh.leaseToken === leaseToken && !!fresh.leaseUntil && fresh.leaseUntil > new Date() && fresh.page.messengerConfig?.enabled && fresh.page.messengerConfig.revision === config!.revision && freshWs.messengerSettings?.revision === settingsRevision && !freshWs.automationPaused && freshWs.status === 'ACTIVE' && !fresh.page.disconnectedAt && fresh.page.tokenStatus === 'VALID' && fresh.page.connection.status === 'ACTIVE' && inWindow(fresh.lastCustomerAt);
       if (!allowed) { await tx.messengerMessage.updateMany({ where: { id: message.id, status: 'GENERATING' }, data: { status: 'SUPERSEDED', error: 'STATE_CHANGED' } }); return false; }
-      const moved = await tx.messengerMessage.updateMany({ where: { id: message.id, status: 'GENERATING' }, data: { status: d.allowAutomaticSend ? 'SENDING' : 'DRAFT', replyText: reply.text, replyAction: reply.action, processingAt: new Date(), error: reason } });
+      const moved = await tx.messengerMessage.updateMany({ where: { id: message.id, status: 'GENERATING' }, data: { status: autoSend ? 'SENDING' : 'DRAFT', replyText: reply.text, replyAction: reply.action, processingAt: new Date(), error: reason } });
       if (!moved.count) return false;
-      if (!d.allowAutomaticSend) await tx.messengerConversation.update({ where: { id: conversationId }, data: { mode: 'HUMAN', revision: { increment: 1 }, needsAttention: true, lastError: 'DRAFT_REVIEW_REQUIRED' } });
-      await audit(tx, ws.id, d.allowAutomaticSend ? 'messenger.send_claim' : 'messenger.draft_created', conversationId);
+      if (!autoSend) await tx.messengerConversation.update({ where: { id: conversationId }, data: { mode: 'HUMAN', revision: { increment: 1 }, needsAttention: true, lastError: 'DRAFT_REVIEW_REQUIRED' } });
+      await audit(tx, ws.id, autoSend ? 'messenger.send_claim' : 'messenger.draft_created', conversationId);
       return true;
     });
     if (!sendGate) return { status: 'SUPERSEDED' };
-    if (!d.allowAutomaticSend) return { status: 'DRAFT' };
+    if (!autoSend) return { status: 'DRAFT' };
     try {
       const mid = await d.transport.send(page.facebookPageId, decryptSecret(page.pageAccessTokenEncrypted, d.secret), conv.psid, reply.text, `fbpm-messenger:${message.id}`);
       await d.prisma.messengerMessage.update({ where: { id: message.id }, data: { status: 'SENT', replyMessageId: mid, sentAt: new Date() } });

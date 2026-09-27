@@ -371,6 +371,8 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
   /** ทุก 10 นาที: ทุกแบรนด์ที่เปิด Drive (และ workspace ไม่ได้กดหยุดฉุกเฉิน) — กันรันซ้อนด้วย Redis lock */
   async pollDrive() {
     const lockId = randomBytes(8).toString('hex');
+    // Redis ของ API เป็น lazyConnect — ต้องเชื่อมก่อน ไม่งั้น SET ล้มเงียบ ๆ และรอบดึง Drive ไม่เคยได้ทำงาน
+    if (this.redis.status === 'wait') await this.redis.connect().catch(() => undefined);
     if ((await this.redis.set(DRIVE_LOCK, lockId, 'EX', 15 * 60, 'NX').catch(() => null)) !== 'OK') return { skipped: 'locked' as const, runs: [] };
     try {
       const inboxes = await this.prisma.contentInbox.findMany({ where: { driveEnabled: true, driveFolderId: { not: null }, driveCredentialsEnc: { not: null }, workspace: { automationPaused: false } }, select: { workspaceId: true, brandId: true } });

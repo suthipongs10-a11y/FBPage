@@ -6,7 +6,7 @@ export const syncCommentsSchema = z.object({ days: z.coerce.number().int().min(1
 export type SyncCommentsDto = z.infer<typeof syncCommentsSchema>;
 export const classifySchema = z.object({ pageId: z.string().optional(), commentIds: z.array(z.string()).max(50).optional(), limit: z.coerce.number().int().min(1).max(50).default(20) }).optional();
 export type ClassifyDto = z.infer<typeof classifySchema>;
-export const updateCommentSchema = z.object({ draftReply: z.string().trim().max(2000).optional(), resolved: z.boolean().optional(), classification: z.enum(COMMENT_CLASSES).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
+export const updateCommentSchema = z.object({ draftReply: z.string().trim().max(2000).optional(), privateReplyText: z.string().trim().max(1900).optional(), resolved: z.boolean().optional(), classification: z.enum(COMMENT_CLASSES).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export type UpdateCommentDto = z.infer<typeof updateCommentSchema>;
 export const replySchema = z.object({ message: z.string().trim().min(1).max(2000).optional() });
 export type ReplyDto = z.infer<typeof replySchema>;
@@ -16,3 +16,11 @@ export const listLeadsSchema = z.object({ status: z.enum(LEAD_STATUSES).optional
 export type ListLeadsDto = z.infer<typeof listLeadsSchema>;
 export const updateLeadSchema = z.object({ status: z.enum(LEAD_STATUSES).optional(), notes: z.string().trim().max(2000).optional(), name: z.string().trim().max(120).optional(), phone: z.string().trim().max(40).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export type UpdateLeadDto = z.infer<typeof updateLeadSchema>;
+/** ส่งรายละเอียดเข้าอินบ็อกซ์จากคอมเมนต์ — message ไม่ใส่ = ใช้ร่างของ AI · publicAck null = ไม่ตอบใต้คอมเมนต์ */
+export const privateReplySchema = z.object({ message: z.string().trim().min(1).max(1900).optional(), publicAck: z.string().trim().min(1).max(500).nullable().optional() });
+export type PrivateReplyDto = z.infer<typeof privateReplySchema>;
+export const commentAutomationSchema = z.object({
+  enabled: z.boolean().optional(), autoLike: z.boolean().optional(), autoReply: z.boolean().optional(), autoPrivateReply: z.boolean().optional(),
+  publicAckText: z.string().trim().min(1).max(300).optional(), maxPerRun: z.number().int().min(1).max(50).optional(),
+}).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
+export type CommentAutomationDto = z.infer<typeof commentAutomationSchema>;

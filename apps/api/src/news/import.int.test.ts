@@ -11,6 +11,7 @@ import { startMockWeb } from '@fbpm/web-core';
 import { createApp } from '../app.factory';
 import { _resetRateLimits } from '../common/rate-limit.guard';
 import { findChrome } from '../media/chromium';
+import { ContentImportService } from './import.service';
 
 const HAS_DB = !!process.env.DATABASE_URL && !!process.env.REDIS_URL;
 const run = HAS_DB ? describe : describe.skip;
@@ -174,5 +175,9 @@ run('content import (integration)', () => {
     const imp = await prisma.contentImport.findFirstOrThrow({ where: { workspaceId: wsA, channel: 'gdrive' } });
     expect(imp.fileName).toBe('drive-posts.json');
     expect((await b.http('POST', `/workspaces/${wsB}/brands/${brandA}/news/inbox/drive/poll`)).status).toBe(404);
+    // รอบอัตโนมัติ (ทุก 10 นาที) ต้องได้ล็อกและทำงานจริง — เคยล้มเงียบเพราะ Redis ยังไม่เชื่อม (lazyConnect)
+    const tick = await app.get(ContentImportService).pollDrive();
+    expect('skipped' in tick).toBe(false);
+    expect(tick.runs.some(r => r.brandId === brandA)).toBe(true);
   });
 });

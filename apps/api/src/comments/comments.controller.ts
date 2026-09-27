@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ZodPipe } from '../common/zod.pipe';
 import { CurrentUser, RequestId, Tenant, type AuthUser, type TenantContext } from '../common/request-context';
@@ -6,7 +6,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { CommentsService } from './comments.service';
-import { classifySchema, insightsSchema, listCommentsSchema, listLeadsSchema, replySchema, syncCommentsSchema, updateCommentSchema, updateLeadSchema, type ClassifyDto, type InsightsDto, type ListCommentsDto, type ListLeadsDto, type ReplyDto, type SyncCommentsDto, type UpdateCommentDto, type UpdateLeadDto } from './dto';
+import { commentAutomationSchema, privateReplySchema, type CommentAutomationDto, type PrivateReplyDto, classifySchema, insightsSchema, listCommentsSchema, listLeadsSchema, replySchema, syncCommentsSchema, updateCommentSchema, updateLeadSchema, type ClassifyDto, type InsightsDto, type ListCommentsDto, type ListLeadsDto, type ReplyDto, type SyncCommentsDto, type UpdateCommentDto, type UpdateLeadDto } from './dto';
 
 @ApiTags('comments')
 @Controller('workspaces/:workspaceId')
@@ -31,6 +31,21 @@ export class CommentsController {
 
   @Post('comments/:id/reply') @HttpCode(200) @RequirePermission('comments.reply')
   reply(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(replySchema)) dto: ReplyDto, @RequestId() rid: string) { return this.svc.sendReply(t.workspaceId, u.id, id, dto.message, rid); }
+
+  @Post('comments/:id/like') @HttpCode(200) @RequirePermission('comments.reply')
+  like(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.svc.like(t.workspaceId, u.id, id, rid); }
+
+  @Post('comments/:id/private-reply') @HttpCode(200) @RequirePermission('comments.reply')
+  privateReply(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(privateReplySchema)) dto: PrivateReplyDto, @RequestId() rid: string) { return this.svc.sendPrivateReply(t.workspaceId, u.id, id, dto, rid); }
+
+  @Get('pages/:pageId/comment-automation') @RequirePermission('comments.read')
+  automation(@Tenant() t: TenantContext, @Param('pageId') pageId: string) { return this.svc.getAutomation(t.workspaceId, pageId); }
+
+  @Put('pages/:pageId/comment-automation') @RequirePermission('comments.reply', 'ai.use')
+  setAutomation(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Body(new ZodPipe(commentAutomationSchema)) dto: CommentAutomationDto, @RequestId() rid: string) { return this.svc.setAutomation(t.workspaceId, u.id, pageId, dto, rid); }
+
+  @Post('pages/:pageId/comment-automation/run') @HttpCode(200) @RequirePermission('comments.reply', 'ai.use')
+  runAutomation(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @RequestId() rid: string) { return this.svc.runAutomation(t.workspaceId, pageId, rid, { userId: u.id, forceSync: true }); }
 
   @Post('comments/:id/hide') @HttpCode(200) @RequirePermission('comments.reply')
   hide(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.svc.hide(t.workspaceId, u.id, id, true, rid); }
