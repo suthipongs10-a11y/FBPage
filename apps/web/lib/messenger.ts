@@ -1,4 +1,5 @@
-export interface MessengerConfig { enabled: boolean; instructions: string; fallbackMessage: string; subscribedAt: string | null; updatedAt: string }
+export interface MessengerConfig { enabled: boolean; instructions: string; fallbackMessage: string; subscribedAt: string | null; reviewDrafts: boolean; updatedAt: string }
+export interface MessengerReadiness { checks: { key: string; ok: boolean; hint: string }[]; mode: 'OFF' | 'DRAFT_REVIEW' | 'AUTO_SEND'; autoSendEnabled: boolean; reviewDrafts: boolean; lastInboundAt: string | null; webhookPath: string; webhookFields: string[] }
 export interface MessengerPage { id: string; facebookPageId: string; name: string; tokenStatus: string; disconnectedAt: string | null; brand: { id: string; name: string }; messengerConfig: MessengerConfig | null; _count: { conversations: number } }
 export interface MessengerSettingsView { automaticSendEnabled: boolean; settings: { dailyLimit: number; validatedAt: string | null } | null; ai: { provider: string; model: string; source: string } | null; requestsToday: number; automationPaused: boolean; webhookConfigured: boolean; webhookPath: string }
 export interface Conversation { id: string; psid: string; mode: string; needsAttention: boolean; lastError: string | null; lastCustomerAt: string | null; updatedAt: string }
@@ -22,8 +23,15 @@ export const messengerText = {
   preview: 'ทดลองถาม AI', previewHint: 'ใช้คีย์จริงและนับการใช้งาน แต่ไม่ส่งข้อความไปยังลูกค้า บันทึกแนวทางด้านบนก่อนทดลอง',
   question: 'คำถามตัวอย่างจากลูกค้า', questionPlaceholder: 'เช่น มีบริการอะไรบ้าง ราคาเท่าไหร่คะ', test: 'วิเคราะห์และทดลองตอบ', answer: 'คำตอบที่ลูกค้าจะได้รับ',
   inbox: 'บทสนทนาลูกค้า', emptyInbox: 'ยังไม่มีข้อความที่ระบบได้รับสำหรับเพจนี้', pickConversation: 'เลือกบทสนทนาเพื่อดูข้อความและคำตอบ AI',
+  readiness: 'ความพร้อมของเพจนี้', readyAll: 'พร้อมใช้งาน', readyMissing: 'ยังขาดบางข้อ',
+  checks: { webhook: 'ตั้งค่า Meta App + webhook บนเซิร์ฟเวอร์', page: 'เพจเชื่อมต่ออยู่ (token ใช้ได้)', scope: 'token มีสิทธิ์ pages_messaging', subscribed: 'เพจเชื่อมรับข้อความกับแอปแล้ว', ai: 'มี AI สำหรับตอบแชท (บทบาท community)', tested: 'ทดลองคำตอบผ่านแล้ว', enabled: 'เปิดให้ AI ตอบเพจนี้', received: 'ได้รับข้อความจากลูกค้าแล้วอย่างน้อย 1 ครั้ง' } as Record<string, string>,
+  modes: { OFF: 'ปิดอยู่ — ไม่วิเคราะห์ข้อความใหม่', DRAFT_REVIEW: 'AI ร่างคำตอบ → คุณตรวจ/แก้ แล้วกดส่งจากหน้านี้', AUTO_SEND: 'AI ส่งคำตอบให้ลูกค้าเอง (เรื่องที่ไม่แน่ใจจะส่งต่อแอดมิน)' } as Record<string, string>,
+  reviewDrafts: 'ให้ AI ร่างรอคนกดส่งเสมอ (เพจนี้)', reviewDraftsHint: 'เหมาะกับเพจใหม่หรือเพจขายของราคาสูง — ถึงระบบจะเปิดส่งอัตโนมัติ เพจนี้จะยังร่างรอคุณกดส่ง',
+  composer: 'ตอบลูกค้าจากหน้านี้', sendDraft: 'ส่งคำตอบนี้', sendManual: 'ส่งข้อความ', composerPlaceholder: 'พิมพ์คำตอบ หรือแก้ร่างของ AI ก่อนส่ง', resumeAi: 'หลังส่ง ให้ AI ดูแลข้อความถัดไปต่อ',
+  draftLoaded: 'โหลดร่างของ AI มาไว้ในช่องแล้ว แก้ได้ก่อนส่ง', windowClosed: 'เกิน 24 ชั่วโมงหลังลูกค้าทักล่าสุด — Messenger ไม่ให้เพจส่งข้อความเอง ตอบผ่าน Meta Business Suite หรือรอลูกค้าทักใหม่', sent: 'ส่งแล้ว',
+  admin: 'แอดมิน (ส่งจากแอป)',
   customer: 'ลูกค้า', human: 'แอดมินดูแล', auto: 'AI ดูแล', attention: 'ต้องดูแลต่อ', takeOver: 'หยุด AI และรับช่วง', resume: 'ให้ AI ตอบข้อความใหม่ต่อ',
-  takeoverHint: 'ตอบลูกค้าต่อใน Facebook Inbox ได้เลย เมื่อเปิด AI ต่อ ระบบจะรอข้อความใหม่ ไม่ส่งคำตอบเก่าย้อนหลัง ข้อความที่เริ่มส่งแล้วอาจยกเลิกไม่ทัน',
+  takeoverHint: 'ตอบจากช่องด้านล่างได้เลย (หรือใน Facebook Inbox) เมื่อเปิด AI ต่อ ระบบจะรอข้อความใหม่ ไม่ส่งคำตอบเก่าย้อนหลัง ข้อความที่เริ่มส่งแล้วอาจยกเลิกไม่ทัน',
   facebookInbox: 'เปิด Meta Business Suite', attachment: 'ข้อความมีไฟล์แนบ', refresh: 'รีเฟรช', noAccess: 'คุณไม่มีสิทธิ์อ่านแชทในพื้นที่ทำงานนี้',
   textOnly: 'รุ่นนี้วิเคราะห์ข้อความ หากมีรูปหรือไฟล์ AI จะขอรายละเอียดเป็นข้อความเพิ่ม',
   statuses: { DRAFT: 'ร่างรอตรวจ — ยังไม่ได้ส่ง', PENDING: 'รอประมวลผล', GENERATING: 'AI กำลังวิเคราะห์', SENDING: 'กำลังส่ง', SENT: 'ส่งแล้ว', FAILED: 'ส่งไม่สำเร็จ', UNKNOWN: 'ยังยืนยันผลส่งไม่ได้ — ตรวจใน Facebook ก่อน', SKIPPED: 'ไม่ได้ตอบอัตโนมัติ', SUPERSEDED: 'มีข้อความหรือการตั้งค่าใหม่แทนแล้ว' } as Record<string, string>,

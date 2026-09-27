@@ -47,6 +47,23 @@ test('login, seed a client/brand/page via API, and see the page on the Pages scr
   await expect(page.getByText('USER_OK_E2E_TOKEN')).toHaveCount(0);   // token ไม่หลุดมาหน้าเว็บ
 });
 
+test('comments: per-page autopilot card turns on/off and saves switches (nothing sent to the page)', async ({ page }) => {
+  await login(page);
+  await page.goto('/comments');
+  await page.locator('main select').filter({ has: page.locator(`option[value="${pageId}"]`) }).selectOption(pageId);
+  await expect(page.getByText('ดูแลคอมเมนต์อัตโนมัติ (เพจนี้)')).toBeVisible();
+  const before = graph.state.privateReplies.length + graph.state.likes.length;
+  await page.getByRole('button', { name: 'เปิดดูแลอัตโนมัติ' }).click();
+  await expect(page.getByRole('button', { name: 'ปิดดูแลอัตโนมัติ' })).toBeVisible();
+  await page.getByRole('checkbox', { name: /กดไลค์คอมเมนต์/ }).check();
+  await expect(page.getByRole('checkbox', { name: /กดไลค์คอมเมนต์/ })).toBeChecked();
+  const cfg = await api(page.request, 'GET', `/workspaces/${ws}/pages/${pageId}/comment-automation`);
+  expect(cfg).toMatchObject({ enabled: true, autoLike: true, autoPrivateReply: false });
+  await page.getByRole('button', { name: 'ปิดดูแลอัตโนมัติ' }).click();
+  await expect(page.getByRole('button', { name: 'เปิดดูแลอัตโนมัติ' })).toBeVisible();
+  expect(graph.state.privateReplies.length + graph.state.likes.length).toBe(before);
+});
+
 test('AI models page: add a second key of the same kind and point the research role at it', async ({ page }) => {
   await login(page);
   await page.goto('/ai-models');

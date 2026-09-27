@@ -38,6 +38,11 @@ test('Messenger: shared workspace AI key, target Page toggle, automatic reply, t
     await expect.poll(() => mock.state.sends.length, { timeout: 10000 }).toBe(1);
     await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click(); await page.getByRole('button', { name: /ลูกค้า · customer/ }).click();
     await expect(page.getByText('ส่งแล้ว', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'หยุด AI และรับช่วง', exact: true }).click(); await expect(page.getByRole('button', { name: 'ให้ AI ตอบข้อความใหม่ต่อ' })).toBeVisible();
+    // ตอบเองจากแอป: ข้อความไปถึงลูกค้าพร้อม metadata ของระบบ และบทสนทนากลับให้ AI ดูแลต่อ
+    await expect(page.getByText('พร้อมใช้งาน', { exact: true })).toBeVisible();
+    await page.getByPlaceholder('พิมพ์คำตอบ หรือแก้ร่างของ AI ก่อนส่ง').fill('แอดมินตอบเองค่ะ จองได้เลยนะคะ'); await page.getByRole('button', { name: 'ส่งข้อความ', exact: true }).click();
+    await expect.poll(() => mock.state.sends.length, { timeout: 10000 }).toBe(2); expect(mock.state.sends[1]).toMatchObject({ text: 'แอดมินตอบเองค่ะ จองได้เลยนะคะ', metadata: expect.stringMatching(/^fbpm-messenger:/) });
+    await expect(page.getByText('แอดมินตอบเองค่ะ จองได้เลยนะคะ', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'หยุด AI และรับช่วง', exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: 'test-results/messenger-mobile.png', fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     expect(await page.locator('body').innerText()).not.toContain('BROWSER_WORKSPACE_AI_KEY'); expect(errors).toEqual([]);

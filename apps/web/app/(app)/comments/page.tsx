@@ -5,8 +5,11 @@ import { api, type CommentInsights, type CommentRow, type PageRow } from '@/lib/
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Loading, Pill, Select, Textarea } from '@/components/ui';
+import { CommentAutomationCard } from '@/components/comment-automation';
 
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+const DM_CLASSES = ['LEAD', 'PRICE_QUERY', 'SERVICE_QUERY', 'QUESTION'];
+const DM_WINDOW_MS = 7 * 86_400_000;
 const classTone = (c: string | null): 'ok' | 'warn' | 'bad' | 'muted' => (c === 'LEAD' || c === 'PRICE_QUERY' || c === 'SERVICE_QUERY' ? 'ok' : c === 'COMPLAINT' ? 'bad' : c === 'SPAM' ? 'muted' : c ? 'warn' : 'muted');
 
 export default function CommentsPage() {
@@ -14,7 +17,7 @@ export default function CommentsPage() {
   const [pages, setPages] = useState<PageRow[] | null>(null);
   const [filter, setFilter] = useState({ pageId: '', classification: '', unresolved: '1' });
   const [rows, setRows] = useState<CommentRow[] | null>(null); const [ins, setIns] = useState<CommentInsights | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({}); const [dms, setDms] = useState<Record<string, string>>({}); const [openDm, setOpenDm] = useState<Record<string, boolean>>({}); const [withAck, setWithAck] = useState(true);
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
   const load = useCallback(async () => {
     try {
@@ -31,6 +34,11 @@ export default function CommentsPage() {
   const send = (c: CommentRow) => run(`send:${c.id}`, async () => { await api(`/workspaces/${ws.id}/comments/${c.id}/reply`, { method: 'POST', body: { message: drafts[c.id] ?? c.draftReply ?? undefined } }); });
   const hide = (c: CommentRow) => run(`hide:${c.id}`, async () => { await api(`/workspaces/${ws.id}/comments/${c.id}/${c.isHidden ? 'unhide' : 'hide'}`, { method: 'POST', body: {} }); });
   const resolve = (c: CommentRow) => run(`res:${c.id}`, async () => { await api(`/workspaces/${ws.id}/comments/${c.id}`, { method: 'PATCH', body: { resolved: !c.resolvedAt } }); });
+  const like = (c: CommentRow) => run(`like:${c.id}`, async () => { await api(`/workspaces/${ws.id}/comments/${c.id}/like`, { method: 'POST', body: {} }); });
+  const sendDm = (c: CommentRow) => run(`dm:${c.id}`, async () => {
+    const r = await api<{ publicAckError: string | null }>(`/workspaces/${ws.id}/comments/${c.id}/private-reply`, { method: 'POST', body: { message: dms[c.id] ?? c.privateReplyText ?? undefined, ...(!withAck && { publicAck: null }) } });
+    setNotice(r.publicAckError ? `${t('ca.dmSent')} · ${t('ca.ackFailed')}: ${r.publicAckError}` : t('ca.dmSent'));
+  });
   const saveDraft = (c: CommentRow) => run(`draft:${c.id}`, async () => { await api(`/workspaces/${ws.id}/comments/${c.id}`, { method: 'PATCH', body: { draftReply: drafts[c.id] ?? '' } }); });
   if (!pages || !rows || !ins) return <div><ErrorBox error={error} /><Loading /></div>;
   const noPerm = pages.filter(p => !filter.pageId || p.id === filter.pageId).some(p => p.commentsStatus === 'NO_PERMISSION');
@@ -63,11 +71,12 @@ export default function CommentsPage() {
         <Select className="w-auto" value={filter.classification} onChange={e => setFilter(v => ({ ...v, classification: e.target.value }))}><option value="">{t('comments.filterClass')}: {t('content.all')}</option>{COMMENT_CLASSES.map(c => <option key={c} value={c}>{t(`cc.${c}` as MessageKey)}</option>)}</Select>
         <Select className="w-auto" value={filter.unresolved} onChange={e => setFilter(v => ({ ...v, unresolved: e.target.value }))}><option value="1">{t('comments.unresolved')}</option><option value="">{t('content.all')}</option></Select>
       </div>
+      {filter.pageId ? <CommentAutomationCard key={filter.pageId} workspaceId={ws.id} pageId={filter.pageId} canEdit={reply && can('ai.use')} onRan={() => void load()} /> : <p className="text-xs text-slate-400">{t('ca.pickPage')}</p>}
       {rows.length === 0 ? <Empty text={t('comments.empty')} /> : (
         <div className="space-y-2">{rows.map(c => (
           <div key={c.id} className={`rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm ${c.resolvedAt ? 'opacity-60' : ''}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{c.fromName ?? '—'}</span><Pill tone={classTone(c.classification)}>{c.classification ? t(`cc.${c.classification}` as MessageKey) : '—'}</Pill>{c.riskFlag && <Pill tone="bad">{t('comments.risk')}</Pill>}{c.lead && <Pill tone="ok">{t('leads.title')} {c.lead.leadScore}</Pill>}{c.replyStatus === 'SENT' && <Pill tone="ok">{t('comments.sent')}</Pill>}{c.isHidden && <Pill>hidden</Pill>}<span className="text-xs text-slate-500">{c.page.name} · {fmt(c.createdTime)}</span></div>
+              <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{c.fromName ?? '—'}</span><Pill tone={classTone(c.classification)}>{c.classification ? t(`cc.${c.classification}` as MessageKey) : '—'}</Pill>{c.riskFlag && <Pill tone="bad">{t('comments.risk')}</Pill>}{c.lead && <Pill tone="ok">{t('leads.title')} {c.lead.leadScore}</Pill>}{c.replyStatus === 'SENT' && <Pill tone="ok">{t('comments.sent')}</Pill>}{c.privateReplyStatus === 'SENT' && <Pill tone="ok">💬 {t('ca.dmDone')}</Pill>}{c.likedAt && <Pill tone="ok">👍</Pill>}{c.autoHandledAt && c.fromId !== null && (c.likedAt || c.privateReplyStatus === 'SENT' || c.replyStatus === 'SENT') && <Pill tone="muted">{t('ca.autoPill')}</Pill>}{c.isHidden && <Pill>hidden</Pill>}<span className="text-xs text-slate-500">{c.page.name} · {fmt(c.createdTime)}</span></div>
               {c.permalink && <a href={c.permalink} target="_blank" rel="noreferrer" className="text-xs text-sky-400 hover:underline">{t('pages.openFb')}</a>}
             </div>
             <p className="mt-1 whitespace-pre-wrap">{c.message}</p>
@@ -79,8 +88,19 @@ export default function CommentsPage() {
                 <div className="flex flex-col gap-1"><Button disabled={busy === `send:${c.id}` || !(drafts[c.id] ?? c.draftReply)} onClick={() => send(c)}>{t('comments.send')}</Button><Button variant="ghost" disabled={busy === `draft:${c.id}`} onClick={() => saveDraft(c)}>{t('common.save')}</Button></div>
               </div>
             )}
+            {reply && c.privateReplyStatus !== 'SENT' && Date.now() - new Date(c.createdTime).getTime() < DM_WINDOW_MS && (c.privateReplyText || openDm[c.id] || (c.classification && DM_CLASSES.includes(c.classification))) && (
+              <div className="mt-2 rounded-lg border border-sky-900/50 p-2">
+                <div className="mb-1 text-xs text-sky-400">💬 {t('ca.dmTitle')}</div>
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <Textarea className="min-h-14" placeholder={t('ca.dmPlaceholder')} value={dms[c.id] ?? c.privateReplyText ?? ''} onChange={e => setDms(v => ({ ...v, [c.id]: e.target.value }))} />
+                  <div className="flex flex-col gap-1"><Button disabled={busy === `dm:${c.id}` || !(dms[c.id] ?? c.privateReplyText)?.trim()} onClick={() => sendDm(c)}>{t('ca.dmSend')}</Button><label className="flex items-center gap-1 text-xs text-slate-400"><input type="checkbox" checked={withAck} onChange={e => setWithAck(e.target.checked)} />{t('ca.withAck')}</label></div>
+                </div>
+                {c.privateReplyError && <p className="mt-1 text-xs text-amber-500">{c.privateReplyError}</p>}
+              </div>
+            )}
+            {c.privateReplyStatus === 'SENT' && c.privateReplyText && <p className="mt-2 rounded bg-sky-950/30 p-2 text-xs text-sky-200">💬 {c.privateReplyText}</p>}
             {c.replyStatus === 'SENT' && c.draftReply && <p className="mt-2 rounded bg-emerald-950/30 p-2 text-xs text-emerald-200">↩ {c.draftReply}</p>}
-            {reply && <div className="mt-2 flex gap-3 text-xs"><button onClick={() => resolve(c)} className="text-slate-400 hover:text-sky-400">{c.resolvedAt ? t('comments.reopen') : t('comments.resolve')}</button><button onClick={() => hide(c)} className="text-slate-400 hover:text-rose-400">{c.isHidden ? t('comments.unhide') : t('comments.hide')}</button></div>}
+            {reply && <div className="mt-2 flex gap-3 text-xs">{!c.likedAt && <button disabled={busy === `like:${c.id}`} onClick={() => like(c)} className="text-slate-400 hover:text-sky-400">👍 {t('ca.likeBtn')}</button>}{c.privateReplyStatus !== 'SENT' && !openDm[c.id] && !c.privateReplyText && !(c.classification && DM_CLASSES.includes(c.classification)) && Date.now() - new Date(c.createdTime).getTime() < DM_WINDOW_MS && <button onClick={() => setOpenDm(v => ({ ...v, [c.id]: true }))} className="text-slate-400 hover:text-sky-400">💬 {t('ca.dmOpen')}</button>}<button onClick={() => resolve(c)} className="text-slate-400 hover:text-sky-400">{c.resolvedAt ? t('comments.reopen') : t('comments.resolve')}</button><button onClick={() => hide(c)} className="text-slate-400 hover:text-rose-400">{c.isHidden ? t('comments.unhide') : t('comments.hide')}</button></div>}
           </div>))}</div>
       )}
     </div>
