@@ -9,7 +9,7 @@ import { PrismaClient } from '@fbpm/database';
 import { startMockGraph } from '@fbpm/facebook-core';
 import { startMockAi } from '@fbpm/ai-core';
 import { startMockWeb } from '@fbpm/web-core';
-import { QUEUES } from '@fbpm/shared';
+import { QUEUES, publishJobId } from '@fbpm/shared';
 import { createApp } from '../app.factory';
 import { _resetRateLimits } from '../common/rate-limit.guard';
 import { findChrome } from '../media/chromium';
@@ -312,5 +312,26 @@ run('news room (integration)', () => {
     await prisma.contentItem.create({ data: { pageId: pageA, status: 'SCHEDULED', caption: 'จองช่อง', scheduledLocal: taken, scheduledTz: 'Asia/Bangkok', scheduledAt: new Date(Date.now() + 86_400_000) } });
     const next = await a.http('GET', `/workspaces/${wsA}/news/next-slot?pageId=${pageA}`);
     expect(next.json.scheduledLocal).not.toBe(taken);
+  });
+
+  it('โพสต์เลย: อนุมัติ+โพสต์ทันที · เพจถูกหยุดโพสต์ = 422 และไม่ถูกอนุมัติค้างครึ่งทาง · รายการที่ตั้งเวลาไว้โพสต์ได้ทันที', async () => {
+    const pkg = { posts: [{ title: 'ลูกช้างรอดแล้ว', caption: '🐘 เจ้าหน้าที่ใช้เวลาสามชั่วโมงช่วยลูกช้างขึ้นจากบ่อได้สำเร็จ ทุกตัวปลอดภัยดี เคยเห็นช้างป่าใกล้ ๆ ไหม?', sources: [{ name: 'Example', url: 'https://news.example.com/post-now-test' }] }] };
+    const imp = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/import`, { text: JSON.stringify(pkg), pageId: pageA, imageFallback: 'none' });
+    const id = imp.json.report.posts[0].result.contentId as string;
+    await a.http('PATCH', `/workspaces/${wsA}/pages/${pageA}`, { publishingPaused: true });
+    const paused = await a.http('POST', `/workspaces/${wsA}/content/${id}/approve-publish`, {});
+    expect(paused.status).toBe(422); expect(paused.json.message).toContain('หยุดการโพสต์');
+    expect((await prisma.contentItem.findUniqueOrThrow({ where: { id } })).status).toBe('READY_FOR_APPROVAL');
+    await a.http('PATCH', `/workspaces/${wsA}/pages/${pageA}`, { publishingPaused: false });
+    const before = graph.state.published.length;
+    const ok = await a.http('POST', `/workspaces/${wsA}/content/${id}/approve-publish`, {});
+    expect(ok.status).toBe(200); expect(ok.json.outcome.status).toBe('PUBLISHED');
+    expect(graph.state.published.length).toBeGreaterThan(before);   // การ์ดภาพ = อัปโหลดรูป + โพสต์
+    expect((await prisma.contentItem.findUniqueOrThrow({ where: { id } })).status).toBe('PUBLISHED');
+    // ตั้งเวลาไว้แล้ว → โพสต์เลยไม่รอเวลา (ยกเลิกงานที่ตั้งไว้)
+    const scheduled = await prisma.contentItem.findFirstOrThrow({ where: { pageId: pageA, status: 'SCHEDULED' } });
+    const now = await a.http('POST', `/workspaces/${wsA}/content/${scheduled.id}/approve-publish`, {});
+    expect(now.json.outcome.status).toBe('PUBLISHED');
+    expect(await publishQueue.getJob(publishJobId(scheduled.id))).toBeUndefined();
   });
 });

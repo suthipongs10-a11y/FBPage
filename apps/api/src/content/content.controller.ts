@@ -68,6 +68,9 @@ export class ContentController {
   @Post('content/:id/approve-schedule') @HttpCode(200) @RequirePermission('content.approve', 'content.publish')
   approveSchedule(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(approveScheduleSchema)) dto: ApproveScheduleDto, @RequestId() rid: string) { return this.content.approveAndSchedule(t.workspaceId, u.id, id, dto, rid); }
 
+  @Post('content/:id/approve-publish') @HttpCode(200) @RequirePermission('content.approve', 'content.publish')
+  approvePublish(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(reviewCommentSchema)) dto: ReviewCommentDto, @RequestId() rid: string) { return this.content.approveAndPublish(t.workspaceId, u.id, id, dto?.comment, rid); }
+
   @Post('content/:id/publish') @HttpCode(200) @RequirePermission('content.publish')
   publish(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.content.publishNow(t.workspaceId, u.id, id, rid); }
 

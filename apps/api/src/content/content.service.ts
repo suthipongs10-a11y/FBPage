@@ -166,14 +166,34 @@ export class ContentService {
     if (!isValidTimeZone(tz)) throw new BadRequestException('เขตเวลาไม่ถูกต้อง');
     const mins = (localToUtc(dto.scheduledLocal, tz).getTime() - Date.now()) / 60_000;
     if (mins < 10 || mins > 75 * 1440) throw new BadRequestException('ตั้งเวลาต้องล่วงหน้า 10 นาที ถึง 75 วัน');
+    const blocked = await publishBlockReason(this.prisma, id, { ignoreStatus: true });
+    if (blocked) throw new UnprocessableEntityException(blocked);
     await this.approve(workspaceId, userId, id, dto.comment, requestId);
     return this.schedule(workspaceId, userId, id, { scheduledLocal: dto.scheduledLocal, timezone: tz }, requestId);
+  }
+
+  /**
+   * อนุมัติ + โพสต์ทันทีในคลิกเดียว (ห้องข่าว) — ตรวจทุกอย่างที่จะทำให้โพสต์ไม่ได้ "ก่อน" อนุมัติ
+   * (จุด [ต้องยืนยัน], เพจถูกหยุด/token เสีย/ไม่มีสิทธิ์, สวิตช์ฉุกเฉิน) เพื่อไม่ให้ค้างครึ่งทางที่ APPROVED
+   * รายการที่อนุมัติ/ตั้งเวลาไว้แล้ว → โพสต์เลยโดยไม่รอเวลา
+   */
+  async approveAndPublish(workspaceId: string, userId: string, id: string, comment: string | undefined, requestId: string) {
+    const c = await this.load(workspaceId, id);
+    if (c.status === 'READY_FOR_APPROVAL') {
+      if (/\[ต้องยืนยัน/.test(c.caption ?? '')) throw new UnprocessableEntityException('ยังมีจุด [ต้องยืนยัน ...] ในโพสต์ — แก้ข้อความก่อนอนุมัติ');
+      const blocked = await publishBlockReason(this.prisma, id, { ignoreStatus: true });
+      if (blocked) throw new UnprocessableEntityException(blocked);
+      await this.approve(workspaceId, userId, id, comment, requestId);
+    }
+    return this.publishNow(workspaceId, userId, id, requestId);
   }
 
   /** โพสต์ตอนนี้ (ต้อง APPROVED) — รัน publisher ทันทีในคำขอนี้เพื่อให้ผู้ใช้เห็นผลเลย */
   async publishNow(workspaceId: string, userId: string, id: string, requestId: string): Promise<{ outcome: PublishOutcome; content: Awaited<ReturnType<ContentService['load']>> }> {
     const c = await this.load(workspaceId, id);
     if (!['APPROVED', 'PUBLISH_FAILED', 'SCHEDULED'].includes(c.status)) throw new ConflictException('ต้องอนุมัติก่อนจึงโพสต์ได้');
+    // แก้ข้อความหลังอนุมัติแล้วมี [ต้องยืนยัน] กลับมา → ไม่ยอมโพสต์ข้อความที่ยังไม่ได้ยืนยันขึ้นเพจ
+    if (/\[ต้องยืนยัน/.test(c.caption ?? '')) throw new UnprocessableEntityException('ยังมีจุด [ต้องยืนยัน ...] ในโพสต์ — แก้ข้อความก่อนโพสต์');
     if (c.status === 'SCHEDULED') await this.queue.cancelPublish(id);
     const outcome = await publishContent(this.sync.deps, id, { requestId });
     await this.audit.log({ workspaceId, userId, action: 'content.publish', resourceType: 'contentItem', resourceId: id, after: outcome as unknown as Prisma.InputJsonValue, requestId });

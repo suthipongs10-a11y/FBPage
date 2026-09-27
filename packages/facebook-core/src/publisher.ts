@@ -16,11 +16,12 @@ export type PublishOutcome =
 const PUBLISHABLE = ['APPROVED', 'SCHEDULED', 'PUBLISHING', 'PUBLISH_FAILED'];
 
 /** เหตุผลที่ห้ามโพสต์ตอนนี้ (kill switch / สิทธิ์ / token) — null = โพสต์ได้ */
-export async function publishBlockReason(prisma: PrismaClient, contentId: string): Promise<string | null> {
+/** ignoreStatus: ตรวจเฉพาะเพจ/สิทธิ์/สวิตช์ฉุกเฉิน — ใช้ตรวจล่วงหน้าก่อนอนุมัติ (ตอนนั้นสถานะยังไม่ใช่ APPROVED) */
+export async function publishBlockReason(prisma: PrismaClient, contentId: string, o: { ignoreStatus?: boolean } = {}): Promise<string | null> {
   const c = await prisma.contentItem.findUnique({ where: { id: contentId }, select: { status: true, page: { select: { publishingPaused: true, tokenStatus: true, tasks: true, disconnectedAt: true, brand: { select: { client: { select: { workspace: { select: { automationPaused: true } } } } } } } } } });
   if (!c) return 'ไม่พบคอนเทนต์';
   if (!c.page) return 'คอนเทนต์นี้ไม่ได้ผูกกับเพจ Facebook (publisher ของ YouTube แยกต่างหาก)';
-  if (!PUBLISHABLE.includes(c.status)) return `สถานะ ${c.status} เผยแพร่ไม่ได้ — ต้องอนุมัติก่อน`;
+  if (!o.ignoreStatus && !PUBLISHABLE.includes(c.status)) return `สถานะ ${c.status} เผยแพร่ไม่ได้ — ต้องอนุมัติก่อน`;
   if (c.page.brand.client.workspace.automationPaused) return 'ระบบอัตโนมัติของ workspace ถูกหยุดไว้ (สวิตช์ฉุกเฉิน)';
   if (c.page.publishingPaused) return 'เพจนี้ถูกหยุดการโพสต์ไว้';
   if (c.page.disconnectedAt) return 'เพจถูกตัดการเชื่อมต่อแล้ว';

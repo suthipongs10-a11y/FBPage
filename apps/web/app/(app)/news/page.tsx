@@ -96,6 +96,17 @@ function NewsInner() {
   });
   const setStatus = (i: NewsItemRow, status: 'NEW' | 'DISMISSED') => run(`st:${i.id}`, async () => { await api(`${base}/news/items/${i.id}`, { method: 'PATCH', body: { status } }); });
   const slotFor = (i: NewsItemRow) => when[i.id] || suggested(i) || (i.content?.pageId && slotOf[i.content.pageId]) || nextSlot();
+  // โพสต์เลย: รออนุมัติ → อนุมัติ+โพสต์ทันที · ตั้งเวลา/อนุมัติแล้ว → โพสต์เลยไม่รอเวลา (ถามยืนยันก่อนทุกครั้ง)
+  const postNow = (i: NewsItemRow) => {
+    const page = (pages ?? []).find(p => p.id === i.content?.pageId);
+    const risky = (i.content?.aiNotes?.risk ?? i.angle?.risk) === 'HIGH';
+    if (!window.confirm(`${t('news.postNowConfirm').replace('{page}', page?.name ?? '')}${risky ? `\n\n⚠ ${t('news.postNowRisk')}` : ''}`)) return;
+    void run(`pn:${i.id}`, async () => {
+      const r = await api<{ outcome: { status: string; permalink?: string; reason?: string; error?: string } }>(`${base}/content/${i.contentId}/approve-publish`, { method: 'POST', body: {} });
+      if (r.outcome.status !== 'PUBLISHED') throw new Error(`${t('news.postNowFailed')}: ${r.outcome.reason ?? r.outcome.error ?? r.outcome.status}`);
+      return `${t('news.postedNow')} ${r.outcome.permalink ?? ''}`;
+    });
+  };
   const approve = (i: NewsItemRow) => run(`ap:${i.id}`, async () => {
     // เวลาจากช่องเวลาของเพจ (เขตเวลาเพจ) ส่งไปตามนั้น — ถ้าผู้ใช้แก้เวลาเอง/เวลาที่แพ็กเกจนำเข้าเสนอ ใช้เขตเวลาของเครื่อง
     const own = !!when[i.id] || !!suggested(i);
@@ -236,10 +247,14 @@ function NewsInner() {
                     {i.content.scheduledAt && <span className="text-slate-400">{t('news.scheduledAt')} {fmt(i.content.scheduledAt)}</span>}
                     <Link href="/content" className="text-sky-400 hover:underline">{t('news.editInContent')}</Link>
                   </div>
+                  {['SCHEDULED', 'APPROVED', 'PUBLISH_FAILED'].includes(i.content.status) && can('content.publish') && (
+                    <div><Button variant="ghost" disabled={!!busy} onClick={() => postNow(i)}>{busy === `pn:${i.id}` ? '…' : i.content.status === 'SCHEDULED' ? t('news.postNowSkipWait') : t('news.postNow')}</Button></div>
+                  )}
                   {i.content.status === 'READY_FOR_APPROVAL' && canApprove && (
                     <div className="flex flex-wrap gap-2">
                       <Input type="datetime-local" className="w-56" value={slotFor(i)} onChange={e => setWhen({ ...when, [i.id]: e.target.value })} />
                       <Button disabled={busy === `ap:${i.id}` || needs.length > 0} onClick={() => approve(i)}>{t('news.approveSchedule')}</Button>
+                      <Button variant="ghost" disabled={!!busy || needs.length > 0} onClick={() => postNow(i)}>{busy === `pn:${i.id}` ? '…' : t('news.postNow')}</Button>
                     </div>
                   )}
                 </div>
