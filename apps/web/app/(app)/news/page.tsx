@@ -6,6 +6,7 @@ import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } from '@/components/ui';
 import { ContentImport } from '@/components/content-import';
+import { ResearchDesk } from '@/components/research-desk';
 
 const THEMES = ['dark', 'warm', 'ocean', 'gold', 'forest', 'default'];
 const TABS = ['SHORTLISTED', 'NEW', 'DRAFTED'] as const;
@@ -114,6 +115,8 @@ export default function NewsPage() {
       <p className="rounded-lg border border-sky-900/60 bg-sky-950/30 p-2 text-xs text-sky-200">{t('news.rules')}</p>
       {notice && <p className="text-sm text-emerald-400">✔ {notice}</p>}
       <ErrorBox error={error} />
+
+      {brandId && canAi && <ResearchDesk base={base} brandId={brandId} pages={brandPages} conns={conns} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 
       {brandId && <ContentImport base={base} brandId={brandId} pages={brandPages} canWrite={canWrite} canConfigure={can('ai.configure')} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 

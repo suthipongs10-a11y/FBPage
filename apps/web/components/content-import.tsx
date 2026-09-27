@@ -133,7 +133,7 @@ export function ContentImport({ base, brandId, pages, canWrite, canConfigure, on
   );
 }
 
-function ReportView({ report }: { report: ImportReport }) {
+export function ReportView({ report }: { report: ImportReport }) {
   if (report.parseError) return <p className="mt-2 rounded border border-rose-900/60 bg-rose-950/30 p-2 text-xs text-rose-300">{report.parseError}</p>;
   return (
     <ul className="mt-2 space-y-2">{report.posts.map((p: ImportPostReport) => (

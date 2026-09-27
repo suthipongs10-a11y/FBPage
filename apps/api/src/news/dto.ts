@@ -77,3 +77,41 @@ export const inboxSchema = z.object({
   driveCredentials: z.string().trim().min(20).max(12000).nullable().optional(),
 });
 export type InboxDto = z.infer<typeof inboxSchema>;
+
+// ---- โต๊ะค้นคว้า ----
+export const RESEARCH_MODES = ['web', 'ai', 'urls', 'text'] as const;
+export const WRITE_STYLES = ['news', 'listicle', 'story', 'qa'] as const;
+export const researchSchema = z.object({
+  mode: z.enum(RESEARCH_MODES),
+  /** หัวข้อ/คำถาม (web, ai) */
+  query: z.string().trim().min(2).max(300).optional(),
+  urls: z.array(z.string().trim().url().max(1000)).min(1).max(8).optional(),
+  text: z.string().trim().min(50).max(30000).optional(),
+  /** news = ข่าวล่าสุด 7 วัน · any = ความรู้ทั่วไปไม่จำกัดวันที่ */
+  recency: z.enum(['news', 'any']).default('news'),
+  maxSources: z.number().int().min(2).max(10).default(6),
+  /** ให้ AI (บทบาท fast) แตกคำค้นเพิ่มเป็นไทย/อังกฤษ */
+  expand: z.boolean().default(true),
+  focus: z.string().trim().max(300).optional(),
+  modelOverride: modelOverrideSchema.optional(),
+}).superRefine((v, ctx) => {
+  if ((v.mode === 'web' || v.mode === 'ai') && !v.query) ctx.addIssue({ code: 'custom', path: ['query'], message: 'ใส่หัวข้อที่จะค้นคว้า' });
+  if (v.mode === 'urls' && !v.urls?.length) ctx.addIssue({ code: 'custom', path: ['urls'], message: 'ใส่ลิงก์อย่างน้อย 1 ลิงก์' });
+  if (v.mode === 'text' && !v.text) ctx.addIssue({ code: 'custom', path: ['text'], message: 'วางข้อความอย่างน้อย 50 ตัวอักษร' });
+});
+export type ResearchDto = z.infer<typeof researchSchema>;
+export const researchWriteSchema = z.object({
+  count: z.number().int().min(1).max(5).default(1),
+  style: z.enum(WRITE_STYLES).default('news'),
+  /** มุมที่เลือกจาก brief.angles หรือพิมพ์เอง */
+  angle: z.string().trim().max(300).optional(),
+  pageId: z.string().trim().min(1).optional(),
+  hint: z.string().trim().max(500).optional(),
+  /** ให้ AI อีกตัวตรวจข้อเท็จจริงเทียบกับแหล่ง — ข้อความที่ไม่มีหลักฐานจะถูกติด [ต้องยืนยัน] */
+  factCheck: z.boolean().default(true),
+  theme: themeEnum.optional(),
+  imageFallback: z.enum(IMAGE_SOURCES).optional(),
+  modelOverride: modelOverrideSchema.optional(),
+  checkOverride: modelOverrideSchema.optional(),
+});
+export type ResearchWriteDto = z.infer<typeof researchWriteSchema>;

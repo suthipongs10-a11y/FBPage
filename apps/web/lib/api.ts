@@ -186,3 +186,9 @@ export interface ImportPostReport { index: number; status: 'PASS' | 'WARN' | 'FA
 export interface ImportReport { format: string | null; parseError: string | null; posts: ImportPostReport[] }
 export interface ContentImportRow { id: string; brandId: string; channel: 'paste' | 'api' | 'gdrive'; fileName: string | null; status: string; postCount: number; draftCount: number; report: ImportReport; createdAt: string; updatedAt: string }
 export interface ContentInboxView { configured: boolean; pageId: string | null; theme: string; imageFallback: string; autoDraft: boolean; hasKey: boolean; keyHint: string | null; keyCreatedAt: string | null; driveEnabled: boolean; driveFolderId: string | null; driveClientEmail: string | null; driveConfigured: boolean; driveLastPolledAt: string | null; driveLastError: string | null }
+
+// ---------- โต๊ะค้นคว้า ----------
+export interface ResearchSource { n: number; title: string; url: string | null; siteName: string | null; publishedAt: string | null; excerpt: string | null; fetched: boolean }
+export interface ResearchBriefBody { headline: string; summary: string; keyPoints: { text: string; sources: number[] }[]; angles: { title: string; why: string }[]; openQuestions: string[]; category: string; risk: 'LOW' | 'HIGH'; riskReasons: string[] }
+export interface ResearchBriefRow { id: string; brandId: string; mode: 'web' | 'ai' | 'urls' | 'text'; query: string | null; sources: ResearchSource[]; brief: ResearchBriefBody; provider: string | null; model: string | null; costUsd: number | null; lastImportId: string | null; createdAt: string; failures?: string[] }
+export interface ResearchCaps { webSearch: { connectionId: string; label: string; model: string }[]; researchRoleSearches: boolean; researchRole: { label: string; model: string } | null; tavily: boolean }

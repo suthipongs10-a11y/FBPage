@@ -29,7 +29,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   {
     id: 'openai', label: 'OpenAI', kind: 'openai', baseUrl: null, needsBaseUrl: false,
-    models: ['gpt-5', 'gpt-5-mini'],
+    models: ['gpt-5', 'gpt-5-mini', 'gpt-5-search-api', 'gpt-4o-mini-search-preview'],
     keyHelp: 'platform.openai.com → API keys',
   },
   {
@@ -41,6 +41,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: 'openrouter', label: 'OpenRouter', kind: 'openrouter', baseUrl: null, needsBaseUrl: false,
     models: ['anthropic/claude-sonnet-5', 'openai/gpt-5-mini', 'google/gemini-2.5-flash'],
     keyHelp: 'openrouter.ai → Keys (ชื่อโมเดลดูได้ที่ openrouter.ai/models)',
+  },
+  {
+    id: 'perplexity', label: 'Perplexity (ค้นเว็บในตัว)', kind: 'compatible', baseUrl: 'https://api.perplexity.ai', needsBaseUrl: false,
+    models: ['sonar', 'sonar-pro'],
+    keyHelp: 'perplexity.ai → Settings → API — โมเดล sonar ค้นเว็บทุกครั้งและส่งแหล่งอ้างอิงกลับมา เหมาะกับงานค้นคว้า',
   },
   {
     id: 'deepseek', label: 'DeepSeek', kind: 'compatible', baseUrl: 'https://api.deepseek.com/v1', needsBaseUrl: false,

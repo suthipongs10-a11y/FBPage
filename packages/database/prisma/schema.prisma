@@ -221,6 +221,7 @@ model Workspace {
   newsAutomations   NewsAutomation[]
   contentInboxes    ContentInbox[]
   contentImports    ContentImport[]
+  researchBriefs    ResearchBrief[]
 }
 
 enum WorkspaceRole {
@@ -298,6 +299,7 @@ model Brand {
   newsAutomation  NewsAutomation?
   contentInbox    ContentInbox?
   contentImports  ContentImport[]
+  researchBriefs  ResearchBrief[]
 
   @@index([clientId])
 }
@@ -1918,5 +1920,33 @@ model ContentImport {
   brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, channel, externalId])
+  @@index([brandId, createdAt])
+}
+
+/// โต๊ะค้นคว้า — หัวข้อ/ลิงก์/ข้อความ → รวบรวมแหล่ง → AI สรุปประเด็นพร้อมอ้างอิง → เขียนโพสต์ → ร่างรออนุมัติ
+/// เก็บแค่ชื่อเรื่อง/ลิงก์/ข้อความตัดสั้น (excerpt) ของแหล่ง — เนื้อความเต็มใช้ในหน่วยความจำตอนสรุปเท่านั้น
+model ResearchBrief {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  brandId      String
+  /// web (ค้นผ่าน Tavily) | ai (AI ค้นเว็บเอง) | urls (จากลิงก์) | text (จากข้อความที่วาง)
+  mode         String
+  query        String?
+  /// [{ n, title, url, siteName, publishedAt, excerpt, fetched }]
+  sources      Json
+  /// { headline, summary, keyPoints: [{ text, sources: [n] }], angles: [{ title, why }], openQuestions[], category, risk, riskReasons[] }
+  brief        Json
+  provider     String?
+  model        String?
+  costUsd      Float?
+  /// การเขียนครั้งล่าสุด (ContentImport channel=research)
+  lastImportId String?
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
   @@index([brandId, createdAt])
 }

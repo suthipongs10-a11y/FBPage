@@ -1,4 +1,4 @@
-import { AiProviderError, PROVIDERS, type AIProvider, type AiMessage, type AiProviderId, type ChatRequest, type ChatResult, type ProviderConfig } from '../types';
+import { AiProviderError, PROVIDERS, mergeCitations, type AIProvider, type AiMessage, type AiProviderId, type ChatRequest, type ChatResult, type Citation, type ProviderConfig } from '../types';
 import { postJson } from './http';
 
 export function toOpenAIMessages(system: string | undefined, messages: AiMessage[]): unknown[] {
@@ -24,7 +24,10 @@ export function openAICompatible(provider: AiProviderId): AIProvider {
         model, messages: toOpenAIMessages(req.system, req.messages),
         ...(req.maxTokens && { max_completion_tokens: req.maxTokens }),
         ...(req.temperature !== undefined && { temperature: req.temperature }),
-        ...(req.jsonMode && { response_format: { type: 'json_object' } }),
+        // รุ่นค้นเว็บของ OpenAI/Perplexity ไม่รับ response_format — ขอ JSON ผ่านคำสั่งแทน
+        ...(req.jsonMode && !req.webSearch && { response_format: { type: 'json_object' } }),
+        ...(req.webSearch && provider === 'openai' && { web_search_options: {} }),
+        ...(req.webSearch && provider === 'openrouter' && { plugins: [{ id: 'web', max_results: 5 }] }),
         ...(req.tools?.length && { tools: req.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) }),
       };
       const headers: Record<string, string> = { authorization: `Bearer ${cfg.apiKey}` };
@@ -36,7 +39,12 @@ export function openAICompatible(provider: AiProviderId): AIProvider {
         try { args = JSON.parse(c.function.arguments || '{}'); } catch { /* ปล่อยว่าง */ }
         return { id: c.id, name: c.function.name, args };
       });
-      return { text: msg.content ?? '', toolCalls, usage: { input: body.usage?.prompt_tokens ?? null, output: body.usage?.completion_tokens ?? null }, model: body.model ?? model, provider };
+      // แหล่งอ้างอิง: annotations แบบ url_citation (OpenAI/OpenRouter) · citations / search_results (Perplexity)
+      const ann: Citation[] = ((msg.annotations ?? []) as { type?: string; url_citation?: { url?: string; title?: string } }[]).filter(a => a.type === 'url_citation' && a.url_citation?.url).map(a => ({ url: a.url_citation!.url!, title: a.url_citation!.title ?? null }));
+      const sr: Citation[] = ((body.search_results ?? []) as { url?: string; title?: string }[]).filter(r => r.url).map(r => ({ url: r.url!, title: r.title ?? null }));
+      const cit: Citation[] = ((body.citations ?? []) as unknown[]).filter((u): u is string => typeof u === 'string').map(url => ({ url, title: null }));
+      const citations = mergeCitations(ann, sr, cit);
+      return { text: msg.content ?? '', toolCalls, ...(citations.length && { citations }), usage: { input: body.usage?.prompt_tokens ?? null, output: body.usage?.completion_tokens ?? null }, model: body.model ?? model, provider };
     },
   };
 }

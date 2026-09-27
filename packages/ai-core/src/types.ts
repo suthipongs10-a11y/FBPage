@@ -22,9 +22,24 @@ export type AiMessage =
 
 export interface AiToolDef { name: string; description: string; parameters: Record<string, unknown> }
 export interface ProviderConfig { provider: AiProviderId; apiKey: string; model?: string; baseUrl?: string; timeoutMs?: number }
-export interface ChatRequest { system?: string; messages: AiMessage[]; tools?: AiToolDef[]; maxTokens?: number; temperature?: number; jsonMode?: boolean }
+/** ให้โมเดลค้นเว็บเองแล้วตอบพร้อมแหล่งอ้างอิง — Gemini (Google Search), Claude (web search tool), OpenAI (รุ่น *-search-*), OpenRouter (web plugin), Perplexity (ค้นเสมอ) */
+export interface ChatRequest { system?: string; messages: AiMessage[]; tools?: AiToolDef[]; maxTokens?: number; temperature?: number; jsonMode?: boolean; webSearch?: boolean }
+export interface Citation { url: string; title: string | null }
 export interface Usage { input: number | null; output: number | null }
-export interface ChatResult { text: string; toolCalls: ToolCall[]; usage: Usage; model: string; provider: AiProviderId }
+export interface ChatResult { text: string; toolCalls: ToolCall[]; usage: Usage; model: string; provider: AiProviderId; citations?: Citation[] }
+
+/** ผู้ให้บริการ/โมเดลนี้ค้นเว็บเองได้ไหม (ใช้บอกผู้ใช้ก่อนยิงจริง) */
+export function supportsWebSearch(provider: AiProviderId, model: string, baseUrl?: string | null): boolean {
+  if (provider === 'gemini' || provider === 'anthropic' || provider === 'openrouter') return true;
+  if (provider === 'openai') return /search/i.test(model);
+  return /perplexity\.ai/i.test(baseUrl ?? '') || /^sonar/i.test(model);
+}
+/** รวมแหล่งอ้างอิง ตัดซ้ำตาม URL คงลำดับเดิม */
+export function mergeCitations(...lists: (Citation[] | undefined)[]): Citation[] {
+  const seen = new Set<string>(); const out: Citation[] = [];
+  for (const l of lists) for (const c of l ?? []) { if (!c.url || seen.has(c.url)) continue; seen.add(c.url); out.push(c); }
+  return out;
+}
 
 export interface AIProvider { chat(cfg: ProviderConfig, req: ChatRequest): Promise<ChatResult> }
 

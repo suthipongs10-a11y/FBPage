@@ -118,7 +118,8 @@ export async function fetchFeed(url: string, o: NewsFetchOptions & { limit?: num
 
 // ---------- ค้นเว็บ (Tavily) ----------
 export interface SearchResult { title: string; url: string; snippet: string | null; publishedAt: Date | null; sourceName: string | null }
-export interface TavilyOptions { baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number; maxResults?: number; days?: number }
+/** topic: news = ข่าวล่าสุด (ใช้ days) · general = เว็บทั่วไป (ความรู้/ฮาวทู ไม่จำกัดวันที่) */
+export interface TavilyOptions { baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number; maxResults?: number; days?: number; topic?: 'news' | 'general' }
 
 /** ค้นข่าวล่าสุดผ่าน Tavily (topic=news) — คืนเฉพาะหัวข้อ/เกริ่น/ลิงก์ ไม่ขอเนื้อหาเต็มหรือรูป */
 export async function tavilySearch(apiKey: string, query: string, o: TavilyOptions = {}): Promise<SearchResult[]> {
@@ -129,7 +130,7 @@ export async function tavilySearch(apiKey: string, query: string, o: TavilyOptio
       res = await f(`${(o.baseUrl ?? 'https://api.tavily.com').replace(/\/+$/, '')}/search`, {
         method: 'POST', signal: ctl.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}`, 'user-agent': USER_AGENT },
-        body: JSON.stringify({ query, topic: 'news', days: o.days ?? 3, max_results: Math.min(20, Math.max(1, o.maxResults ?? 10)), include_answer: false, include_raw_content: false, include_images: false }),
+        body: JSON.stringify({ query, topic: o.topic ?? 'news', ...((o.topic ?? 'news') === 'news' && { days: o.days ?? 3 }), max_results: Math.min(20, Math.max(1, o.maxResults ?? 10)), include_answer: false, include_raw_content: false, include_images: false }),
       });
     } catch (e) { throw new WebError((e as Error).name === 'AbortError' ? 'Tavily ตอบช้าเกินไป' : `เชื่อมต่อ Tavily ไม่ได้: ${(e as Error).message}`, 'network'); }
     if (res.status === 401 || res.status === 403) throw new WebError('API key ของ Tavily ไม่ถูกต้องหรือถูกปิด', 'forbidden', res.status);

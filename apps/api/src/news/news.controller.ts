@@ -11,13 +11,14 @@ import { RequirePermission } from '../workspaces/permissions';
 import { NewsService } from './news.service';
 import { NewsAutomationService } from './automation.service';
 import { ContentImportService } from './import.service';
-import { importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { ResearchService } from './research.service';
+import { researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
 @UseGuards(AuthGuard, TenantGuard)
 export class NewsController {
-  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService, @Inject(ContentImportService) private readonly imports: ContentImportService) {}
+  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService, @Inject(ContentImportService) private readonly imports: ContentImportService, @Inject(ResearchService) private readonly research: ResearchService) {}
 
   // ---- คีย์ค้นเว็บ ----
   @Get('news/search-provider') @RequirePermission('content.read')
@@ -87,6 +88,18 @@ export class NewsController {
   draftImport(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.imports.draftImport(t.workspaceId, u.id, id, rid); }
   @Delete('news/imports/:id') @RequirePermission('content.create')
   dismissImport(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.imports.dismiss(t.workspaceId, u.id, id, rid); }
+
+  // ---- โต๊ะค้นคว้า ----
+  @Get('news/research/capabilities') @RequirePermission('content.read')
+  researchCaps(@Tenant() t: TenantContext) { return this.research.capabilities(t.workspaceId); }
+  @Post('brands/:brandId/news/research') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  startResearch(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(researchSchema)) dto: ResearchDto, @RequestId() rid: string) { return this.research.research(t.workspaceId, u.id, brandId, dto, rid); }
+  @Get('brands/:brandId/news/research') @RequirePermission('content.read')
+  researchList(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.research.list(t.workspaceId, brandId); }
+  @Post('news/research/:id/write') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  researchWrite(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(researchWriteSchema)) dto: ResearchWriteDto, @RequestId() rid: string) { return this.research.write(t.workspaceId, u.id, id, dto, rid); }
+  @Delete('news/research/:id') @RequirePermission('content.create')
+  researchDelete(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.research.remove(t.workspaceId, u.id, id, rid); }
 }
 
 /** อ่าน body ดิบ (รูป/ข้อความ) พร้อมเพดาน — ใช้กับ content-type ที่ Nest ไม่ parse ให้ */

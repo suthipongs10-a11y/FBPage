@@ -1,4 +1,4 @@
-import { AiProviderError, PROVIDERS, type AIProvider, type AiMessage, type ChatRequest, type ChatResult, type ProviderConfig } from '../types';
+import { AiProviderError, PROVIDERS, mergeCitations, type AIProvider, type AiMessage, type ChatRequest, type ChatResult, type ProviderConfig } from '../types';
 import { postJson } from './http';
 
 export function toGeminiContents(messages: AiMessage[]): unknown[] {
@@ -37,9 +37,10 @@ export const geminiProvider: AIProvider = {
       generationConfig: {
         ...(req.maxTokens && { maxOutputTokens: req.maxTokens + thinkingHeadroom(model) }),
         ...(/gemini-2\.5/i.test(model) && { thinkingConfig: { thinkingBudget: THINKING_BUDGET } }),
-        ...(req.temperature !== undefined && { temperature: req.temperature }), ...(req.jsonMode && { responseMimeType: 'application/json' }),
+        // ค้นเว็บ (Google Search grounding) ใช้คู่กับ JSON mode ไม่ได้ — ขอ JSON ผ่านคำสั่งแทน
+        ...(req.temperature !== undefined && { temperature: req.temperature }), ...(req.jsonMode && !req.webSearch && { responseMimeType: 'application/json' }),
       },
-      ...(req.tools?.length && { tools: [{ functionDeclarations: req.tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }] }),
+      ...(req.webSearch ? { tools: [{ google_search: {} }] } : req.tools?.length ? { tools: [{ functionDeclarations: req.tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }] } : {}),
     };
     const body = await postJson(url, { 'x-goog-api-key': cfg.apiKey }, payload, 'gemini', cfg.timeoutMs);
     const parts: { text?: string; thought?: boolean; functionCall?: { name: string; args?: Record<string, unknown> } }[] = (body.candidates?.[0]?.content?.parts ?? []).filter((p: { thought?: boolean }) => !p.thought);
@@ -51,6 +52,7 @@ export const geminiProvider: AIProvider = {
     return {
       text: parts.filter(p => p.text).map(p => p.text).join('\n'),
       toolCalls: parts.filter(p => p.functionCall).map((p, i) => ({ id: `gem_${Date.now()}_${i}`, name: p.functionCall!.name, args: p.functionCall!.args ?? {} })),
+      ...(req.webSearch && { citations: mergeCitations(((body.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri?: string; title?: string } }[]).filter(c => c.web?.uri).map(c => ({ url: c.web!.uri!, title: c.web!.title ?? null }))) }),
       usage: { input: body.usageMetadata?.promptTokenCount ?? null, output: body.usageMetadata?.candidatesTokenCount == null ? null : body.usageMetadata.candidatesTokenCount + (body.usageMetadata.thoughtsTokenCount ?? 0) }, model, provider: 'gemini',
     };
   },

@@ -15,6 +15,8 @@ export interface MockWebState {
   /** ห้องข่าว: ฟีด RSS จำลองที่ `/news/rss.xml` (+ `/news/atom.xml`, `/news/redirect`) และ Tavily ที่ `POST /tavily/search` (Bearer `TAVILY_OK`) */
   news: { rssItems: { title: string; link: string; description: string; pubDate: string }[]; tavilyResults: { title: string; url: string; content: string; published_date?: string }[]; tavilyQueries: string[]; pexelsQueries: string[]; pexelsEmpty: boolean };
   /** Google Drive จำลอง (service account): `POST /google/token` → `DRIVE_TOKEN` · `GET /google/drive/v3/files?q='<folder>' in parents` · `…/files/<id>?alt=media` · Google Docs `…/export` */
+  /** บทความจำลอง `/article/<slug>` */
+  articles: Record<string, { title: string; paragraphs: string[] }>;
   drive: { folderId: string; files: { id: string; name: string; mimeType: string; md5Checksum: string; modifiedTime: string; content: Buffer }[]; tokenIssuers: string[]; downloads: string[] };
 }
 export interface MockWpPost { id: number; title: string; content: string; excerpt: string; slug: string; status: string; date: string; tags: number[]; categories: number[] }
@@ -40,6 +42,10 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
         { title: 'ทีมกู้ภัยช่วยลูกช้างตกบ่อได้สำเร็จ', url: 'https://www.news.example.com/a/elephant/', content: 'ซ้ำกับฟีด', published_date: new Date().toUTCString() },
       ],
       tavilyQueries: [], pexelsQueries: [], pexelsEmpty: false,
+    },
+    articles: {
+      elephant: { title: 'ทีมกู้ภัยพาลูกช้างกลับฝูงสำเร็จหลังพลัดหลง 3 วัน', paragraphs: ['เจ้าหน้าที่อุทยานแห่งชาติเขาใหญ่ใช้เวลา 3 วันติดตามรอยฝูงช้างป่าเพื่อพาลูกช้างอายุราว 2 เดือนกลับไปหาแม่ หลังพบลูกช้างพลัดหลงอยู่ริมลำธาร', 'ทีมสัตวแพทย์ตรวจสุขภาพแล้วพบว่าลูกช้างแข็งแรงดี มีเพียงอาการขาดน้ำเล็กน้อย จึงให้สารน้ำและนมทดแทนก่อนปล่อย', 'เมื่อพบฝูง แม่ช้างเดินออกมารับลูกทันที เจ้าหน้าที่ระบุว่านี่เป็นครั้งที่สองของปีที่ช่วยลูกช้างกลับฝูงได้สำเร็จ'] },
+      moon: { title: 'Scientists detect water ice deposits near lunar south pole', paragraphs: ['A team of planetary scientists reported new evidence of water ice in permanently shadowed craters near the Moon\'s south pole, using radar data collected over two years.', 'The deposits could supply future crewed missions with drinking water and rocket fuel, the researchers said, though the exact quantity remains uncertain.'] },
     },
     drive: { folderId: 'FOLDER_OK_1234', files: [], tokenIssuers: [], downloads: [] },
   };
@@ -115,6 +121,14 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
       const body = JSON.parse(bodyText || '{}') as { query?: string; topic?: string };
       state.news.tavilyQueries.push(String(body.query ?? ''));
       return json(200, { query: body.query, results: state.news.tavilyResults });
+    }
+    // ---- บทความจำลองสำหรับโต๊ะค้นคว้า: /article/<slug> · /article/go/<slug> (302) · /admin/secret-article (robots ห้าม) ----
+    if (u.pathname.startsWith('/article/go/')) { res.writeHead(302, { location: `/article/${u.pathname.slice(12)}` }); return res.end(); }
+    if (u.pathname.startsWith('/article/')) {
+      const a = state.articles[u.pathname.slice(9)];
+      if (!a) { res.writeHead(404, { 'content-type': 'text/html' }); return res.end('<html><body>not found</body></html>'); }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(`<!doctype html><html><head><title>${a.title} | ข่าวจำลอง</title><meta property="og:title" content="${a.title}"><meta property="og:site_name" content="Mock Times"><meta property="article:published_time" content="2026-09-26T08:00:00Z"></head><body><header><nav>เมนู หน้าแรก ข่าว กีฬา บันเทิง</nav></header><article><h1>${a.title}</h1>${a.paragraphs.map(p => `<p>${p}</p>`).join('')}</article><aside>ข่าวที่เกี่ยวข้อง โฆษณา</aside><footer>ลิขสิทธิ์ Mock Times</footer><script>var tracking = 1;</script></body></html>`);
     }
     // ---- Google Drive จำลอง ----
     if (u.pathname === '/google/token' && req.method === 'POST') {

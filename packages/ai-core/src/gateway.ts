@@ -1,7 +1,7 @@
 /**
  * ทางเข้ารวมของ AI Gateway (§4, §5) — เลือก adapter ตาม provider, วนลูปเครื่องมือ, ขอผลลัพธ์แบบโครงสร้าง, ประเมินค่าใช้จ่าย (§50)
  */
-import { AiProviderError, PROVIDERS, type AIProvider, type AiMessage, type AiProviderId, type AiToolDef, type ChatRequest, type ChatResult, type ProviderConfig, type ToolCall, type Usage } from './types';
+import { AiProviderError, PROVIDERS, mergeCitations, type Citation, type AIProvider, type AiMessage, type AiProviderId, type AiToolDef, type ChatRequest, type ChatResult, type ProviderConfig, type ToolCall, type Usage } from './types';
 import { anthropicProvider } from './providers/anthropic';
 import { openAICompatible } from './providers/openai';
 import { geminiProvider } from './providers/gemini';
@@ -57,19 +57,22 @@ export function extractJson(text: string): unknown {
   throw new Error('โมเดลไม่ได้ตอบเป็น JSON ที่อ่านได้');
 }
 
-export interface StructuredInput<T> { system?: string; prompt: string; schemaDescription: string; validate: (v: unknown) => T; maxTokens?: number; retries?: number }
-export interface StructuredResult<T> { data: T; usage: Usage; model: string; attempts: number; raw: string }
+/** webSearch: ให้โมเดลค้นเว็บเองก่อนตอบ (ดู supportsWebSearch) — ได้ citations กลับมาด้วย */
+export interface StructuredInput<T> { system?: string; prompt: string; schemaDescription: string; validate: (v: unknown) => T; maxTokens?: number; retries?: number; webSearch?: boolean }
+export interface StructuredResult<T> { data: T; usage: Usage; model: string; attempts: number; raw: string; citations: Citation[] }
 
 /** ขอผลลัพธ์แบบโครงสร้าง — ตรวจด้วย validate (เช่น zod) ถ้าไม่ผ่านจะส่ง error กลับให้โมเดลแก้ (สูงสุด retries ครั้ง) */
 export async function generateStructured<T>(cfg: ProviderConfig, input: StructuredInput<T>): Promise<StructuredResult<T>> {
   const system = `${input.system ?? ''}\n\nตอบเป็น JSON เท่านั้น ไม่มีข้อความอื่นนอก JSON ตามโครงสร้างนี้:\n${input.schemaDescription}`.trim();
   const messages: AiMessage[] = [{ role: 'user', content: input.prompt }];
-  const usage: Usage = { input: 0, output: 0 }; let model = cfg.model ?? ''; let lastErr = '';
+  const usage: Usage = { input: 0, output: 0 }; let model = cfg.model ?? ''; let lastErr = ''; let citations: Citation[] = [];
   const attempts = 1 + (input.retries ?? 1);
   for (let i = 1; i <= attempts; i++) {
-    const r = await chat(cfg, { system, messages, maxTokens: input.maxTokens ?? 8000, jsonMode: true });
+    // รอบแก้ JSON ไม่ต้องค้นเว็บซ้ำ — ใช้ผลค้นจากรอบแรกที่อยู่ในบทสนทนาแล้ว
+    const r = await chat(cfg, { system, messages, maxTokens: input.maxTokens ?? 8000, jsonMode: true, webSearch: !!input.webSearch && i === 1 });
     model = r.model; usage.input = (usage.input ?? 0) + (r.usage.input ?? 0); usage.output = (usage.output ?? 0) + (r.usage.output ?? 0);
-    try { return { data: input.validate(extractJson(r.text)), usage, model, attempts: i, raw: r.text }; }
+    citations = mergeCitations(citations, r.citations);
+    try { return { data: input.validate(extractJson(r.text)), usage, model, attempts: i, raw: r.text, citations }; }
     catch (e) {
       lastErr = e instanceof Error ? e.message : String(e);
       messages.push({ role: 'assistant', content: r.text }, { role: 'user', content: `JSON ไม่ผ่านการตรวจ: ${lastErr.slice(0, 500)}\nส่ง JSON ใหม่ทั้งก้อนให้ถูกต้องตามโครงสร้าง` });

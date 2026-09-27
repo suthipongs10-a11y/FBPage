@@ -109,6 +109,11 @@ export class NewsService {
     const key = await this.providerKey(workspaceId, 'tavily', 'ยังไม่ได้ตั้งคีย์ค้นเว็บ (Tavily) — ตั้งที่หน้าห้องข่าว');
     return tavilySearch(key, query, { baseUrl: this.mock ? `${this.mock}/tavily` : undefined, maxResults, days: 3 });
   }
+  /** ค้นเว็บผ่าน Tavily ให้โมดูลอื่น (โต๊ะค้นคว้า) — news = ข่าวล่าสุด, general = ความรู้ทั่วไป */
+  async searchWeb(workspaceId: string, query: string, o: { maxResults?: number; topic?: 'news' | 'general'; days?: number } = {}) {
+    const key = await this.providerKey(workspaceId, 'tavily', 'ยังไม่ได้ตั้งคีย์ค้นเว็บ (Tavily) — ตั้งที่หน้าห้องข่าว หรือเลือกโหมด "ให้ AI ค้นเอง"');
+    return tavilySearch(key, query, { baseUrl: this.mock ? `${this.mock}/tavily` : undefined, maxResults: o.maxResults ?? 6, topic: o.topic ?? 'news', days: o.days ?? 7 });
+  }
   private async stockSearch(workspaceId: string, query: string, perPage = 8) {
     const key = await this.providerKey(workspaceId, 'pexels', 'ยังไม่ได้ตั้งคีย์คลังภาพ (Pexels) — ตั้งที่หน้าห้องข่าว');
     return pexelsSearch(key, query, { baseUrl: this.mock ? `${this.mock}/pexels` : undefined, perPage });

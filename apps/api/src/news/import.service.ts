@@ -37,9 +37,9 @@ const PACKAGE_EXT = /\.(json|txt|md)$/i;
 const IMPORT_SELECT = { id: true, brandId: true, channel: true, fileName: true, status: true, postCount: true, draftCount: true, report: true, createdAt: true, updatedAt: true } as const;
 /** ผลตรวจที่ขึ้นกับ DB — ตรวจใหม่ทุกครั้งก่อนสร้างร่าง */
 const DB_CHECKS = ['DUPLICATE', 'PAGE_NOT_FOUND', 'NO_PAGE', 'UPLOAD_MISSING', 'FILE_MISSING'];
-const CHANNEL_LABEL: Record<string, string> = { paste: 'วาง/อัปโหลด', api: 'URL รับไฟล์', gdrive: 'Google Drive' };
+const CHANNEL_LABEL: Record<string, string> = { paste: 'วาง/อัปโหลด', api: 'URL รับไฟล์', gdrive: 'Google Drive', research: 'โต๊ะค้นคว้า' };
 
-type Channel = 'paste' | 'api' | 'gdrive';
+type Channel = 'paste' | 'api' | 'gdrive' | 'research';
 type FileSource = { uploads: Record<string, string>; drive?: { token: string; files: DriveFile[] } };
 export interface PostResult { contentId?: string; newsItemId?: string; error?: string; imageErrors?: string[]; cardError?: string | null }
 type StoredPost = PostReport & { result?: PostResult; pageId?: string | null };
@@ -208,7 +208,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     const url = p.sources[0]?.url;
     return {
       url: url ?? '',
-      urlHash: url ? sha256(canonicalNewsUrl(url)) : sha256(`original:${normalizeTitle(p.caption.slice(0, 500))}`),
+      urlHash: p.dedupeKey ? sha256(`key:${p.dedupeKey}`) : url ? sha256(canonicalNewsUrl(url)) : sha256(`original:${normalizeTitle(p.caption.slice(0, 500))}`),
       titleHash: sha256(normalizeTitle(p.title)),
     };
   }
@@ -230,6 +230,11 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     const r = await this.importPackage({ workspaceId: inbox.workspaceId, userId: inbox.createdById, brandId: inbox.brandId, channel: 'api', input, fileName, draft: inbox.autoDraft && !inbox.workspace.automationPaused, files: { uploads: {} }, requestId });
     const rep = r.report as unknown as StoredReport;
     return { importId: r.id, status: r.status, drafted: r.draftCount, posts: rep.posts.map(p => ({ index: p.index, title: p.title, status: p.status, checks: p.checks, contentId: p.result?.contentId ?? null, error: p.result?.error ?? null })), parseError: rep.parseError };
+  }
+
+  /** โต๊ะค้นคว้าส่งแพ็กเกจที่ AI ในระบบเขียน เข้าทางตรวจ/สร้างร่างเดียวกับการนำเข้า */
+  importResearch(a: { workspaceId: string; userId: string; brandId: string; input: unknown; fileName: string; pageId?: string; theme?: string; imageFallback?: string; requestId: string }) {
+    return this.importPackage({ ...a, channel: 'research', draft: true, files: { uploads: {} } });
   }
 
   private async importPackage(a: { workspaceId: string; userId: string; brandId: string; channel: Channel; input: unknown; fileName: string | null; externalId?: string; pageId?: string; theme?: string; imageFallback?: string; draft: boolean; files: FileSource; requestId: string }) {
