@@ -1,12 +1,14 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { api, type AiConnectionsView, type NewsAutomationRow, type NewsItemRow, type NewsSourceRow, type PageRow, type SearchProviderView } from '@/lib/api';
+import { api, type ResearchBriefRow, type AiConnectionsView, type NewsAutomationRow, type NewsItemRow, type NewsSourceRow, type PageRow, type SearchProviderView } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } from '@/components/ui';
 import { ContentImport } from '@/components/content-import';
 import { ResearchDesk } from '@/components/research-desk';
+import { PageScout } from '@/components/page-scout';
 
 const THEMES = ['dark', 'warm', 'ocean', 'gold', 'forest', 'default'];
 const TABS = ['SHORTLISTED', 'NEW', 'DRAFTED'] as const;
@@ -31,8 +33,13 @@ const nextSlot = () => { const d = new Date(Date.now() + 30 * 60_000); d.setMinu
 /** "connectionId|model" ↔ modelOverride */
 const toOverride = (v: string) => { if (!v) return undefined; const [connectionId, model] = v.split('|'); return { connectionId: connectionId!, ...(model && { model }) }; };
 
-export default function NewsPage() {
+export default function NewsPage() { return <Suspense fallback={<Loading />}><NewsInner /></Suspense>; }
+
+function NewsInner() {
   const { ws, can } = useWorkspace();
+  // เปิดจากหน้าเพจ: /news?page=<pageId> → เลือกแบรนด์ของเพจนั้น + ผู้ช่วยหาเรื่องเลือกเพจนั้น
+  const pageParam = useSearchParams().get('page') ?? undefined;
+  const [scoutBrief, setScoutBrief] = useState<{ brief: ResearchBriefRow; pageId: string; seq: number } | null>(null);
   const base = `/workspaces/${ws.id}`;
   const [pages, setPages] = useState<PageRow[] | null>(null); const [brandId, setBrandId] = useState('');
   const [sources, setSources] = useState<NewsSourceRow[]>([]); const [items, setItems] = useState<NewsItemRow[] | null>(null);
@@ -54,9 +61,9 @@ export default function NewsPage() {
 
   useEffect(() => {
     Promise.all([api<PageRow[]>(`${base}/pages`), can('ai.use') ? api<AiConnectionsView>(`${base}/ai/connections`) : Promise.resolve(null)])
-      .then(([p, c]) => { const live = p.filter(x => !x.disconnectedAt); setPages(live); setConns(c); setBrandId(b => b || live[0]?.brand.id || ''); })
+      .then(([p, c]) => { const live = p.filter(x => !x.disconnectedAt); setPages(live); setConns(c); setBrandId(b => b || live.find(x => x.id === pageParam)?.brand.id || live[0]?.brand.id || ''); })
       .catch(setError);
-  }, [base, can]);
+  }, [base, can, pageParam]);
   const load = useCallback(async () => {
     if (!brandId) return;
     const [s, i, au] = await Promise.all([api<NewsSourceRow[]>(`${base}/brands/${brandId}/news/sources`), api<NewsItemRow[]>(`${base}/news/items?brandId=${brandId}&status=${tab}`), api<NewsAutomationRow | null>(`${base}/brands/${brandId}/news/automation`)]);
@@ -116,7 +123,9 @@ export default function NewsPage() {
       {notice && <p className="text-sm text-emerald-400">✔ {notice}</p>}
       <ErrorBox error={error} />
 
-      {brandId && canAi && <ResearchDesk base={base} brandId={brandId} pages={brandPages} conns={conns} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
+      {brandId && canAi && brandPages.length > 0 && <PageScout base={base} pages={brandPages} initialPageId={pageParam} onBrief={(brief, pageId) => setScoutBrief({ brief, pageId, seq: Date.now() })} />}
+
+      {brandId && canAi && <ResearchDesk base={base} brandId={brandId} pages={brandPages} conns={conns} openBrief={scoutBrief} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 
       {brandId && <ContentImport base={base} brandId={brandId} pages={brandPages} canWrite={canWrite} canConfigure={can('ai.configure')} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 

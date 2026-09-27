@@ -1,6 +1,6 @@
 'use client';
 /** โต๊ะค้นคว้า — ค้นเว็บ / AI ค้นเอง / จากลิงก์ / จากข้อความ → สรุปประเด็นพร้อมอ้างอิง → เขียนโพสต์ + ตรวจข้อเท็จจริง → ร่างรออนุมัติ */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type AiConnectionsView, type ContentImportRow, type PageRow, type ResearchBriefRow, type ResearchCaps } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { Button, Card, ErrorBox, Field, Input, Pill, Select } from '@/components/ui';
@@ -13,7 +13,9 @@ type Mode = (typeof MODES)[number];
 const toOverride = (v: string) => { if (!v) return undefined; const [connectionId, model] = v.split('|'); return { connectionId: connectionId!, ...(model && { model }) }; };
 const fmt = (d: string) => new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
 
-export function ResearchDesk({ base, brandId, pages, conns, onDrafted }: { base: string; brandId: string; pages: PageRow[]; conns: AiConnectionsView | null; onDrafted: () => void }) {
+/** openBrief: งานค้นคว้าที่สร้างจากที่อื่น (ผู้ช่วยหาเรื่องของเพจ) ให้เปิดขึ้นมาเขียนต่อ พร้อมเลือกเพจไว้ให้ */
+export function ResearchDesk({ base, brandId, pages, conns, onDrafted, openBrief }: { base: string; brandId: string; pages: PageRow[]; conns: AiConnectionsView | null; onDrafted: () => void; openBrief?: { brief: ResearchBriefRow; pageId: string; seq: number } | null }) {
+  const box = useRef<HTMLDivElement>(null);
   const [caps, setCaps] = useState<ResearchCaps | null>(null);
   const [history, setHistory] = useState<ResearchBriefRow[]>([]);
   const [mode, setMode] = useState<Mode>('web');
@@ -30,6 +32,12 @@ export function ResearchDesk({ base, brandId, pages, conns, onDrafted }: { base:
     setF(x => ({ ...x, searchModel: x.searchModel || (c.webSearch[0] ? `${c.webSearch[0].connectionId}|${c.webSearch[0].model}` : '') }));
   }, [base, brandId]);
   useEffect(() => { setCur(null); setResult(null); void load().catch(setError); }, [load]);
+  useEffect(() => {
+    if (!openBrief) return;
+    setCur(openBrief.brief); setResult(null); setW(x => ({ ...x, pageId: openBrief.pageId, angle: '' }));
+    void load().catch(setError);
+    box.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [openBrief, load]);
   const run = async (k: string, fn: () => Promise<void>) => { setBusy(k); setError(null); try { await fn(); } catch (e) { setError(e); } finally { setBusy(''); } };
 
   const research = () => run('research', async () => {
@@ -53,7 +61,7 @@ export function ResearchDesk({ base, brandId, pages, conns, onDrafted }: { base:
   const src = (n: number) => cur?.sources.find(s => s.n === n);
 
   return (
-    <Card title={t('rs.title')}>
+    <div ref={box}><Card title={t('rs.title')}>
       <p className="text-xs text-slate-400">{t('rs.help')}</p>
       <ErrorBox error={error} />
       <div className="mt-3 flex flex-wrap gap-2">{MODES.map(m => <Button key={m} variant={mode === m ? 'primary' : 'ghost'} onClick={() => setMode(m)}>{t(`rs.mode.${m}` as MessageKey)}</Button>)}</div>
@@ -124,6 +132,6 @@ export function ResearchDesk({ base, brandId, pages, conns, onDrafted }: { base:
             </li>))}</ul>
         </details>
       )}
-    </Card>
+    </Card></div>
   );
 }

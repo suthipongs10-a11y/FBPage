@@ -12,13 +12,14 @@ import { NewsService } from './news.service';
 import { NewsAutomationService } from './automation.service';
 import { ContentImportService } from './import.service';
 import { ResearchService } from './research.service';
-import { researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { PageScoutService } from './scout.service';
+import { scoutCheckSchema, scoutIdeasSchema, scoutResearchSchema, type ScoutCheckDto, type ScoutIdeasDto, type ScoutResearchDto, researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
 @UseGuards(AuthGuard, TenantGuard)
 export class NewsController {
-  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService, @Inject(ContentImportService) private readonly imports: ContentImportService, @Inject(ResearchService) private readonly research: ResearchService) {}
+  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService, @Inject(ContentImportService) private readonly imports: ContentImportService, @Inject(ResearchService) private readonly research: ResearchService, @Inject(PageScoutService) private readonly scout: PageScoutService) {}
 
   // ---- คีย์ค้นเว็บ ----
   @Get('news/search-provider') @RequirePermission('content.read')
@@ -100,6 +101,16 @@ export class NewsController {
   researchWrite(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(researchWriteSchema)) dto: ResearchWriteDto, @RequestId() rid: string) { return this.research.write(t.workspaceId, u.id, id, dto, rid); }
   @Delete('news/research/:id') @RequirePermission('content.create')
   researchDelete(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.research.remove(t.workspaceId, u.id, id, rid); }
+
+  // ---- ผู้ช่วยหาเรื่องโพสต์ต่อเพจ ----
+  @Get('pages/:pageId/scout') @RequirePermission('content.read')
+  scoutGet(@Tenant() t: TenantContext, @Param('pageId') pageId: string) { return this.scout.get(t.workspaceId, pageId); }
+  @Post('pages/:pageId/scout/check') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  scoutCheck(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Body(new ZodPipe(scoutCheckSchema)) dto: ScoutCheckDto, @RequestId() rid: string) { return this.scout.check(t.workspaceId, u.id, pageId, dto, rid); }
+  @Post('pages/:pageId/scout/ideas') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  scoutIdeas(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Body(new ZodPipe(scoutIdeasSchema)) dto: ScoutIdeasDto, @RequestId() rid: string) { return this.scout.ideas(t.workspaceId, u.id, pageId, dto, rid); }
+  @Post('pages/:pageId/scout/ideas/:index/research') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  scoutResearch(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Param('index') index: string, @Body(new ZodPipe(scoutResearchSchema)) dto: ScoutResearchDto, @RequestId() rid: string) { return this.scout.researchIdea(t.workspaceId, u.id, pageId, Number(index) || 0, dto, rid); }
 }
 
 /** อ่าน body ดิบ (รูป/ข้อความ) พร้อมเพดาน — ใช้กับ content-type ที่ Nest ไม่ parse ให้ */

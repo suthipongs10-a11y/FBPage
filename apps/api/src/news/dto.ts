@@ -115,3 +115,17 @@ export const researchWriteSchema = z.object({
   checkOverride: modelOverrideSchema.optional(),
 });
 export type ResearchWriteDto = z.infer<typeof researchWriteSchema>;
+
+// ---- ผู้ช่วยหาเรื่องโพสต์ต่อเพจ ----
+export const scoutCheckSchema = z.object({ modelOverride: modelOverrideSchema.optional() }).default({});
+export type ScoutCheckDto = z.infer<typeof scoutCheckSchema>;
+export const scoutIdeasSchema = z.object({
+  /** ai = AI ค้นเว็บเอง · web = ค้น Tavily ตามคำค้นของโปรไฟล์เพจ */
+  mode: z.enum(['ai', 'web']).default('ai'),
+  count: z.number().int().min(3).max(12).default(6),
+  focus: z.string().trim().max(300).optional(),
+  modelOverride: modelOverrideSchema.optional(),
+});
+export type ScoutIdeasDto = z.infer<typeof scoutIdeasSchema>;
+export const scoutResearchSchema = z.object({ modelOverride: modelOverrideSchema.optional(), searchOverride: modelOverrideSchema.optional() }).default({});
+export type ScoutResearchDto = z.infer<typeof scoutResearchSchema>;

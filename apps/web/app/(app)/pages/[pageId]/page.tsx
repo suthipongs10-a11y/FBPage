@@ -52,6 +52,7 @@ export default function PageDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone={tone(page.tokenStatus)}>{t(`pages.status.${page.tokenStatus}` as MessageKey)}</Pill>
+          {live && can('ai.use') && <Link href={`/news?page=${page.id}`} className="rounded-lg bg-sky-500 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600">{t('sc.openPage')}</Link>}
           {live && <Button variant="ghost" disabled={busy === 'validate'} onClick={validate}>{t('pages.validate')}</Button>}
           {manage && live && <Button disabled={busy === 'sync'} onClick={sync}>{t('pages.sync')}</Button>}
           {manage && live && <Button variant="danger" disabled={busy === 'disc'} onClick={disconnect}>{t('pages.disconnect')}</Button>}

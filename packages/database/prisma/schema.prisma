@@ -222,6 +222,7 @@ model Workspace {
   contentInboxes    ContentInbox[]
   contentImports    ContentImport[]
   researchBriefs    ResearchBrief[]
+  pageScouts        PageScout[]
 }
 
 enum WorkspaceRole {
@@ -397,6 +398,7 @@ model FacebookPage {
   messengerConfig MessengerPageConfig?
   conversations   MessengerConversation[]
   leads           Lead[]
+  scout           PageScout?
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -1949,4 +1951,28 @@ model ResearchBrief {
   brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, createdAt])
+}
+
+/// ผู้ช่วยหาเรื่องโพสต์ต่อเพจ — "เช็คข้อมูลเพจ" (โปรไฟล์จากข้อมูลเพจ/โพสต์/คลังความรู้) + "หาเรื่องเหมาะ/เป็นกระแส" (ไอเดียพร้อมแหล่ง)
+model PageScout {
+  id          String    @id @default(cuid())
+  workspaceId String
+  pageId      String    @unique
+  /// ข้อเท็จจริงที่คำนวณเอง (ความครบของข้อมูลเพจ, ความถี่โพสต์, โพสต์เด่น) — metric ที่อ่านไม่ได้เป็น null
+  facts       Json?
+  /// ผลวิเคราะห์ของ AI: { summary, audience, pillars[], whatWorks[], gaps[], seasonalHooks[], avoid[], searchTopics[] }
+  profile     Json?
+  profiledAt  DateTime?
+  /// [{ title, why, trend, angle, format, kind, sources: [n], query, briefId? }]
+  ideas       Json?
+  /// แหล่งของไอเดีย [{ n, title, url, siteName }]
+  ideaSources Json?
+  scoutedAt   DateTime?
+  provider    String?
+  model       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  page      FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
 }
