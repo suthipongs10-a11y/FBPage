@@ -12,6 +12,7 @@ import { pageInWorkspace } from '@fbpm/database';
 import { pageCompleteness, type MetricSnapshot } from '@fbpm/facebook-core';
 import { canonicalNewsUrl } from '@fbpm/web-core';
 import { z } from 'zod';
+import { clip, upTo } from './lenient';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
@@ -27,25 +28,25 @@ const FORMATS = ['news', 'listicle', 'story', 'qa'] as const;
 const KINDS = ['trend', 'seasonal', 'evergreen', 'promo'] as const;
 
 const profileOut = z.object({
-  summary: z.string().min(1).max(800),
-  businessType: z.string().max(120).default(''),
-  audience: z.string().max(400).default(''),
-  location: z.string().max(120).nullable().default(null),
-  pillars: z.array(z.object({ name: z.string().min(1).max(80), why: z.string().max(300).default('') })).max(6).default([]),
-  whatWorks: z.array(z.string().max(300)).max(6).default([]),
-  gaps: z.array(z.string().max(300)).max(6).default([]),
-  seasonalHooks: z.array(z.string().max(200)).max(6).default([]),
-  avoid: z.array(z.string().max(200)).max(6).default([]),
-  searchTopics: z.array(z.object({ query: z.string().min(2).max(160), why: z.string().max(200).default('') })).min(1).max(6),
-  dataWarnings: z.array(z.string().max(300)).max(5).default([]),
+  summary: clip(800, 1),
+  businessType: clip(120).default(''),
+  audience: clip(400).default(''),
+  location: clip(120).nullable().default(null),
+  pillars: upTo(z.object({ name: clip(80, 1), why: clip(300).default('') }), 6).default([]),
+  whatWorks: upTo(clip(300), 6).default([]),
+  gaps: upTo(clip(300), 6).default([]),
+  seasonalHooks: upTo(clip(200), 6).default([]),
+  avoid: upTo(clip(200), 6).default([]),
+  searchTopics: upTo(z.object({ query: clip(160, 2), why: clip(200).default('') }), 6, 1),
+  dataWarnings: upTo(clip(300), 5).default([]),
 });
 type Profile = z.infer<typeof profileOut>;
 const idea = z.object({
-  title: z.string().min(1).max(160), why: z.string().max(400).default(''), trend: z.string().max(300).default(''),
-  angle: z.string().max(300).default(''), format: z.enum(FORMATS).catch('news'), kind: z.enum(KINDS).catch('evergreen'),
-  sources: z.array(z.number().int()).max(5).default([]), query: z.string().max(200).default(''),
+  title: clip(160, 1), why: clip(400).default(''), trend: clip(300).default(''),
+  angle: clip(300).default(''), format: z.enum(FORMATS).catch('news'), kind: z.enum(KINDS).catch('evergreen'),
+  sources: upTo(z.number().int(), 5).default([]), query: clip(200).default(''),
 });
-const ideasOut = z.object({ ideas: z.array(idea).min(1).max(12) });
+const ideasOut = z.object({ ideas: upTo(idea, 12, 1) });
 type Idea = z.infer<typeof idea> & { briefId?: string };
 interface IdeaSource { n: number; title: string; url: string; siteName: string | null }
 

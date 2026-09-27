@@ -11,6 +11,7 @@ import { brandInWorkspace } from '@fbpm/database';
 import { supportsWebSearch, type AiProviderId } from '@fbpm/ai-core';
 import { canonicalNewsUrl, fetchArticle, type Article } from '@fbpm/web-core';
 import { z } from 'zod';
+import { clip, upTo } from './lenient';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
@@ -39,24 +40,24 @@ const STYLE_GUIDE: Record<ResearchWriteDto['style'], string> = {
 
 interface SourceDoc { n: number; title: string; url: string | null; siteName: string | null; publishedAt: string | null; excerpt: string | null; fetched: boolean; text: string }
 type StoredSource = Omit<SourceDoc, 'text'>;
-const keyPoint = z.object({ text: z.string().min(1).max(400), sources: z.array(z.number().int()).max(10).default([]) });
+const keyPoint = z.object({ text: clip(400, 1), sources: upTo(z.number().int(), 10).default([]) });
 const briefOut = z.object({
-  headline: z.string().min(1).max(160), summary: z.string().min(1).max(1200),
-  keyPoints: z.array(keyPoint).min(1).max(15),
-  angles: z.array(z.object({ title: z.string().min(1).max(160), why: z.string().max(400).default('') })).max(6).default([]),
-  openQuestions: z.array(z.string().max(300)).max(6).default([]),
-  category: z.string().max(40).default('ทั่วไป'), risk: z.enum(RISK), riskReasons: z.array(z.string().max(200)).max(6).default([]),
+  headline: clip(160, 1), summary: clip(1200, 1),
+  keyPoints: upTo(keyPoint, 15, 1),
+  angles: upTo(z.object({ title: clip(160, 1), why: clip(400).default('') }), 6).default([]),
+  openQuestions: upTo(clip(300), 6).default([]),
+  category: clip(40).default('ทั่วไป'), risk: z.enum(RISK), riskReasons: upTo(clip(200), 6).default([]),
 });
 type Brief = z.infer<typeof briefOut>;
-const planOut = z.object({ queries: z.array(z.string().min(2).max(200)).min(1).max(4) });
-const writerOut = z.object({ posts: z.array(z.object({
-  title: z.string().min(1).max(120), caption: z.string().min(40).max(3000), hashtags: z.array(z.string().max(40)).max(5).default([]),
-  sourceIds: z.array(z.number().int()).max(10).default([]),
-  card: z.object({ kicker: z.string().max(24).optional(), headline: z.string().min(1).max(100), sub: z.string().max(150).optional() }),
-  photoQuery: z.string().max(80).optional(), imagePrompt: z.string().max(600).optional(), category: z.string().max(40).optional(),
-  risk: z.enum(RISK), riskReasons: z.array(z.string().max(200)).max(6).default([]), needsCheck: z.array(z.string().max(200)).max(8).default([]),
-})).min(1).max(5) });
-const checkOut = z.object({ results: z.array(z.object({ index: z.number().int(), unsupported: z.array(z.object({ claim: z.string().min(1).max(200), reason: z.string().max(300).default('') })).max(5).default([]) })).default([]) });
+const planOut = z.object({ queries: upTo(clip(200, 2), 4, 1) });
+const writerOut = z.object({ posts: upTo(z.object({
+  title: clip(120, 1), caption: clip(3000, 40), hashtags: upTo(clip(40), 5).default([]),
+  sourceIds: upTo(z.number().int(), 10).default([]),
+  card: z.object({ kicker: clip(24).optional(), headline: clip(100, 1), sub: clip(150).optional() }),
+  photoQuery: clip(80).optional(), imagePrompt: clip(600).optional(), category: clip(40).optional(),
+  risk: z.enum(RISK), riskReasons: upTo(clip(200), 6).default([]), needsCheck: upTo(clip(200), 8).default([]),
+}), 5, 1) });
+const checkOut = z.object({ results: z.array(z.object({ index: z.number().int(), unsupported: upTo(z.object({ claim: clip(200, 1), reason: clip(300).default('') }), 5).default([]) })).default([]) });
 
 const errMsg = (e: unknown) => (e as Error & { response?: { message?: string } }).response?.message ?? (e as Error).message;
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };

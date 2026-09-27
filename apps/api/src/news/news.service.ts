@@ -12,6 +12,7 @@ import { mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+import { clip, upTo } from './lenient';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
@@ -32,21 +33,21 @@ const SOURCE_SELECT = { id: true, brandId: true, kind: true, label: true, url: t
 const ITEM_SELECT = { id: true, brandId: true, sourceId: true, url: true, title: true, snippet: true, sourceName: true, publishedAt: true, fetchedAt: true, status: true, score: true, angle: true, contentId: true } as const;
 
 const RISK = ['LOW', 'HIGH'] as const;
-const suggestOut = z.object({ sources: z.array(z.object({ label: z.string().min(1).max(80), query: z.string().min(2).max(200) })).max(20) });
+const suggestOut = z.object({ sources: upTo(z.object({ label: clip(80, 1), query: clip(200, 2) }), 20) });
 const sha256Buf = (b: Buffer) => createHash('sha256').update(b).digest('hex');
-const shortlistOut = z.object({ picks: z.array(z.object({ id: z.string(), score: z.number().int().min(0).max(100), headlineTh: z.string().min(1).max(160), why: z.string().max(400), category: z.string().max(40), risk: z.enum(RISK), riskReasons: z.array(z.string().max(200)).max(6).default([]) })).max(20) });
+const shortlistOut = z.object({ picks: upTo(z.object({ id: z.string(), score: z.number().transform(n => Math.max(0, Math.min(100, Math.round(n)))), headlineTh: clip(160, 1), why: clip(400), category: clip(40), risk: z.enum(RISK), riskReasons: upTo(clip(200), 6).default([]) }), 20) });
 const writerOut = z.object({
-  title: z.string().min(1).max(120),
-  caption: z.string().min(40).max(2500),
-  hashtags: z.array(z.string().max(40)).max(5).default([]),
-  card: z.object({ kicker: z.string().max(24).optional(), headline: z.string().min(1).max(100), sub: z.string().max(150).optional() }),
+  title: clip(120, 1),
+  caption: clip(2500, 40),
+  hashtags: upTo(clip(40), 5).default([]),
+  card: z.object({ kicker: clip(24).optional(), headline: clip(100, 1), sub: clip(150).optional() }),
   risk: z.enum(RISK),
-  riskReasons: z.array(z.string().max(200)).max(6).default([]),
-  needsCheck: z.array(z.string().max(200)).max(8).default([]),
+  riskReasons: upTo(clip(200), 6).default([]),
+  needsCheck: upTo(clip(200), 8).default([]),
   /** คำสั่งภาพประกอบภาษาอังกฤษ (เชิงสัญลักษณ์ ไม่มีคนจริง ไม่มีตัวอักษร) */
-  imagePrompt: z.string().max(600).optional(),
+  imagePrompt: clip(600).optional(),
   /** คำค้นภาพถ่ายภาษาอังกฤษ 2–5 คำ สำหรับคลังภาพ (สิ่งของ/สถานที่/บรรยากาศ ไม่ใช่ชื่อคน) */
-  photoQuery: z.string().max(80).optional(),
+  photoQuery: clip(80).optional(),
 });
 type WriterOut = z.infer<typeof writerOut>;
 
