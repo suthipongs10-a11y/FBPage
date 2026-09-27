@@ -1,4 +1,4 @@
-import { PROVIDERS, type AIProvider, type AiMessage, type ChatRequest, type ChatResult, type ProviderConfig } from '../types';
+import { AiProviderError, PROVIDERS, type AIProvider, type AiMessage, type ChatRequest, type ChatResult, type ProviderConfig } from '../types';
 import { postJson } from './http';
 
 export function toGeminiContents(messages: AiMessage[]): unknown[] {
@@ -19,6 +19,14 @@ export function toGeminiContents(messages: AiMessage[]): unknown[] {
   return out;
 }
 
+/**
+ * Gemini 2.5+ เป็นโมเดล "คิดก่อนตอบ" — โทเค็นที่ใช้คิดนับรวมใน maxOutputTokens
+ * ถ้าไม่เผื่อไว้ งานที่ขอ JSON สั้น ๆ จะคิดจนหมดโควตาแล้วได้คำตอบว่าง/ขาดกลาง (ปัญหาที่เจอจริงกับ gemini-2.5-pro)
+ * จึงจำกัดงบคิดของ 2.5 และบวกที่เผื่อให้ทุกรุ่นที่คิดได้
+ */
+const THINKING_BUDGET = 2048;
+const thinkingHeadroom = (model: string) => (/gemini-2\.5/i.test(model) ? THINKING_BUDGET : /gemini-(3|[4-9])/i.test(model) ? 8192 : 0);
+
 export const geminiProvider: AIProvider = {
   async chat(cfg: ProviderConfig, req: ChatRequest): Promise<ChatResult> {
     const model = cfg.model || PROVIDERS.gemini.defaultModel;
@@ -26,15 +34,24 @@ export const geminiProvider: AIProvider = {
     const payload = {
       ...(req.system && { systemInstruction: { parts: [{ text: req.system }] } }),
       contents: toGeminiContents(req.messages),
-      generationConfig: { ...(req.maxTokens && { maxOutputTokens: req.maxTokens }), ...(req.temperature !== undefined && { temperature: req.temperature }), ...(req.jsonMode && { responseMimeType: 'application/json' }) },
+      generationConfig: {
+        ...(req.maxTokens && { maxOutputTokens: req.maxTokens + thinkingHeadroom(model) }),
+        ...(/gemini-2\.5/i.test(model) && { thinkingConfig: { thinkingBudget: THINKING_BUDGET } }),
+        ...(req.temperature !== undefined && { temperature: req.temperature }), ...(req.jsonMode && { responseMimeType: 'application/json' }),
+      },
       ...(req.tools?.length && { tools: [{ functionDeclarations: req.tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }] }),
     };
     const body = await postJson(url, { 'x-goog-api-key': cfg.apiKey }, payload, 'gemini', cfg.timeoutMs);
-    const parts: { text?: string; functionCall?: { name: string; args?: Record<string, unknown> } }[] = body.candidates?.[0]?.content?.parts ?? [];
+    const parts: { text?: string; thought?: boolean; functionCall?: { name: string; args?: Record<string, unknown> } }[] = (body.candidates?.[0]?.content?.parts ?? []).filter((p: { thought?: boolean }) => !p.thought);
+    const finish = body.candidates?.[0]?.finishReason as string | undefined;
+    if (!parts.some(p => p.text || p.functionCall)) {
+      // ตอบว่าง — บอกเหตุจริง (MAX_TOKENS = คิดจนหมดโควตาคำตอบ, SAFETY = ถูกกรอง) แทนข้อความกว้าง ๆ ว่า JSON อ่านไม่ได้
+      throw new AiProviderError(finish === 'MAX_TOKENS' ? `Gemini (${model}) ใช้โควตาคำตอบหมดก่อนตอบ — ลองใช้รุ่น flash หรือลดงานต่อครั้ง` : `Gemini (${model}) ไม่ได้ตอบกลับ (${finish ?? 'ไม่ทราบเหตุ'})`, 'gemini', 422);
+    }
     return {
       text: parts.filter(p => p.text).map(p => p.text).join('\n'),
       toolCalls: parts.filter(p => p.functionCall).map((p, i) => ({ id: `gem_${Date.now()}_${i}`, name: p.functionCall!.name, args: p.functionCall!.args ?? {} })),
-      usage: { input: body.usageMetadata?.promptTokenCount ?? null, output: body.usageMetadata?.candidatesTokenCount ?? null }, model, provider: 'gemini',
+      usage: { input: body.usageMetadata?.promptTokenCount ?? null, output: body.usageMetadata?.candidatesTokenCount == null ? null : body.usageMetadata.candidatesTokenCount + (body.usageMetadata.thoughtsTokenCount ?? 0) }, model, provider: 'gemini',
     };
   },
 };
