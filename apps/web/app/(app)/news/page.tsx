@@ -9,6 +9,15 @@ import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } fr
 const THEMES = ['dark', 'warm', 'ocean', 'gold', 'forest', 'default'];
 const TABS = ['SHORTLISTED', 'NEW', 'DRAFTED'] as const;
 const IMAGE_SOURCES = ['stock', 'ai', 'none'] as const;
+/** ชุดคำค้นสำเร็จรูปสำหรับเพจข่าวน่าสนใจรอบโลก (ค้นผ่าน Tavily) — ภาษาอังกฤษได้ข่าวต่างประเทศมากกว่า AI เขียนเป็นไทยให้เอง */
+const PRESET_QUERIES = [
+  { label: 'ข่าวแปลกรอบโลก', query: 'weird news around the world' },
+  { label: 'สัตว์น่ารัก/กู้ภัย', query: 'animal rescue heartwarming' },
+  { label: 'วิทยาศาสตร์', query: 'new scientific discovery' },
+  { label: 'อวกาศ', query: 'space discovery NASA' },
+  { label: 'สิ่งประดิษฐ์/เทคโนโลยี', query: 'amazing new invention technology' },
+  { label: 'เรื่องดีๆ ชวนอมยิ้ม', query: 'good news inspiring story' },
+];
 type ImageSource = (typeof IMAGE_SOURCES)[number];
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -27,6 +36,7 @@ export default function NewsPage() {
   const [src, setSrc] = useState({ kind: 'RSS' as 'RSS' | 'SEARCH', label: '', value: '' });
   const [max, setMax] = useState(5); const [aiResearch, setAiResearch] = useState(''); const [aiWriter, setAiWriter] = useState('');
   const [pageFor, setPageFor] = useState<Record<string, string>>({}); const [theme, setTheme] = useState('dark'); const [when, setWhen] = useState<Record<string, string>>({});
+  const [focus, setFocus] = useState('');
   const [imageSource, setImageSource] = useState<ImageSource>('stock'); const [aiImageModel, setAiImageModel] = useState('');
   const [slotOf, setSlotOf] = useState<Record<string, string>>({});
   const [auto, setAuto] = useState({ enabled: false, pageId: '', fetchEveryHours: 3, draftsPerDay: 3, minScore: 60, skipHighRisk: true, imageSource: 'none' as ImageSource, theme: 'dark', slots: '09:00, 12:30, 19:00' });
@@ -55,6 +65,13 @@ export default function NewsPage() {
   useEffect(() => { setItems(null); void load().catch(setError); }, [load]);
   const run = async (k: string, fn: () => Promise<string | void>) => { setBusy(k); setError(null); setNotice(''); try { const n = await fn(); if (n) setNotice(n); await load(); } catch (e) { setError(e); } finally { setBusy(''); } };
 
+  const suggest = () => run('suggest', async () => { const r = await api<{ added: number; model: string }>(`${base}/brands/${brandId}/news/sources/suggest`, { method: 'POST', body: { count: 5, ...(focus && { focus }) } }); return `AI เพิ่มคำค้น ${r.added} แหล่ง (${r.model}) — กด "ดึงข่าวตอนนี้" ได้เลย`; });
+  const addPreset = () => run('preset', async () => {
+    const have = new Set(sources.map(x => (x.query ?? '').toLowerCase()));
+    let n = 0;
+    for (const p of PRESET_QUERIES) { if (have.has(p.query.toLowerCase())) continue; await api(`${base}/brands/${brandId}/news/sources`, { method: 'POST', body: { kind: 'SEARCH', label: p.label, query: p.query } }); n++; }
+    return `เพิ่มคำค้นสำเร็จรูป ${n} แหล่ง`;
+  });
   const addSource = () => run('src', async () => { await api(`${base}/brands/${brandId}/news/sources`, { method: 'POST', body: src.kind === 'RSS' ? { kind: 'RSS', label: src.label, url: src.value } : { kind: 'SEARCH', label: src.label, query: src.value } }); setSrc({ ...src, label: '', value: '' }); });
   const toggle = (s: NewsSourceRow) => run(`tog:${s.id}`, async () => { await api(`${base}/news/sources/${s.id}`, { method: 'PATCH', body: { enabled: !s.enabled } }); });
   const remove = (s: NewsSourceRow) => run(`del:${s.id}`, async () => { await api(`${base}/news/sources/${s.id}`, { method: 'DELETE' }); });
@@ -111,6 +128,17 @@ export default function NewsPage() {
               <Input placeholder={t('news.label')} value={src.label} onChange={e => setSrc({ ...src, label: e.target.value })} />
               <Input placeholder={src.kind === 'RSS' ? 'https://…/rss.xml' : t('news.query')} value={src.value} onChange={e => setSrc({ ...src, value: e.target.value })} />
               <Button disabled={busy === 'src' || !src.label || !src.value} onClick={addSource}>{t('news.addSource')}</Button>
+            </div>
+          )}
+          {canWrite && (
+            <div className="mt-3 space-y-2 rounded-lg border border-slate-800 p-3">
+              <div className="text-sm font-semibold">{t('news.quickSources')}</div>
+              <p className="text-xs text-slate-400">{t('news.quickSourcesHelp')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {canAi && <><Input className="w-72" placeholder={t('news.suggestFocus')} value={focus} onChange={e => setFocus(e.target.value)} /><Button disabled={!!busy} onClick={suggest}>{busy === 'suggest' ? '…' : t('news.suggest')}</Button></>}
+                <Button variant="ghost" disabled={!!busy} onClick={addPreset}>{busy === 'preset' ? '…' : t('news.preset')}</Button>
+              </div>
+              {sources.some(x => x.kind === 'SEARCH') && <p className="text-xs text-amber-300">{t('news.quotaEstimate')} ≈ {sources.filter(x => x.kind === 'SEARCH' && x.enabled).length * Math.ceil(24 / (autoRow?.enabled ? autoRow.fetchEveryHours : 24)) * 30} {t('news.perMonth')}</p>}
             </div>
           )}
         </Card>

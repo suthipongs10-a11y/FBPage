@@ -53,3 +53,5 @@ export const automationSchema = z.object({
 });
 export type AutomationDto = z.infer<typeof automationSchema>;
 export const nextSlotSchema = z.object({ pageId: z.string().trim().min(1) });
+export const suggestSourcesSchema = z.object({ count: z.number().int().min(1).max(10).default(5), focus: z.string().trim().max(200).optional(), modelOverride: modelOverrideSchema.optional() }).default({ count: 5 });
+export type SuggestSourcesDto = z.infer<typeof suggestSourcesSchema>;

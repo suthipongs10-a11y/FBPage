@@ -9,7 +9,7 @@ import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { NewsService } from './news.service';
 import { NewsAutomationService } from './automation.service';
-import { automationSchema, providerQuerySchema, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
@@ -30,6 +30,8 @@ export class NewsController {
   sources(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.news.listSources(t.workspaceId, brandId); }
   @Post('brands/:brandId/news/sources') @RequirePermission('content.create')
   createSource(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(createSourceSchema)) dto: CreateSourceDto, @RequestId() rid: string) { return this.news.createSource(t.workspaceId, u.id, brandId, dto, rid); }
+  @Post('brands/:brandId/news/sources/suggest') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  suggestSources(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(suggestSourcesSchema)) dto: SuggestSourcesDto, @RequestId() rid: string) { return this.news.suggestSources(t.workspaceId, u.id, brandId, dto, rid); }
   @Patch('news/sources/:id') @RequirePermission('content.create')
   updateSource(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(updateSourceSchema)) dto: UpdateSourceDto, @RequestId() rid: string) { return this.news.updateSource(t.workspaceId, u.id, id, dto, rid); }
   @Delete('news/sources/:id') @RequirePermission('content.create')

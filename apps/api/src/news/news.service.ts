@@ -21,7 +21,7 @@ import { readFile } from 'node:fs/promises';
 import { MediaService } from '../media/media.service';
 import { MediaGenService } from '../media/media-gen.service';
 import { decryptSecret, encryptSecret } from '../common/crypto';
-import type { CreateSourceDto, DraftDto, ExternalProvider, ListItemsDto, SearchProviderDto, ShortlistDto, UpdateSourceDto } from './dto';
+import type { CreateSourceDto, DraftDto, ExternalProvider, SuggestSourcesDto, ListItemsDto, SearchProviderDto, ShortlistDto, UpdateSourceDto } from './dto';
 
 export const NEWS_SHORTLIST_PROMPT = 'news-shortlist-v1';
 export const NEWS_WRITER_PROMPT = 'news-writer-v1';
@@ -32,6 +32,7 @@ const SOURCE_SELECT = { id: true, brandId: true, kind: true, label: true, url: t
 const ITEM_SELECT = { id: true, brandId: true, sourceId: true, url: true, title: true, snippet: true, sourceName: true, publishedAt: true, fetchedAt: true, status: true, score: true, angle: true, contentId: true } as const;
 
 const RISK = ['LOW', 'HIGH'] as const;
+const suggestOut = z.object({ sources: z.array(z.object({ label: z.string().min(1).max(80), query: z.string().min(2).max(200) })).max(20) });
 const sha256Buf = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const shortlistOut = z.object({ picks: z.array(z.object({ id: z.string(), score: z.number().int().min(0).max(100), headlineTh: z.string().min(1).max(160), why: z.string().max(400), category: z.string().max(40), risk: z.enum(RISK), riskReasons: z.array(z.string().max(200)).max(6).default([]) })).max(20) });
 const writerOut = z.object({
@@ -139,6 +140,28 @@ export class NewsService {
     const s = await this.prisma.newsSource.create({ data: { workspaceId, brandId, kind: dto.kind, label: dto.label, url: dto.kind === 'RSS' ? dto.url : null, query: dto.kind === 'SEARCH' ? dto.query : null }, select: SOURCE_SELECT });
     await this.audit.log({ workspaceId, userId, action: 'news.source.create', resourceType: 'newsSource', resourceId: s.id, after: { kind: s.kind, label: s.label, url: s.url, query: s.query }, requestId });
     return s;
+  }
+
+  /** ให้ AI (บทบาท research) คิดคำค้นข่าวตามแนวเพจ → เพิ่มเป็นแหล่งแบบค้นเว็บ (ข้ามคำที่มีอยู่แล้ว) — ผู้ใช้ปิด/ลบทีหลังได้ */
+  async suggestSources(workspaceId: string, userId: string, brandId: string, dto: SuggestSourcesDto, requestId: string) {
+    const b = await this.brand(workspaceId, brandId);
+    const existing = await this.prisma.newsSource.findMany({ where: { brandId }, select: { query: true, label: true } });
+    const room = 30 - existing.length;
+    if (room <= 0) throw new UnprocessableEntityException('แหล่งข่าวต่อแบรนด์ได้สูงสุด 30 แหล่ง — ลบแหล่งที่ไม่ใช้ก่อน');
+    const out = await this.ai.structured({ workspaceId, userId, taskType: 'news.suggest_sources', role: 'research', requestId, promptVersion: 'news-sources-v1', override: dto.modelOverride ?? null, resourceType: 'brand', resourceId: brandId }, {
+      system: 'คุณคือบรรณาธิการที่วางแผนหาข่าวให้เพจ Facebook ภาษาไทย คิดคำค้นข่าวสำหรับเครื่องมือค้นข่าวล่าสุด (ผลลัพธ์ 3 วันล่าสุด) ให้ได้ข่าวหลากหลายที่ตรงกับคนอ่านของเพจ ผสมภาษาอังกฤษ (ได้ข่าวต่างประเทศมากกว่า) และภาษาไทย คำค้นสั้น 2–6 คำ เฉพาะเจาะจงพอจะได้ข่าวจริง ห้ามคำค้นเกี่ยวกับการเมือง สถาบัน ศาสนา หรือเจาะจงตัวบุคคล',
+      prompt: `เพจ/แบรนด์: ${b.name}\nแนวเพจ: ${b.description ?? b.industry ?? '-'}\nกลุ่มผู้อ่าน: ${b.targetAudience ?? 'คนไทยทั่วไป'}${dto.focus ? `\nเน้นเพิ่ม: ${dto.focus}` : ''}\nคำค้นที่มีอยู่แล้ว (ห้ามซ้ำ): ${existing.map(e => e.query ?? e.label).join(', ') || '-'}\nขอ ${Math.min(dto.count, room)} คำค้น`,
+      schemaDescription: '{ "sources": [{ "label": "ชื่อหมวดภาษาไทยสั้น ๆ", "query": "คำค้น" }] }',
+      validate: v => suggestOut.parse(v), maxTokens: 1500,
+    });
+    const seen = new Set(existing.map(e => (e.query ?? '').toLowerCase().trim()));
+    const created = [];
+    for (const x of out.result.data.sources.slice(0, Math.min(dto.count, room))) {
+      const q = x.query.trim(); if (!q || seen.has(q.toLowerCase())) continue; seen.add(q.toLowerCase());
+      created.push(await this.prisma.newsSource.create({ data: { workspaceId, brandId, kind: 'SEARCH', label: x.label.slice(0, 80), query: q.slice(0, 200) }, select: SOURCE_SELECT }));
+    }
+    await this.audit.log({ workspaceId, userId, action: 'news.source.suggest', resourceType: 'brand', resourceId: brandId, after: { added: created.length, provider: out.provider, model: out.model }, requestId });
+    return { added: created.length, sources: created, provider: out.provider, model: out.model };
   }
 
   async updateSource(workspaceId: string, userId: string, id: string, dto: UpdateSourceDto, requestId: string) {

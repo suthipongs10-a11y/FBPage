@@ -87,6 +87,21 @@ run('news room (integration)', () => {
     expect(list.json.map((s: { kind: string }) => s.kind)).toEqual(['RSS', 'SEARCH']);
   });
 
+  it('AI suggests search sources for the brand (research role), skipping duplicates', async () => {
+    ai.state.replies.push({ text: JSON.stringify({ sources: [
+      { label: 'ข่าวแปลก', query: 'ข่าวแปลกทั่วโลก' },   // ซ้ำกับที่มีอยู่ → ข้าม
+      { label: 'สัตว์น่ารัก', query: 'cute animal rescue' },
+      { label: 'อวกาศ', query: 'space discovery NASA' },
+    ] }) });
+    const r = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/sources/suggest`, { count: 3, focus: 'เรื่องชวนอมยิ้ม' });
+    expect(r.status).toBe(200); expect(r.json.added).toBe(2);
+    expect(ai.state.requests.at(-1)!.model).toBe('m-research');
+    const list = (await a.http('GET', `/workspaces/${wsA}/brands/${brandA}/news/sources`)).json as { kind: string; query: string | null; id: string }[];
+    expect(list.filter(s => s.kind === 'SEARCH').map(s => s.query)).toEqual(['ข่าวแปลกทั่วโลก', 'cute animal rescue', 'space discovery NASA']);
+    // ปิดไว้ก่อน ไม่ให้เปลี่ยนจำนวนข่าวในเทสต์ถัดไป
+    for (const s of list.filter(x => x.query && x.query !== 'ข่าวแปลกทั่วโลก')) await a.http('DELETE', `/workspaces/${wsA}/news/sources/${s.id}`);
+  });
+
   it('fetch: stores new items, dedupes the same story across sources, and a second fetch adds nothing', async () => {
     const r = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/fetch`);
     expect(r.status).toBe(200);
