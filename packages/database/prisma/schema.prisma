@@ -215,7 +215,7 @@ model Workspace {
   externalOps       ExternalOperation[]
   emailProvider     EmailProviderAccount?
   emailCampaigns    EmailCampaign[]
-  searchProvider    SearchProviderAccount?
+  searchProviders   SearchProviderAccount[]
   mediaConfigs      MediaModelConfig[]
   mediaJobs         MediaJob[]
   newsAutomations   NewsAutomation[]
@@ -1694,8 +1694,8 @@ model TikTokContentMetadata {
 /// คีย์ค้นเว็บของ workspace (ตอนนี้รองรับ Tavily) — เข้ารหัสด้วย AUTH_SECRET ห้ามอยู่ใน select/response/audit
 model SearchProviderAccount {
   id          String    @id @default(cuid())
-  workspaceId String    @unique
-  /// tavily
+  workspaceId String
+  /// tavily (ค้นข่าว) | pexels (คลังภาพถ่ายฟรี)
   provider    String    @default("tavily")
   apiKeyEnc   String
   keyHint     String?
@@ -1709,6 +1709,8 @@ model SearchProviderAccount {
   updatedAt   DateTime  @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
 }
 
 /// แหล่งข่าวของแบรนด์: RSS (url) หรือคำค้น (query ผ่าน SearchProviderAccount)
@@ -1831,7 +1833,8 @@ model NewsAutomation {
   minScore        Int       @default(60)
   /// ข้ามข่าวที่ AI ติดป้ายเสี่ยง (ต้องคัด/เขียนด้วยมือแทน)
   skipHighRisk    Boolean   @default(true)
-  aiImage         Boolean   @default(false)
+  /// ภาพประกอบ: none | stock (ภาพถ่ายจากคลังภาพฟรี) | ai (ภาพจาก AI)
+  imageSource     String    @default("none")
   theme           String    @default("dark")
   /// ช่องเวลาโพสต์ของเพจ "HH:MM" — ใช้เสนอเวลาตอนกดอนุมัติ
   postingSlots    String[]  @default(["09:00", "12:30", "19:00"])

@@ -16,7 +16,7 @@ export const THEMES: Record<string, Theme> = {
 };
 export const THEME_NAMES = Object.keys(THEMES);
 
-export interface CardData { theme?: string; kicker?: string; footer?: string; brand?: string; big?: string; bigUnit?: string; quote?: string; sub?: string; title?: string; lead?: string; rows?: { label: string; note?: string; old?: string | number | null; new: string | number; unit?: string }[]; items?: { title: string; text?: string }[]; svg?: string; punch?: string; stat?: string; accent?: string; photo?: string }
+export interface CardData { theme?: string; kicker?: string; footer?: string; brand?: string; big?: string; bigUnit?: string; quote?: string; sub?: string; title?: string; lead?: string; rows?: { label: string; note?: string; old?: string | number | null; new: string | number; unit?: string }[]; items?: { title: string; text?: string }[]; svg?: string; punch?: string; stat?: string; accent?: string; photo?: string; photoLabel?: string }
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const rich = (s: unknown) => esc(s).replace(/\n/g, '<br>').replace(/\*(.+?)\*/g, '<span class="hl">$1</span>');
@@ -63,10 +63,10 @@ const TEMPLATES: Record<CardTemplate, Tpl> = {
     const n = (d.title ?? '').length;
     const photo = d.photo && /^data:image\/(png|jpeg|webp);base64,/.test(d.photo) ? d.photo : '';
     if (photo) {
-      // ภาพประกอบครึ่งบน (AI สร้าง) + หัวข่าวครึ่งล่าง — ติดป้าย "ภาพประกอบจาก AI" เสมอ
+      // ภาพประกอบครึ่งบน + หัวข่าวครึ่งล่าง — ติดป้ายที่มาของภาพเสมอ (AI หรือเครดิตช่างภาพ)
       return {
         css: `.card{padding:0!important}.ph{height:540px;background:url('${photo}') center/cover no-repeat;position:relative}.ph:after{content:'';position:absolute;left:0;right:0;bottom:0;height:160px;background:linear-gradient(transparent,${t.bg1})}.ai{position:absolute;right:24px;top:22px;background:rgba(0,0,0,.55);color:#fff;font-size:22px;padding:6px 16px;border-radius:100px;z-index:2}.body{padding:10px 74px 0}.body .kicker{display:inline-block;margin-top:-6px}h1{font-size:${n > 70 ? 56 : n > 44 ? 64 : 74}px;font-weight:700;line-height:1.24;margin-top:22px}.sub{font-size:32px;color:${t.dim};margin-top:18px;line-height:1.5}`,
-        body: `<div class="ph"><div class="ai">ภาพประกอบจาก AI</div></div><div class="body">${d.kicker ? `<div class="kicker">${esc(d.kicker)}</div>` : ''}<h1>${rich(d.title)}</h1>${d.sub ? `<div class="sub">${rich(d.sub)}</div>` : ''}</div>`,
+        body: `<div class="ph"><div class="ai">${esc(d.photoLabel || 'ภาพประกอบจาก AI')}</div></div><div class="body">${d.kicker ? `<div class="kicker">${esc(d.kicker)}</div>` : ''}<h1>${rich(d.title)}</h1>${d.sub ? `<div class="sub">${rich(d.sub)}</div>` : ''}</div>`,
       };
     }
     return {

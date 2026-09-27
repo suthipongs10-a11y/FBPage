@@ -4,7 +4,11 @@ import { modelOverrideSchema } from '../ai/dto';
 
 export const NEWS_STATUSES = ['NEW', 'SHORTLISTED', 'DRAFTED', 'DISMISSED'] as const;
 
-export const searchProviderSchema = z.object({ provider: z.literal('tavily').default('tavily'), apiKey: z.string().trim().min(8).max(300) });
+export const EXTERNAL_PROVIDERS = ['tavily', 'pexels'] as const;
+export type ExternalProvider = (typeof EXTERNAL_PROVIDERS)[number];
+export const IMAGE_SOURCES = ['none', 'stock', 'ai'] as const;
+export const searchProviderSchema = z.object({ provider: z.enum(EXTERNAL_PROVIDERS).default('tavily'), apiKey: z.string().trim().min(8).max(300) });
+export const providerQuerySchema = z.object({ provider: z.enum(EXTERNAL_PROVIDERS).default('tavily') });
 export type SearchProviderDto = z.infer<typeof searchProviderSchema>;
 
 export const createSourceSchema = z.discriminatedUnion('kind', [
@@ -30,6 +34,8 @@ export const draftSchema = z.object({
   modelOverride: modelOverrideSchema.optional(),
   /** ใส่ภาพประกอบจาก AI ลงการ์ด (ใช้โมเดลภาพที่ตั้งไว้ หรือ imageOverride) */
   aiImage: z.boolean().default(false),
+  /** แหล่งภาพประกอบ: none | stock (ภาพถ่ายจริงจากคลังภาพฟรี) | ai — ไม่ระบุ = ตาม aiImage (แบบเดิม) */
+  imageSource: z.enum(IMAGE_SOURCES).optional(),
   imageOverride: modelOverrideSchema.optional(),
 });
 export type DraftDto = z.infer<typeof draftSchema>;
@@ -41,7 +47,7 @@ export const automationSchema = z.object({
   draftsPerDay: z.number().int().min(0).max(20).default(3),
   minScore: z.number().int().min(0).max(100).default(60),
   skipHighRisk: z.boolean().default(true),
-  aiImage: z.boolean().default(false),
+  imageSource: z.enum(IMAGE_SOURCES).default('none'),
   theme: z.enum(THEME_NAMES as [string, ...string[]]).default('dark'),
   postingSlots: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'รูปแบบเวลา HH:MM')).max(8).default(['09:00', '12:30', '19:00']),
 });

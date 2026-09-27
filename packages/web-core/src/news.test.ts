@@ -63,3 +63,20 @@ describe('news fetching (mock server)', () => {
     await expect(tavilySearch('WRONG', 'x', { baseUrl: `${mock.url}/tavily` })).rejects.toThrow(/API key/);
   });
 });
+
+describe('stock photos (mock Pexels)', () => {
+  let mock: Awaited<ReturnType<typeof startMockWeb>>;
+  beforeAll(async () => { mock = await startMockWeb(); });
+  afterAll(() => mock.server.close());
+  it('searches with the key in the Authorization header and downloads a verified image', async () => {
+    const { pexelsSearch, downloadImage } = await import('./stock-photos');
+    const r = await pexelsSearch('PEXELS_OK', 'elephant forest', { baseUrl: `${mock.url}/pexels` });
+    expect(r[0]).toMatchObject({ photographer: 'Somsri Camera', provider: 'pexels' });
+    expect(mock.state.news.pexelsQueries.at(-1)).toBe('elephant forest');
+    const img = await downloadImage(r[0]!.imageUrl, { allowPrivate: true });
+    expect(img.mimeType).toBe('image/png');
+    await expect(downloadImage(r[0]!.imageUrl)).rejects.toThrow(/ภายใน/);
+    await expect(downloadImage(`${mock.url}/news/rss.xml`, { allowPrivate: true })).rejects.toThrow(/ไม่ใช่ภาพ/);
+    await expect(pexelsSearch('WRONG', 'x', { baseUrl: `${mock.url}/pexels` })).rejects.toThrow(/API key/);
+  });
+});

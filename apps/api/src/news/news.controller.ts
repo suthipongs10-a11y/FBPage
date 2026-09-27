@@ -9,7 +9,7 @@ import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { NewsService } from './news.service';
 import { NewsAutomationService } from './automation.service';
-import { automationSchema, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { automationSchema, providerQuerySchema, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
@@ -19,11 +19,11 @@ export class NewsController {
 
   // ---- คีย์ค้นเว็บ ----
   @Get('news/search-provider') @RequirePermission('content.read')
-  provider(@Tenant() t: TenantContext) { return this.news.getProvider(t.workspaceId); }
+  provider(@Tenant() t: TenantContext, @Query(new ZodPipe(providerQuerySchema)) q: z.infer<typeof providerQuerySchema>) { return this.news.getProvider(t.workspaceId, q.provider); }
   @Put('news/search-provider') @RequirePermission('ai.configure')
   setProvider(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(searchProviderSchema)) dto: SearchProviderDto, @RequestId() rid: string) { return this.news.setProvider(t.workspaceId, u.id, dto, rid); }
   @Delete('news/search-provider') @RequirePermission('ai.configure')
-  removeProvider(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @RequestId() rid: string) { return this.news.removeProvider(t.workspaceId, u.id, rid); }
+  removeProvider(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Query(new ZodPipe(providerQuerySchema)) q: z.infer<typeof providerQuerySchema>, @RequestId() rid: string) { return this.news.removeProvider(t.workspaceId, u.id, q.provider, rid); }
 
   // ---- แหล่งข่าว ----
   @Get('brands/:brandId/news/sources') @RequirePermission('content.read')

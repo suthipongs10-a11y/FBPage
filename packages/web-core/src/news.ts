@@ -77,7 +77,7 @@ function checkTarget(raw: string, allowPrivate = false): URL {
 }
 
 /** GET แบบสุภาพ: ตรวจ SSRF ทุก hop (redirect: manual), timeout, เพดานขนาดแบบนับไบต์ระหว่างอ่าน */
-export async function politeFetchText(url: string, o: NewsFetchOptions = {}): Promise<{ text: string; finalUrl: string; contentType: string }> {
+export async function politeFetchBytes(url: string, o: NewsFetchOptions & { accept?: string } = {}): Promise<{ bytes: Buffer; finalUrl: string; contentType: string }> {
   const f = o.fetchImpl ?? fetch; const maxBytes = o.maxBytes ?? 2_000_000;
   let current = url;
   for (let hop = 0; hop <= (o.maxRedirects ?? 3); hop++) {
@@ -85,7 +85,7 @@ export async function politeFetchText(url: string, o: NewsFetchOptions = {}): Pr
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), o.timeoutMs ?? 15_000);
     try {
       let res: Response;
-      try { res = await f(current, { headers: { 'user-agent': USER_AGENT, accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5' }, redirect: 'manual', signal: ctl.signal }); }
+      try { res = await f(current, { headers: { 'user-agent': USER_AGENT, accept: o.accept ?? 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5' }, redirect: 'manual', signal: ctl.signal }); }
       catch (e) { throw new WebError((e as Error).name === 'AbortError' ? 'หมดเวลารอ' : `เชื่อมต่อไม่ได้: ${(e as Error).message}`, 'network'); }
       const loc = res.headers.get('location');
       if (res.status >= 300 && res.status < 400 && loc) { await res.body?.cancel(); current = new URL(loc, current).toString(); continue; }
@@ -96,10 +96,14 @@ export async function politeFetchText(url: string, o: NewsFetchOptions = {}): Pr
         size += value.byteLength; if (size > maxBytes) { await reader.cancel(); throw new WebError(`ไฟล์ใหญ่เกิน ${Math.round(maxBytes / 1000)} KB`, 'invalid'); }
         chunks.push(value);
       }
-      return { text: Buffer.concat(chunks).toString('utf8'), finalUrl: current, contentType: res.headers.get('content-type') ?? '' };
+      return { bytes: Buffer.concat(chunks), finalUrl: current, contentType: res.headers.get('content-type') ?? '' };
     } finally { clearTimeout(timer); }
   }
   throw new WebError('redirect มากเกินไป', 'invalid');
+}
+export async function politeFetchText(url: string, o: NewsFetchOptions = {}): Promise<{ text: string; finalUrl: string; contentType: string }> {
+  const r = await politeFetchBytes(url, o);
+  return { text: r.bytes.toString('utf8'), finalUrl: r.finalUrl, contentType: r.contentType };
 }
 
 /** ดึงฟีด: เคารพ robots.txt ของโฮสต์ แล้วแปลงเป็นรายการข่าว */

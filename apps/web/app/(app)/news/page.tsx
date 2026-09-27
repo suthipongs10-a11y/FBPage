@@ -8,6 +8,8 @@ import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } fr
 
 const THEMES = ['dark', 'warm', 'ocean', 'gold', 'forest', 'default'];
 const TABS = ['SHORTLISTED', 'NEW', 'DRAFTED'] as const;
+const IMAGE_SOURCES = ['stock', 'ai', 'none'] as const;
+type ImageSource = (typeof IMAGE_SOURCES)[number];
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const pad = (n: number) => String(n).padStart(2, '0');
 /** ชั่วโมงถัดไปที่ห่างจากตอนนี้อย่างน้อย 30 นาที ในเวลาเครื่อง — ค่าเริ่มต้นของช่องตั้งเวลา */
@@ -20,14 +22,14 @@ export default function NewsPage() {
   const base = `/workspaces/${ws.id}`;
   const [pages, setPages] = useState<PageRow[] | null>(null); const [brandId, setBrandId] = useState('');
   const [sources, setSources] = useState<NewsSourceRow[]>([]); const [items, setItems] = useState<NewsItemRow[] | null>(null);
-  const [provider, setProvider] = useState<SearchProviderView | null>(null); const [conns, setConns] = useState<AiConnectionsView | null>(null);
+  const [conns, setConns] = useState<AiConnectionsView | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>('SHORTLISTED');
-  const [src, setSrc] = useState({ kind: 'RSS' as 'RSS' | 'SEARCH', label: '', value: '' }); const [key, setKey] = useState('');
+  const [src, setSrc] = useState({ kind: 'RSS' as 'RSS' | 'SEARCH', label: '', value: '' });
   const [max, setMax] = useState(5); const [aiResearch, setAiResearch] = useState(''); const [aiWriter, setAiWriter] = useState('');
   const [pageFor, setPageFor] = useState<Record<string, string>>({}); const [theme, setTheme] = useState('dark'); const [when, setWhen] = useState<Record<string, string>>({});
-  const [aiImage, setAiImage] = useState(false); const [aiImageModel, setAiImageModel] = useState('');
+  const [imageSource, setImageSource] = useState<ImageSource>('stock'); const [aiImageModel, setAiImageModel] = useState('');
   const [slotOf, setSlotOf] = useState<Record<string, string>>({});
-  const [auto, setAuto] = useState({ enabled: false, pageId: '', fetchEveryHours: 3, draftsPerDay: 3, minScore: 60, skipHighRisk: true, aiImage: false, theme: 'dark', slots: '09:00, 12:30, 19:00' });
+  const [auto, setAuto] = useState({ enabled: false, pageId: '', fetchEveryHours: 3, draftsPerDay: 3, minScore: 60, skipHighRisk: true, imageSource: 'none' as ImageSource, theme: 'dark', slots: '09:00, 12:30, 19:00' });
   const [autoRow, setAutoRow] = useState<NewsAutomationRow | null>(null);
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
 
@@ -36,15 +38,15 @@ export default function NewsPage() {
   const modelOptions = (conns?.connections ?? []).filter(c => c.status !== 'DISABLED').flatMap(c => (c.models.length ? c.models : ['']).map(m => ({ value: `${c.id}|${m}`, label: `${c.label}${m ? ` · ${m}` : ''}` })));
 
   useEffect(() => {
-    Promise.all([api<PageRow[]>(`${base}/pages`), api<SearchProviderView>(`${base}/news/search-provider`), can('ai.use') ? api<AiConnectionsView>(`${base}/ai/connections`) : Promise.resolve(null)])
-      .then(([p, sp, c]) => { const live = p.filter(x => !x.disconnectedAt); setPages(live); setProvider(sp); setConns(c); setBrandId(b => b || live[0]?.brand.id || ''); })
+    Promise.all([api<PageRow[]>(`${base}/pages`), can('ai.use') ? api<AiConnectionsView>(`${base}/ai/connections`) : Promise.resolve(null)])
+      .then(([p, c]) => { const live = p.filter(x => !x.disconnectedAt); setPages(live); setConns(c); setBrandId(b => b || live[0]?.brand.id || ''); })
       .catch(setError);
   }, [base, can]);
   const load = useCallback(async () => {
     if (!brandId) return;
     const [s, i, au] = await Promise.all([api<NewsSourceRow[]>(`${base}/brands/${brandId}/news/sources`), api<NewsItemRow[]>(`${base}/news/items?brandId=${brandId}&status=${tab}`), api<NewsAutomationRow | null>(`${base}/brands/${brandId}/news/automation`)]);
     setSources(s); setItems(i); setAutoRow(au);
-    if (au) setAuto({ enabled: au.enabled, pageId: au.pageId, fetchEveryHours: au.fetchEveryHours, draftsPerDay: au.draftsPerDay, minScore: au.minScore, skipHighRisk: au.skipHighRisk, aiImage: au.aiImage, theme: au.theme, slots: au.postingSlots.join(', ') });
+    if (au) setAuto({ enabled: au.enabled, pageId: au.pageId, fetchEveryHours: au.fetchEveryHours, draftsPerDay: au.draftsPerDay, minScore: au.minScore, skipHighRisk: au.skipHighRisk, imageSource: au.imageSource as ImageSource, theme: au.theme, slots: au.postingSlots.join(', ') });
     // เวลาที่เสนอตอนอนุมัติ = ช่องเวลาว่างถัดไปของแต่ละเพจ
     const pageIds = [...new Set(i.map(x => x.content?.status === 'READY_FOR_APPROVAL' ? x.content.pageId : null).filter((x): x is string => !!x))];
     const slots = await Promise.all(pageIds.map(id => api<{ scheduledLocal: string | null }>(`${base}/news/next-slot?pageId=${id}`).then(r => [id, r.scheduledLocal ?? ''] as const).catch(() => [id, ''] as const)));
@@ -57,10 +59,9 @@ export default function NewsPage() {
   const toggle = (s: NewsSourceRow) => run(`tog:${s.id}`, async () => { await api(`${base}/news/sources/${s.id}`, { method: 'PATCH', body: { enabled: !s.enabled } }); });
   const remove = (s: NewsSourceRow) => run(`del:${s.id}`, async () => { await api(`${base}/news/sources/${s.id}`, { method: 'DELETE' }); });
   const fetchNow = () => run('fetch', async () => { const r = await api<{ added: number; sources: { error: string | null }[] }>(`${base}/brands/${brandId}/news/fetch`, { method: 'POST' }); const bad = r.sources.filter(x => x.error).length; setTab('NEW'); return `${t('news.fetched')} +${r.added}${bad ? ` · ${bad} แหล่งมีปัญหา` : ''}`; });
-  const saveKey = () => run('key', async () => { setProvider(await api<SearchProviderView>(`${base}/news/search-provider`, { method: 'PUT', body: { apiKey: key } })); setKey(''); });
   const shortlist = () => run('short', async () => { const r = await api<{ picked: number; model?: string }>(`${base}/brands/${brandId}/news/shortlist`, { method: 'POST', body: { max, ...(toOverride(aiResearch) && { modelOverride: toOverride(aiResearch) }) } }); setTab('SHORTLISTED'); return `AI คัดได้ ${r.picked} ข่าว${r.model ? ` (${r.model})` : ''}`; });
   const write = (i: NewsItemRow) => run(`w:${i.id}`, async () => {
-    const r = await api<{ needsCheck: string[]; risk: string; cardError: string | null; imageError: string | null; model: string }>(`${base}/news/items/${i.id}/draft`, { method: 'POST', body: { pageId: pageFor[i.id] || brandPages[0]?.id, theme, aiImage, ...(toOverride(aiWriter) && { modelOverride: toOverride(aiWriter) }), ...(aiImage && toOverride(aiImageModel) && { imageOverride: toOverride(aiImageModel) }) } });
+    const r = await api<{ needsCheck: string[]; risk: string; cardError: string | null; imageError: string | null; model: string }>(`${base}/news/items/${i.id}/draft`, { method: 'POST', body: { pageId: pageFor[i.id] || brandPages[0]?.id, theme, imageSource, ...(toOverride(aiWriter) && { modelOverride: toOverride(aiWriter) }), ...(imageSource === 'ai' && toOverride(aiImageModel) && { imageOverride: toOverride(aiImageModel) }) } });
     setTab('DRAFTED');
     return `เขียนเสร็จ (${r.model}) — รออนุมัติ${r.needsCheck.length ? ` · มี ${r.needsCheck.length} จุดต้องยืนยัน` : ''}${r.imageError ? ` · ${t('news.imageError')}: ${r.imageError}` : ''}${r.cardError ? ` · ${t('news.cardError')}: ${r.cardError}` : ''}`;
   });
@@ -74,7 +75,7 @@ export default function NewsPage() {
   });
   const saveAuto = () => run('auto', async () => {
     const slots = auto.slots.split(',').map(x => x.trim()).filter(Boolean);
-    await api(`${base}/brands/${brandId}/news/automation`, { method: 'PUT', body: { enabled: auto.enabled, pageId: auto.pageId || brandPages[0]?.id, fetchEveryHours: auto.fetchEveryHours, draftsPerDay: auto.draftsPerDay, minScore: auto.minScore, skipHighRisk: auto.skipHighRisk, aiImage: auto.aiImage, theme: auto.theme, postingSlots: slots } });
+    await api(`${base}/brands/${brandId}/news/automation`, { method: 'PUT', body: { enabled: auto.enabled, pageId: auto.pageId || brandPages[0]?.id, fetchEveryHours: auto.fetchEveryHours, draftsPerDay: auto.draftsPerDay, minScore: auto.minScore, skipHighRisk: auto.skipHighRisk, imageSource: auto.imageSource, theme: auto.theme, postingSlots: slots } });
     return t('common.save');
   });
   const runAuto = () => run('autorun', async () => { const r = await api<{ fetched: number; shortlisted: number; drafted: number; errors: string[] }>(`${base}/brands/${brandId}/news/automation/run`, { method: 'POST' }); setTab('DRAFTED'); return `+${r.fetched} ข่าว · คัด ${r.shortlisted} · เขียน ${r.drafted}${r.errors.length ? ` · ${r.errors[0]}` : ''}`; });
@@ -113,11 +114,10 @@ export default function NewsPage() {
             </div>
           )}
         </Card>
-        <Card title={t('news.searchKey')}>
-          <p className="text-xs text-slate-400">{t('news.searchKeyHelp')}</p>
-          <div className="mt-2 text-sm">{provider?.configured ? <div className="space-y-1"><Pill tone={provider.status === 'OK' ? 'ok' : provider.status === 'UNKNOWN' ? 'muted' : 'bad'}>{provider.status}</Pill> <span className="text-slate-400">{provider.keyHint}</span><div className="text-xs text-slate-500">{t('news.calls')} {provider.callCount}</div>{provider.lastError && <div className="text-xs text-rose-400">{provider.lastError}</div>}</div> : <span className="text-slate-400">{t('news.searchKeyNone')}</span>}</div>
-          {can('ai.configure') && <div className="mt-2 flex gap-2"><Input type="password" autoComplete="off" placeholder="tvly-…" value={key} onChange={e => setKey(e.target.value)} /><Button disabled={busy === 'key' || key.length < 8} onClick={saveKey}>{t('common.save')}</Button></div>}
-        </Card>
+        <div className="space-y-3">
+          <ProviderKeyCard base={base} provider="tavily" title={t('news.searchKey')} help={t('news.searchKeyHelp')} placeholder="tvly-…" canConfigure={can('ai.configure')} />
+          <ProviderKeyCard base={base} provider="pexels" title={t('news.photoKey')} help={t('news.photoKeyHelp')} placeholder="Pexels API key" canConfigure={can('ai.configure')} />
+        </div>
       </div>
 
       {canAi && (
@@ -130,8 +130,8 @@ export default function NewsPage() {
             <Button disabled={busy === 'short'} onClick={shortlist}>{busy === 'short' ? '…' : t('news.shortlist')}</Button>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={aiImage} onChange={e => setAiImage(e.target.checked)} /> {t('news.aiImage')}</label>
-            {aiImage && <div className="w-72"><Select value={aiImageModel} onChange={e => setAiImageModel(e.target.value)}><option value="">{t('news.aiImageModel')}: {t('news.aiDefault')}</option>{modelOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></div>}
+            <div className="w-64"><Select value={imageSource} onChange={e => setImageSource(e.target.value as ImageSource)}>{IMAGE_SOURCES.map(x => <option key={x} value={x}>{t(`news.img.${x}` as MessageKey)}</option>)}</Select></div>
+            {imageSource === 'ai' && <div className="w-72"><Select value={aiImageModel} onChange={e => setAiImageModel(e.target.value)}><option value="">{t('news.aiImageModel')}: {t('news.aiDefault')}</option>{modelOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></div>}
           </div>
         </Card>
       )}
@@ -150,7 +150,7 @@ export default function NewsPage() {
             <Field label={t('news.theme')}><Select value={auto.theme} onChange={e => setAuto({ ...auto, theme: e.target.value })}>{THEMES.map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
             <div className="flex flex-col gap-1 text-sm">
               <label className="flex items-center gap-2"><input type="checkbox" checked={auto.skipHighRisk} onChange={e => setAuto({ ...auto, skipHighRisk: e.target.checked })} /> {t('news.skipHigh')}</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={auto.aiImage} onChange={e => setAuto({ ...auto, aiImage: e.target.checked })} /> {t('news.aiImage')}</label>
+              <Select value={auto.imageSource} onChange={e => setAuto({ ...auto, imageSource: e.target.value as ImageSource })}>{IMAGE_SOURCES.map(x => <option key={x} value={x}>{t(`news.img.${x}` as MessageKey)}</option>)}</Select>
             </div>
             <Button disabled={busy === 'auto' || !brandPages.length} onClick={saveAuto}>{t('common.save')}</Button>
           </div>
@@ -210,5 +210,21 @@ export default function NewsPage() {
         })}</div>
       )}
     </div>
+  );
+}
+
+/** คีย์ผู้ให้บริการภายนอกของห้องข่าว (Tavily ค้นข่าว / Pexels คลังภาพ) — เข้ารหัสฝั่งเซิร์ฟเวอร์ แสดงแค่ 4 ตัวท้าย */
+function ProviderKeyCard({ base, provider, title, help, placeholder, canConfigure }: { base: string; provider: 'tavily' | 'pexels'; title: string; help: string; placeholder: string; canConfigure: boolean }) {
+  const [view, setView] = useState<SearchProviderView | null>(null); const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+  useEffect(() => { api<SearchProviderView>(`${base}/news/search-provider?provider=${provider}`).then(setView).catch(setError); }, [base, provider]);
+  const save = async () => { setBusy(true); setError(null); try { setView(await api<SearchProviderView>(`${base}/news/search-provider`, { method: 'PUT', body: { provider, apiKey: key } })); setKey(''); } catch (e) { setError(e); } finally { setBusy(false); } };
+  return (
+    <Card title={title}>
+      <p className="text-xs text-slate-400">{help}</p>
+      <div className="mt-2 text-sm">{view?.configured ? <div className="space-y-1"><Pill tone={view.status === 'OK' ? 'ok' : view.status === 'UNKNOWN' ? 'muted' : 'bad'}>{view.status}</Pill> <span className="text-slate-400">{view.keyHint}</span><div className="text-xs text-slate-500">{t('news.calls')} {view.callCount}</div>{view.lastError && <div className="text-xs text-rose-400">{view.lastError}</div>}</div> : <span className="text-slate-400">{t('news.searchKeyNone')}</span>}</div>
+      <ErrorBox error={error} />
+      {canConfigure && <div className="mt-2 flex gap-2"><Input type="password" autoComplete="off" placeholder={placeholder} value={key} onChange={e => setKey(e.target.value)} /><Button disabled={busy || key.length < 8} onClick={save}>{t('common.save')}</Button></div>}
+    </Card>
   );
 }

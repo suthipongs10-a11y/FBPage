@@ -6,7 +6,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@fbpm/database';
 import { brandInWorkspace, pageInWorkspace } from '@fbpm/database';
-import { WebError, canonicalNewsUrl, fetchFeed, isPrivateHost, normalizeTitle, sha256, tavilySearch, type FeedEntry } from '@fbpm/web-core';
+import { WebError, canonicalNewsUrl, downloadImage, fetchFeed, isPrivateHost, normalizeTitle, pexelsSearch, sha256, tavilySearch, type FeedEntry } from '@fbpm/web-core';
+import { createHash } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
@@ -17,7 +21,7 @@ import { readFile } from 'node:fs/promises';
 import { MediaService } from '../media/media.service';
 import { MediaGenService } from '../media/media-gen.service';
 import { decryptSecret, encryptSecret } from '../common/crypto';
-import type { CreateSourceDto, DraftDto, ListItemsDto, SearchProviderDto, ShortlistDto, UpdateSourceDto } from './dto';
+import type { CreateSourceDto, DraftDto, ExternalProvider, ListItemsDto, SearchProviderDto, ShortlistDto, UpdateSourceDto } from './dto';
 
 export const NEWS_SHORTLIST_PROMPT = 'news-shortlist-v1';
 export const NEWS_WRITER_PROMPT = 'news-writer-v1';
@@ -28,6 +32,7 @@ const SOURCE_SELECT = { id: true, brandId: true, kind: true, label: true, url: t
 const ITEM_SELECT = { id: true, brandId: true, sourceId: true, url: true, title: true, snippet: true, sourceName: true, publishedAt: true, fetchedAt: true, status: true, score: true, angle: true, contentId: true } as const;
 
 const RISK = ['LOW', 'HIGH'] as const;
+const sha256Buf = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const shortlistOut = z.object({ picks: z.array(z.object({ id: z.string(), score: z.number().int().min(0).max(100), headlineTh: z.string().min(1).max(160), why: z.string().max(400), category: z.string().max(40), risk: z.enum(RISK), riskReasons: z.array(z.string().max(200)).max(6).default([]) })).max(20) });
 const writerOut = z.object({
   title: z.string().min(1).max(120),
@@ -39,6 +44,8 @@ const writerOut = z.object({
   needsCheck: z.array(z.string().max(200)).max(8).default([]),
   /** คำสั่งภาพประกอบภาษาอังกฤษ (เชิงสัญลักษณ์ ไม่มีคนจริง ไม่มีตัวอักษร) */
   imagePrompt: z.string().max(600).optional(),
+  /** คำค้นภาพถ่ายภาษาอังกฤษ 2–5 คำ สำหรับคลังภาพ (สิ่งของ/สถานที่/บรรยากาศ ไม่ใช่ชื่อคน) */
+  photoQuery: z.string().max(80).optional(),
 });
 type WriterOut = z.infer<typeof writerOut>;
 
@@ -63,38 +70,60 @@ export class NewsService {
     return b;
   }
 
-  // ---------- คีย์ค้นเว็บ ----------
-  async getProvider(workspaceId: string) {
-    const a = await this.prisma.searchProviderAccount.findUnique({ where: { workspaceId }, select: PROVIDER_SELECT });
-    return a ? { configured: true, ...a } : { configured: false };
+  // ---------- คีย์ผู้ให้บริการภายนอก (tavily = ค้นข่าว, pexels = คลังภาพถ่าย) ----------
+  async getProvider(workspaceId: string, provider: ExternalProvider = 'tavily') {
+    const a = await this.prisma.searchProviderAccount.findUnique({ where: { workspaceId_provider: { workspaceId, provider } }, select: PROVIDER_SELECT });
+    return a ? { configured: true, ...a } : { configured: false, provider };
   }
 
   async setProvider(workspaceId: string, userId: string, dto: SearchProviderDto, requestId: string) {
-    const data = { provider: dto.provider, apiKeyEnc: encryptSecret(dto.apiKey, this.env.AUTH_SECRET), keyHint: `…${dto.apiKey.slice(-4)}`, status: 'UNKNOWN', lastError: null, verifiedAt: null };
-    await this.prisma.searchProviderAccount.upsert({ where: { workspaceId }, create: { workspaceId, ...data }, update: data });
-    // ทดสอบด้วยคำค้นเดียว (ใช้โควตา 1 ครั้ง) — คีย์ผิดต้องรู้ตอนนี้ ไม่ใช่ตอนดึงข่าวรอบแรก
+    const provider = dto.provider;
+    const data = { apiKeyEnc: encryptSecret(dto.apiKey, this.env.AUTH_SECRET), keyHint: `…${dto.apiKey.slice(-4)}`, status: 'UNKNOWN', lastError: null, verifiedAt: null };
+    await this.prisma.searchProviderAccount.upsert({ where: { workspaceId_provider: { workspaceId, provider } }, create: { workspaceId, provider, ...data }, update: data });
+    // ทดสอบด้วยคำขอเดียว (ใช้โควตา 1 ครั้ง) — คีย์ผิดต้องรู้ตอนนี้ ไม่ใช่ตอนใช้งานจริงรอบแรก
     try {
-      await this.search(workspaceId, 'ข่าวล่าสุด', 1);
-      await this.prisma.searchProviderAccount.update({ where: { workspaceId }, data: { status: 'OK', verifiedAt: new Date() } });
+      if (provider === 'pexels') await this.stockSearch(workspaceId, 'nature', 1); else await this.search(workspaceId, 'ข่าวล่าสุด', 1);
+      await this.prisma.searchProviderAccount.update({ where: { workspaceId_provider: { workspaceId, provider } }, data: { status: 'OK', verifiedAt: new Date() } });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await this.prisma.searchProviderAccount.update({ where: { workspaceId }, data: { status: e instanceof WebError && e.code === 'forbidden' ? 'AUTH_FAILED' : 'ERROR', lastError: msg.slice(0, 300) } });
+      await this.prisma.searchProviderAccount.update({ where: { workspaceId_provider: { workspaceId, provider } }, data: { status: e instanceof WebError && e.code === 'forbidden' ? 'AUTH_FAILED' : 'ERROR', lastError: msg.slice(0, 300) } });
     }
-    await this.audit.log({ workspaceId, userId, action: 'news.search_provider.set', resourceType: 'searchProviderAccount', after: { provider: dto.provider }, requestId });
-    return this.getProvider(workspaceId);
+    await this.audit.log({ workspaceId, userId, action: 'news.search_provider.set', resourceType: 'searchProviderAccount', after: { provider }, requestId });
+    return this.getProvider(workspaceId, provider);
   }
 
-  async removeProvider(workspaceId: string, userId: string, requestId: string) {
-    await this.prisma.searchProviderAccount.deleteMany({ where: { workspaceId } });
-    await this.audit.log({ workspaceId, userId, action: 'news.search_provider.remove', resourceType: 'searchProviderAccount', requestId });
+  async removeProvider(workspaceId: string, userId: string, provider: ExternalProvider, requestId: string) {
+    await this.prisma.searchProviderAccount.deleteMany({ where: { workspaceId, provider } });
+    await this.audit.log({ workspaceId, userId, action: 'news.search_provider.remove', resourceType: 'searchProviderAccount', after: { provider }, requestId });
     return { ok: true };
   }
 
+  private async providerKey(workspaceId: string, provider: ExternalProvider, missing: string) {
+    const a = await this.prisma.searchProviderAccount.findUnique({ where: { workspaceId_provider: { workspaceId, provider } }, select: { apiKeyEnc: true } });
+    if (!a) throw new UnprocessableEntityException(missing);
+    await this.prisma.searchProviderAccount.update({ where: { workspaceId_provider: { workspaceId, provider } }, data: { callCount: { increment: 1 } } });
+    return decryptSecret(a.apiKeyEnc, this.env.AUTH_SECRET);
+  }
   private async search(workspaceId: string, query: string, maxResults = 10) {
-    const a = await this.prisma.searchProviderAccount.findUnique({ where: { workspaceId }, select: { apiKeyEnc: true } });
-    if (!a) throw new UnprocessableEntityException('ยังไม่ได้ตั้งคีย์ค้นเว็บ (Tavily) — ตั้งที่หน้าห้องข่าว');
-    await this.prisma.searchProviderAccount.update({ where: { workspaceId }, data: { callCount: { increment: 1 } } });
-    return tavilySearch(decryptSecret(a.apiKeyEnc, this.env.AUTH_SECRET), query, { baseUrl: this.mock ? `${this.mock}/tavily` : undefined, maxResults, days: 3 });
+    const key = await this.providerKey(workspaceId, 'tavily', 'ยังไม่ได้ตั้งคีย์ค้นเว็บ (Tavily) — ตั้งที่หน้าห้องข่าว');
+    return tavilySearch(key, query, { baseUrl: this.mock ? `${this.mock}/tavily` : undefined, maxResults, days: 3 });
+  }
+  private async stockSearch(workspaceId: string, query: string, perPage = 8) {
+    const key = await this.providerKey(workspaceId, 'pexels', 'ยังไม่ได้ตั้งคีย์คลังภาพ (Pexels) — ตั้งที่หน้าห้องข่าว');
+    return pexelsSearch(key, query, { baseUrl: this.mock ? `${this.mock}/pexels` : undefined, perPage });
+  }
+
+  /** ภาพถ่ายจริงจากคลังภาพฟรีที่ตรงบรรยากาศเรื่อง → บันทึกเป็นไฟล์ + MediaAsset(kind stock) พร้อมเครดิต */
+  private async stockPhoto(workspaceId: string, userId: string, contentId: string, query: string, used: Set<string>) {
+    const photos = await this.stockSearch(workspaceId, query);
+    const pick = photos.find(p => !used.has(p.id));
+    if (!pick) throw new UnprocessableEntityException(`ไม่พบภาพในคลังสำหรับ "${query}"`);
+    const img = await downloadImage(pick.imageUrl, { allowPrivate: this.env.WEB_ALLOW_PRIVATE_TARGETS });
+    const dir = resolve(this.env.MEDIA_DIR, workspaceId); mkdirSync(dir, { recursive: true });
+    const path = join(dir, `stock-${pick.provider}-${pick.id}-${Date.now()}.${img.mimeType === 'image/png' ? 'png' : img.mimeType === 'image/webp' ? 'webp' : 'jpg'}`);
+    await writeFile(path, img.bytes);
+    const asset = await this.prisma.mediaAsset.create({ data: { workspaceId, contentId, kind: 'stock', path, mimeType: img.mimeType, width: pick.width || null, height: pick.height || null, bytes: img.bytes.byteLength, sha256: sha256Buf(img.bytes), meta: { provider: pick.provider, photoId: pick.id, pageUrl: pick.pageUrl, photographer: pick.photographer, photographerUrl: pick.photographerUrl, query } as Prisma.InputJsonValue, createdById: userId }, select: { id: true, path: true, mimeType: true } });
+    return { asset, bytes: img.bytes, mimeType: img.mimeType, credit: `${pick.photographer} / Pexels`, photoId: pick.id };
   }
 
   // ---------- แหล่งข่าว ----------
@@ -248,6 +277,7 @@ export class NewsService {
         '5) ไม่ต้องใส่บรรทัดที่มา/ลิงก์ ระบบจะต่อท้ายให้เอง · ปิดท้ายด้วยคำถามชวนคอมเมนต์ 1 ประโยค',
         `6) ${RISK_RULES}`,
         'card = ข้อความบนการ์ดภาพ 1080×1080: kicker = หมวดสั้น ๆ, headline = พาดหัวสั้นกระชับ ≤ 90 ตัวอักษร ใช้ *คำ* เน้นสีได้ 1 จุด, sub = สรุปหนึ่งประโยค',
+        'photoQuery = คำค้นภาพถ่ายภาษาอังกฤษ 2–5 คำสำหรับคลังภาพฟรี เช่น "baby elephant rescue", "space station plants" — เป็นสิ่งของ/สัตว์/สถานที่/บรรยากาศ ห้ามชื่อคน ห้ามคำรุนแรง',
         'imagePrompt = คำสั่งวาดภาพประกอบเป็นภาษาอังกฤษ ≤ 400 ตัวอักษร: ภาพเชิงสัญลักษณ์/บรรยากาศของเรื่อง ห้ามมีบุคคลจริงที่ระบุตัวได้ ห้ามจำลองภาพเหตุการณ์จริงให้ดูเหมือนภาพข่าว ห้ามตัวอักษร โลโก้ เลือด หรือความรุนแรง',
       ].join('\n'),
       prompt: [
@@ -257,7 +287,7 @@ export class NewsService {
         prohibited.length ? `ข้อกำหนดของแบรนด์:\n${prohibited.map(k => `- [${k.type}] ${k.title}: ${k.content.slice(0, 300)}`).join('\n')}` : '',
         dto.hint ? `คำแนะนำเพิ่มเติม: ${dto.hint}` : '',
       ].filter(Boolean).join('\n\n'),
-      schemaDescription: '{ "title": "ชื่อเรื่องภายใน ≤ 100", "caption": "โพสต์เต็ม", "hashtags": [≤ 5 คำ ไม่ต้องมี #], "card": { "kicker"?: string ≤ 24, "headline": string ≤ 90, "sub"?: string ≤ 140 }, "risk": "LOW"|"HIGH", "riskReasons": [string], "needsCheck": [string], "imagePrompt": string }',
+      schemaDescription: '{ "title": "ชื่อเรื่องภายใน ≤ 100", "caption": "โพสต์เต็ม", "hashtags": [≤ 5 คำ ไม่ต้องมี #], "card": { "kicker"?: string ≤ 24, "headline": string ≤ 90, "sub"?: string ≤ 140 }, "risk": "LOW"|"HIGH", "riskReasons": [string], "needsCheck": [string], "photoQuery": string, "imagePrompt": string }',
       validate: v => writerOut.parse(v), maxTokens: 3500,
     });
     const w: WriterOut = out.result.data;
@@ -265,23 +295,35 @@ export class NewsService {
     const caption = `${w.caption.trim()}\n\nที่มา: ${source}\n${item.url}`;
     const notes = { news: { itemId: item.id, url: item.url, source }, risk: w.risk, riskReasons: w.riskReasons, needsCheck };
     const content = await this.content.create(workspaceId, userId, { pageId: page.id, contentType: 'post', title: w.title, caption, hashtags: w.hashtags.map(h => h.replace(/^#/, '')), mediaBrief: `การ์ดหัวข่าว: ${w.card.headline}`, mediaPaths: [], objective: 'engagement', contentPillar: 'ข่าว' }, requestId, { provider: out.provider, model: out.model, promptVersion: NEWS_WRITER_PROMPT, notes });
-    // ภาพประกอบจาก AI (ถ้าขอ) → ฝังในการ์ด · สร้างไม่ได้ก็ยังได้การ์ดตัวอักษร พร้อมแจ้งเหตุ
+    // ภาพประกอบ: stock = ภาพถ่ายจริงจากคลังภาพฟรี (การ์ดใช้ภาพ + แนบภาพเต็มเป็นรูปที่ 2), ai = ภาพจาก AI · ล้มเหลวก็ยังได้การ์ดตัวอักษร พร้อมแจ้งเหตุ
     const errMsg = (e: unknown) => (e as Error & { response?: { message?: string } }).response?.message ?? (e as Error).message;
-    let photo: string | undefined; let imageError: string | null = null;
-    if (dto.aiImage) {
+    const source2 = dto.imageSource ?? (dto.aiImage ? 'ai' : 'none');
+    let photo: string | undefined; let photoLabel: string | undefined; let imageError: string | null = null; let stockPath: string | null = null; let credit: string | null = null;
+    if (source2 === 'stock') {
+      try {
+        const q = (w.photoQuery || angle?.category || item.title).slice(0, 80);
+        const st = await this.stockPhoto(workspaceId, userId, content.id, q, new Set());
+        photo = MediaGenService.dataUrl(st.bytes, st.mimeType); photoLabel = `ภาพ: ${st.credit}`; stockPath = st.asset.path; credit = st.credit;
+      } catch (e) { imageError = errMsg(e); }
+    } else if (source2 === 'ai') {
       try {
         const g = await this.gen.generate(workspaceId, userId, { contentId: content.id, prompt: w.imagePrompt || `Symbolic editorial illustration about: ${angle?.headlineTh ?? item.title}`, attach: false, override: dto.imageOverride ?? null, idempotencyKey: `news-${item.id}` }, requestId);
-        photo = MediaGenService.dataUrl(await readFile(g.asset.path), g.asset.mimeType);
+        photo = MediaGenService.dataUrl(await readFile(g.asset.path), g.asset.mimeType); photoLabel = 'ภาพประกอบจาก AI';
       } catch (e) { imageError = errMsg(e); }
     }
     // การ์ดหัวข่าว — เรนเดอร์ไม่ได้ (ไม่มี Chromium) ก็ยังได้ร่าง แจ้งเหตุให้เห็น
     let cardError: string | null = null;
     try {
-      await this.media.renderCard(workspaceId, userId, content.id, { template: 'news', data: { theme: dto.theme, kicker: w.card.kicker ?? angle?.category ?? 'ข่าว', title: w.card.headline, sub: w.card.sub, footer: `ที่มา: ${source}`, brand: page.name.slice(0, 60), photo }, attach: true }, requestId, { provider: out.provider, model: out.model });
+      await this.media.renderCard(workspaceId, userId, content.id, { template: 'news', data: { theme: dto.theme, kicker: w.card.kicker ?? angle?.category ?? 'ข่าว', title: w.card.headline, sub: w.card.sub, footer: `ที่มา: ${source}`, brand: page.name.slice(0, 60), photo, photoLabel }, attach: true }, requestId, { provider: out.provider, model: out.model });
     } catch (e) { cardError = errMsg(e); }
+    // การ์ด + ภาพถ่ายเต็มใบ = โพสต์หลายรูป (การ์ดขึ้นก่อน) · เครดิตช่างภาพต่อท้ายโพสต์
+    if (stockPath) {
+      await this.prisma.contentItem.update({ where: { id: content.id }, data: { mediaPaths: { push: stockPath }, contentType: 'photo', caption: `${caption}
+ภาพประกอบ: ${credit}` } });
+    }
     const submitted = await this.content.submit(workspaceId, userId, content.id, requestId);
     await this.prisma.newsItem.update({ where: { id: item.id }, data: { status: 'DRAFTED', contentId: content.id } });
-    await this.audit.log({ workspaceId, userId, action: 'news.draft', resourceType: 'newsItem', resourceId: item.id, after: { contentId: content.id, pageId: page.id, risk: w.risk, needsCheck: needsCheck.length, cardError, imageError, aiImage: !!photo, provider: out.provider, model: out.model }, requestId });
-    return { content: submitted, risk: w.risk, riskReasons: w.riskReasons, needsCheck, cardError, imageError, aiImage: !!photo, provider: out.provider, model: out.model, costUsd: out.costUsd };
+    await this.audit.log({ workspaceId, userId, action: 'news.draft', resourceType: 'newsItem', resourceId: item.id, after: { contentId: content.id, pageId: page.id, risk: w.risk, needsCheck: needsCheck.length, cardError, imageError, imageSource: source2, hasPhoto: !!photo, provider: out.provider, model: out.model }, requestId });
+    return { content: submitted, risk: w.risk, riskReasons: w.riskReasons, needsCheck, cardError, imageError, imageSource: source2, hasPhoto: !!photo, aiImage: source2 === 'ai' && !!photo, provider: out.provider, model: out.model, costUsd: out.costUsd };
   }
 }

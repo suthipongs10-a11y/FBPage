@@ -71,7 +71,7 @@ run('news room (integration)', () => {
     const ok = await a.http('PUT', `/workspaces/${wsA}/news/search-provider`, { apiKey: 'TAVILY_OK' });
     expect(ok.json).toMatchObject({ configured: true, status: 'OK', keyHint: '…Y_OK' });
     expect(ok.text).not.toContain('TAVILY_OK'); expect(ok.text).not.toContain('apiKeyEnc');
-    const row = await prisma.searchProviderAccount.findUniqueOrThrow({ where: { workspaceId: wsA } });
+    const row = await prisma.searchProviderAccount.findFirstOrThrow({ where: { workspaceId: wsA, provider: 'tavily' } });
     expect(row.apiKeyEnc).not.toContain('TAVILY_OK');
     expect((await b.http('GET', `/workspaces/${wsA}/news/search-provider`)).status).toBe(404);   // คนนอก workspace ไม่เห็นแม้แต่ว่ามีอยู่
   });
@@ -225,11 +225,28 @@ run('news room (integration)', () => {
     for (const x of stored) expect(JSON.stringify(x.meta)).not.toContain('base64');   // ไม่เก็บภาพฝังซ้ำใน DB
   });
 
+  it('news draft with a real stock photo: card uses the photo, full photo attached as 2nd image, photographer credited', async () => {
+    const key = await a.http('PUT', `/workspaces/${wsA}/news/search-provider`, { provider: 'pexels', apiKey: 'PEXELS_OK' });
+    expect(key.json).toMatchObject({ configured: true, status: 'OK', provider: 'pexels' });
+    expect((await a.http('GET', `/workspaces/${wsA}/news/search-provider?provider=tavily`)).json.status).toBe('OK');   // คีย์ Tavily ยังอยู่
+    web.state.news.rssItems.push({ title: 'ลูกช้างป่าเดินหลงเข้าหมู่บ้าน ชาวบ้านช่วยพากลับฝูง', link: 'https://news.example.com/a/elephant-village', description: 'ชาวบ้านร่วมกันนำทาง', pubDate: new Date().toUTCString() });
+    await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/fetch`);
+    const item = ((await a.http('GET', `/workspaces/${wsA}/news/items?brandId=${brandA}&status=NEW`)).json as { id: string; title: string }[]).find(i => i.title.includes('หมู่บ้าน'))!;
+    ai.state.replies.push({ text: JSON.stringify({ title: 'ลูกช้างหลงฝูง', caption: '🐘 ลูกช้างป่าเดินหลงเข้าหมู่บ้าน ชาวบ้านช่วยกันพากลับไปหาแม่อย่างปลอดภัย\n\nเคยเจอช้างป่าใกล้บ้านไหม?', hashtags: [], card: { kicker: 'สัตว์', headline: 'ชาวบ้านช่วย*ลูกช้าง*กลับฝูง' }, risk: 'LOW', riskReasons: [], needsCheck: [], photoQuery: 'baby elephant forest' }) });
+    const r = await a.http('POST', `/workspaces/${wsA}/news/items/${item.id}/draft`, { pageId: pageA, imageSource: 'stock' });
+    expect(r.status).toBe(200); expect(r.json.imageError).toBeNull(); expect(r.json.hasPhoto).toBe(true);
+    expect(web.state.news.pexelsQueries.at(-1)).toBe('baby elephant forest');
+    expect(r.json.content.caption).toContain('ภาพประกอบ: Somsri Camera / Pexels');
+    const assets = (await a.http('GET', `/workspaces/${wsA}/media?contentId=${r.json.content.id}`)).json as { kind: string }[];
+    expect(assets.some(x => x.kind === 'stock')).toBe(true);
+    if (findChrome(process.env.CHROME_BIN)) expect(r.json.content.mediaPaths).toHaveLength(2);
+  });
+
   // ---------- N-4 อัตโนมัติ ----------
   it('automation: fetch → shortlist → draft within the daily quota, skipping high-risk stories; never publishes', async () => {
     const bad = await a.http('PUT', `/workspaces/${wsA}/brands/${brandOther}/news/automation`, { enabled: true, pageId: pageA });
     expect(bad.status).toBe(400);
-    const set = await a.http('PUT', `/workspaces/${wsA}/brands/${brandA}/news/automation`, { enabled: true, pageId: pageA, draftsPerDay: 4, minScore: 50, skipHighRisk: true, postingSlots: ['19:00', '09:00', '09:00'] });
+    const set = await a.http('PUT', `/workspaces/${wsA}/brands/${brandA}/news/automation`, { enabled: true, pageId: pageA, draftsPerDay: 5, minScore: 50, skipHighRisk: true, postingSlots: ['19:00', '09:00', '09:00'] });
     expect(set.status).toBe(200); expect(set.json.postingSlots).toEqual(['09:00', '19:00']);
     web.state.news.rssItems.push(
       { title: 'ตำรวจรวบผู้ต้องหาคดีฉ้อโกงออนไลน์', link: 'https://news.example.com/a/fraud', description: 'จับกุมแล้ว', pubDate: new Date().toUTCString() },
@@ -251,7 +268,7 @@ run('news room (integration)', () => {
     ai.state.replies.push({ text: JSON.stringify({ title: 'เต่าทะเลวางไข่', caption: '🐢 ข่าวดีจากภูเก็ต! เต่าทะเลกลับมาวางไข่ที่ชายหาดอีกครั้งในรอบ 5 ปี พบรังไข่ราว 80 ฟอง\n\nใครเคยเห็นเต่าทะเลตัวจริงบ้าง?', hashtags: [], card: { headline: 'เต่าทะเลกลับมา*วางไข่*' }, risk: 'LOW', riskReasons: [], needsCheck: [] }) });
     const r1 = await origFetch(wsA, brandA);
     expect(ai.state.replies.length).toBe(beforeReplies);   // ใช้คำตอบ AI ครบพอดี
-    expect(r1).toMatchObject({ shortlisted: 2, drafted: 1, draftedToday: 3 });
+    expect(r1).toMatchObject({ shortlisted: 2, drafted: 1, draftedToday: 4 });
     expect((await prisma.newsItem.findUniqueOrThrow({ where: { id: fraud.id } })).status).toBe('SHORTLISTED');
     const turtleItem = await prisma.newsItem.findUniqueOrThrow({ where: { id: turtle.id } });
     expect(turtleItem.status).toBe('DRAFTED');

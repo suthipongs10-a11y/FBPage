@@ -19,7 +19,7 @@ import type { AutomationDto } from './dto';
 const TICK_MS = 5 * 60_000;
 const LOCK_KEY = 'news-automation:lock';
 const DEFAULT_SLOTS = ['09:00', '12:30', '19:00'];
-const AUTO_SELECT = { brandId: true, enabled: true, pageId: true, fetchEveryHours: true, draftsPerDay: true, minScore: true, skipHighRisk: true, aiImage: true, theme: true, postingSlots: true, lastRunAt: true, lastFetchAt: true, lastResult: true, lastError: true, updatedAt: true } as const;
+const AUTO_SELECT = { brandId: true, enabled: true, pageId: true, fetchEveryHours: true, draftsPerDay: true, minScore: true, skipHighRisk: true, imageSource: true, theme: true, postingSlots: true, lastRunAt: true, lastFetchAt: true, lastResult: true, lastError: true, updatedAt: true } as const;
 
 /** วันที่ (YYYY-MM-DD) ในเขตเวลา tz */
 const localDate = (d: Date, tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -58,7 +58,7 @@ export class NewsAutomationService implements OnModuleInit, OnModuleDestroy {
     if (!page || page.disconnectedAt) throw new NotFoundException('ไม่พบเพจ');
     if (page.brandId !== brandId) throw new BadRequestException('เพจนี้ไม่ได้อยู่ในแบรนด์นี้');
     const slots = [...new Set(dto.postingSlots)].sort();
-    const data = { enabled: dto.enabled, pageId: dto.pageId, fetchEveryHours: dto.fetchEveryHours, draftsPerDay: dto.draftsPerDay, minScore: dto.minScore, skipHighRisk: dto.skipHighRisk, aiImage: dto.aiImage, theme: dto.theme, postingSlots: slots.length ? slots : DEFAULT_SLOTS, createdById: userId };
+    const data = { enabled: dto.enabled, pageId: dto.pageId, fetchEveryHours: dto.fetchEveryHours, draftsPerDay: dto.draftsPerDay, minScore: dto.minScore, skipHighRisk: dto.skipHighRisk, imageSource: dto.imageSource, theme: dto.theme, postingSlots: slots.length ? slots : DEFAULT_SLOTS, createdById: userId };
     const out = await this.prisma.newsAutomation.upsert({ where: { brandId }, create: { workspaceId, brandId, ...data }, update: data, select: AUTO_SELECT });
     await this.audit.log({ workspaceId, userId, action: 'news.automation.set', resourceType: 'brand', resourceId: brandId, after: data, requestId });
     return out;
@@ -130,7 +130,7 @@ export class NewsAutomationService implements OnModuleInit, OnModuleDestroy {
         if (remaining <= 0) break;
         if (a.skipHighRisk && (p.angle as { risk?: string } | null)?.risk === 'HIGH') continue;
         try {
-          await this.news.draft(workspaceId, uid, p.id, { pageId: a.pageId, theme: a.theme, aiImage: a.aiImage }, rid);
+          await this.news.draft(workspaceId, uid, p.id, { pageId: a.pageId, theme: a.theme, aiImage: false, imageSource: a.imageSource as 'none' | 'stock' | 'ai' }, rid);
           result.drafted++; remaining--;
         } catch (e) { note('เขียนโพสต์', e); if (/งบ|เพดาน|ยังไม่ได้ตั้งค่า AI|ไม่ได้ตั้ง/.test(result.errors.at(-1) ?? '')) break; }
       }

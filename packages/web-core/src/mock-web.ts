@@ -13,7 +13,7 @@ export interface MockWebState {
   /** WordPress REST จำลอง (W-3) — Basic auth username `wpadmin` + Application Password `abcd EFGH ijkl MNOP` */
   wp: { posts: MockWpPost[]; tags: { id: number; name: string }[]; categories: { id: number; name: string }[]; disabled: boolean; authFail: boolean; failNext: number; roles: string[] };
   /** ห้องข่าว: ฟีด RSS จำลองที่ `/news/rss.xml` (+ `/news/atom.xml`, `/news/redirect`) และ Tavily ที่ `POST /tavily/search` (Bearer `TAVILY_OK`) */
-  news: { rssItems: { title: string; link: string; description: string; pubDate: string }[]; tavilyResults: { title: string; url: string; content: string; published_date?: string }[]; tavilyQueries: string[] };
+  news: { rssItems: { title: string; link: string; description: string; pubDate: string }[]; tavilyResults: { title: string; url: string; content: string; published_date?: string }[]; tavilyQueries: string[]; pexelsQueries: string[]; pexelsEmpty: boolean };
 }
 export interface MockWpPost { id: number; title: string; content: string; excerpt: string; slug: string; status: string; date: string; tags: number[]; categories: number[] }
 export const MOCK_WP_USER = 'wpadmin'; export const MOCK_WP_APP_PASSWORD = 'abcd EFGH ijkl MNOP';
@@ -37,7 +37,7 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
         { title: 'Scientists find new deep-sea species', url: 'https://science.example.org/deep-sea', content: 'Researchers discovered 12 new species near a hydrothermal vent.', published_date: new Date(Date.now() - 5_400_000).toUTCString() },
         { title: 'ทีมกู้ภัยช่วยลูกช้างตกบ่อได้สำเร็จ', url: 'https://www.news.example.com/a/elephant/', content: 'ซ้ำกับฟีด', published_date: new Date().toUTCString() },
       ],
-      tavilyQueries: [],
+      tavilyQueries: [], pexelsQueries: [], pexelsEmpty: false,
     },
   };
   let nextId = 100;
@@ -113,6 +113,14 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
       state.news.tavilyQueries.push(String(body.query ?? ''));
       return json(200, { query: body.query, results: state.news.tavilyResults });
     }
+    // ---- คลังภาพ Pexels จำลอง: GET /pexels/v1/search (header Authorization: PEXELS_OK) + ไฟล์ภาพ /img/*.png ----
+    if (u.pathname === '/pexels/v1/search') {
+      if (req.headers.authorization !== 'PEXELS_OK') return json(401, { error: 'Unauthorized' });
+      state.news.pexelsQueries.push(u.searchParams.get('query') ?? '');
+      const host = `http://${req.headers.host}`;
+      return json(200, { photos: state.news.pexelsEmpty ? [] : [{ id: 101, url: 'https://www.pexels.com/photo/101/', width: 1600, height: 1067, photographer: 'Somsri Camera', photographer_url: 'https://www.pexels.com/@somsri', alt: 'elephant in forest', src: { large2x: `${host}/img/stock-101.png`, large: `${host}/img/stock-101.png` } }] });
+    }
+    if (u.pathname.startsWith('/img/')) { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')); }
     // ---- เว็บลูกค้าจำลอง ----
     if (state.slowMs) await new Promise(r => setTimeout(r, state.slowMs));
     if (u.pathname === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('User-agent: *\nDisallow: /admin\n'); }

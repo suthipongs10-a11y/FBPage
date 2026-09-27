@@ -8,6 +8,7 @@ export const cardDataSchema = z.object({
   rows: z.array(z.object({ label: z.string().max(60), note: s(60), old: z.union([z.string().max(20), z.number(), z.null()]).optional(), new: z.union([z.string().max(20), z.number()]), unit: s(20) })).max(6).optional(),
   items: z.array(z.object({ title: z.string().max(80), text: s(160) })).max(7).optional(),
   /** ภาพประกอบในการ์ด (เทมเพลต news) — data URL เท่านั้น ห้ามเป็น path/URL เพื่อไม่ให้เรนเดอร์อ่านไฟล์หรือยิงเน็ตเอง */
+  photoLabel: s(80),
   photo: z.string().max(22_000_000).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/).optional(),
 });
 export const renderCardSchema = z.object({ template: z.enum(CARD_TEMPLATES), data: cardDataSchema, attach: z.boolean().default(true) });
