@@ -122,6 +122,31 @@ run('page scout (integration)', () => {
     expect(fb.json.ideaSources[0].url).toBe(`${web.url}/article/elephant`);
   });
 
+  it('คำค้นของผู้ใช้ถูกค้นจริงก่อนคำค้นของโปรไฟล์ · "เขียนโพสต์เลย" = ค้นคว้า+เขียน+ตรวจ → ร่าง ในคลิกเดียว (ครั้งถัดไปใช้ผลค้นคว้าเดิม)', async () => {
+    web.state.news.tavilyResults = [{ title: 'How to get rid of dust mites', url: `${web.url}/article/elephant`, content: 'Wash bedding weekly at 60°C' }];
+    ai.state.replies.push(J({ ideas: [{ title: 'กำจัดไรฝุ่นบนที่นอน 5 วิธี', why: 'หน้าฝน', trend: '', angle: 'ถาม-ตอบ', format: 'qa', kind: 'evergreen', sources: [1], query: 'dust mites' }] }));
+    const r = await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas`, { mode: 'web', count: 3, keywords: 'กำจัดไรฝุ่น, ซักม่าน' });
+    expect(r.status).toBe(200);
+    expect(web.state.news.tavilyQueries.slice(-4)).toEqual(['กำจัดไรฝุ่น', 'ซักม่าน', 'Phuket villa rental news', 'ฝนตกภูเก็ต']);
+    expect(JSON.stringify(ai.state.requests.at(-1)!.messages)).toContain('คำค้นที่ผู้ใช้ต้องการ');
+
+    const briefsBefore = await prisma.researchBrief.count({ where: { workspaceId: wsA } });
+    const brief = { headline: 'ไรฝุ่น', summary: 's', keyPoints: [{ text: 'ซักผ้าปูที่ 60 องศา', sources: [1] }], angles: [], openQuestions: [], category: 'บ้าน', risk: 'LOW', riskReasons: [] };
+    const post = (title: string) => ({ title, caption: `${title} — ซักผ้าปูที่นอนด้วยน้ำร้อนทุกสัปดาห์ช่วยลดไรฝุ่นได้ คุณซักบ่อยแค่ไหน?`, hashtags: ['ไรฝุ่น'], sourceIds: [1], card: { headline: title }, risk: 'LOW', riskReasons: [], needsCheck: [] });
+    ai.state.replies.push(J(brief), J({ posts: [post('ไรฝุ่นหายด้วยน้ำร้อน')] }), J({ results: [] }));
+    const w = await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas/0/write`, { imageFallback: 'none' });
+    expect(w.status).toBe(200);
+    expect(w.json.import).toMatchObject({ status: 'DRAFTED', draftCount: 1 });
+    expect(w.json.idea).toMatchObject({ drafted: 1, briefId: w.json.briefId });
+    expect(JSON.stringify(ai.state.requests.at(-2)!.messages)).toContain('ถาม-ตอบ');   // สไตล์ตามไอเดีย
+    const c = await prisma.contentItem.findUniqueOrThrow({ where: { id: w.json.import.report.posts[0].result.contentId } });
+    expect(c).toMatchObject({ pageId: pageA, status: 'READY_FOR_APPROVAL' });
+    ai.state.replies.push(J({ posts: [post('ม่านสะอาดห่างไกลไรฝุ่น')] }), J({ results: [] }));
+    const w2 = await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas/0/write`, { imageFallback: 'none' });
+    expect(w2.json.idea.drafted).toBe(2);
+    expect(await prisma.researchBrief.count({ where: { workspaceId: wsA } })).toBe(briefsBefore + 1);
+  });
+
   it('ย้ายเพจไปแบรนด์อื่น: ห้องข่าวอัตโนมัติของแบรนด์เดิมที่ใช้เพจนี้ถูกปิด · แบรนด์ต่าง workspace = 404', async () => {
     const c2 = await a.http('POST', `/workspaces/${wsA}/clients`, { name: 'ลูกค้าใหม่' });
     const brand2 = (await a.http('POST', `/workspaces/${wsA}/clients/${c2.json.id}/brands`, { name: 'แบรนด์ที่ถูกต้อง' })).json.id;

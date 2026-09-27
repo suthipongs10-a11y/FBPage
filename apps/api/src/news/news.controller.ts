@@ -13,7 +13,7 @@ import { NewsAutomationService } from './automation.service';
 import { ContentImportService } from './import.service';
 import { ResearchService } from './research.service';
 import { PageScoutService } from './scout.service';
-import { scoutCheckSchema, scoutIdeasSchema, scoutResearchSchema, type ScoutCheckDto, type ScoutIdeasDto, type ScoutResearchDto, researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { scoutWriteSchema, type ScoutWriteDto, scoutCheckSchema, scoutIdeasSchema, scoutResearchSchema, type ScoutCheckDto, type ScoutIdeasDto, type ScoutResearchDto, researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
@@ -109,6 +109,8 @@ export class NewsController {
   scoutCheck(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Body(new ZodPipe(scoutCheckSchema)) dto: ScoutCheckDto, @RequestId() rid: string) { return this.scout.check(t.workspaceId, u.id, pageId, dto, rid); }
   @Post('pages/:pageId/scout/ideas') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
   scoutIdeas(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Body(new ZodPipe(scoutIdeasSchema)) dto: ScoutIdeasDto, @RequestId() rid: string) { return this.scout.ideas(t.workspaceId, u.id, pageId, dto, rid); }
+  @Post('pages/:pageId/scout/ideas/:index/write') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
+  scoutWrite(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Param('index') index: string, @Body(new ZodPipe(scoutWriteSchema)) dto: ScoutWriteDto, @RequestId() rid: string) { return this.scout.writeIdea(t.workspaceId, u.id, pageId, Number(index) || 0, dto, rid); }
   @Post('pages/:pageId/scout/ideas/:index/research') @HttpCode(200) @RequirePermission('content.create', 'ai.use')
   scoutResearch(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('pageId') pageId: string, @Param('index') index: string, @Body(new ZodPipe(scoutResearchSchema)) dto: ScoutResearchDto, @RequestId() rid: string) { return this.scout.researchIdea(t.workspaceId, u.id, pageId, Number(index) || 0, dto, rid); }
 }

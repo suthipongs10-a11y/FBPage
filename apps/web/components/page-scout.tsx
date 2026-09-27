@@ -10,11 +10,12 @@ const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dat
 const n = (v: number | null) => (v == null ? '—' : v.toLocaleString('th-TH'));
 const KIND_TONE: Record<ScoutIdea['kind'], 'ok' | 'warn' | 'muted'> = { trend: 'warn', seasonal: 'ok', evergreen: 'muted', promo: 'ok' };
 
-export function PageScout({ base, pages, initialPageId, onBrief }: { base: string; pages: PageRow[]; initialPageId?: string; onBrief: (brief: ResearchBriefRow, pageId: string) => void }) {
+export function PageScout({ base, pages, initialPageId, onBrief, onDrafted }: { base: string; pages: PageRow[]; initialPageId?: string; onBrief: (brief: ResearchBriefRow, pageId: string) => void; onDrafted: () => void }) {
   const [pageId, setPageId] = useState(initialPageId && pages.some(p => p.id === initialPageId) ? initialPageId : pages[0]?.id ?? '');
   const [scout, setScout] = useState<ScoutView | null>(null);
   const [caps, setCaps] = useState<ResearchCaps | null>(null);
-  const [opt, setOpt] = useState({ mode: 'ai' as 'ai' | 'web', count: 6, focus: '', model: '' });
+  const [opt, setOpt] = useState({ mode: 'ai' as 'ai' | 'web', count: 6, focus: '', keywords: '', model: '', image: 'stock' as 'stock' | 'ai' | 'none' });
+  const [written, setWritten] = useState<Record<number, { drafted: number; flagged: number; error: string | null }>>({});
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null);
 
   const ids = pages.map(x => x.id).join(',');
@@ -32,7 +33,14 @@ export function PageScout({ base, pages, initialPageId, onBrief }: { base: strin
   const override = () => { if (opt.mode !== 'ai' || !opt.model) return undefined; const [connectionId, model] = opt.model.split('|'); return { connectionId: connectionId!, ...(model && { model }) }; };
 
   const check = () => run('check', async () => { setScout(await api<ScoutView>(`${base}/pages/${pageId}/scout/check`, { method: 'POST', body: {} })); });
-  const ideas = () => run('ideas', async () => { setScout(await api<ScoutView>(`${base}/pages/${pageId}/scout/ideas`, { method: 'POST', body: { mode: opt.mode, count: opt.count, ...(opt.focus && { focus: opt.focus }), ...(override() && { modelOverride: override() }) } })); });
+  const ideas = () => run('ideas', async () => { setWritten({}); setScout(await api<ScoutView>(`${base}/pages/${pageId}/scout/ideas`, { method: 'POST', body: { mode: opt.mode, count: opt.count, ...(opt.keywords.trim() && { keywords: opt.keywords.trim() }), ...(opt.focus && { focus: opt.focus }), ...(override() && { modelOverride: override() }) } })); });
+  // ไอเดีย → ค้นคว้า → เขียน + ตรวจข้อเท็จจริง → ร่างรออนุมัติ ในคลิกเดียว
+  const writeNow = (i: number) => run(`w:${i}`, async () => {
+    const r = await api<{ import: { draftCount: number; postCount: number }; factCheck: { flagged: number; error: string | null }; idea: ScoutIdea }>(`${base}/pages/${pageId}/scout/ideas/${i}/write`, { method: 'POST', body: { imageFallback: opt.image, ...(opt.mode === 'ai' && override() && { searchOverride: override() }) } });
+    setScout(s => (s ? { ...s, ideas: s.ideas.map((x, k) => (k === i ? r.idea : x)) } : s));
+    setWritten(w => ({ ...w, [i]: { drafted: r.import.draftCount, flagged: r.factCheck.flagged, error: r.factCheck.error } }));
+    if (r.import.draftCount) onDrafted();
+  });
   const research = (i: number) => run(`r:${i}`, async () => {
     const r = await api<{ brief: ResearchBriefRow; idea: ScoutIdea }>(`${base}/pages/${pageId}/scout/ideas/${i}/research`, { method: 'POST', body: opt.mode === 'ai' && override() ? { searchOverride: override() } : {} });
     setScout(s => (s ? { ...s, ideas: s.ideas.map((x, k) => (k === i ? r.idea : x)) } : s));
@@ -84,14 +92,21 @@ export function PageScout({ base, pages, initialPageId, onBrief }: { base: strin
       )}
 
       {scout?.profile && (
-        <div className="mt-3 grid items-end gap-2 md:grid-cols-[160px_1fr_110px_1fr_auto]">
-          <Field label=" "><Select value={opt.mode} onChange={e => setOpt({ ...opt, mode: e.target.value as 'ai' | 'web' })}><option value="ai" disabled={!aiReady}>{t('sc.mode.ai')}</option><option value="web" disabled={!caps?.tavily}>{t('sc.mode.web')}</option></Select></Field>
-          {opt.mode === 'ai'
-            ? <Field label={t('rs.searchModel')}><Select value={opt.model} onChange={e => setOpt({ ...opt, model: e.target.value })}>{caps?.researchRoleSearches && <option value="">{t('news.aiDefault')} (research)</option>}{(caps?.webSearch ?? []).map(o => <option key={`${o.connectionId}|${o.model}`} value={`${o.connectionId}|${o.model}`}>{o.label} · {o.model}</option>)}</Select></Field>
-            : <div />}
-          <Field label={t('sc.count')}><Select value={opt.count} onChange={e => setOpt({ ...opt, count: Number(e.target.value) })}>{[3, 6, 9, 12].map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
-          <Field label={t('sc.focus')}><Input value={opt.focus} placeholder="เช่น เน้นลูกค้าต่างชาติ / ช่วงฤดูฝน" onChange={e => setOpt({ ...opt, focus: e.target.value })} /></Field>
-          <Button disabled={!!busy || (opt.mode === 'ai' ? !aiReady : !caps?.tavily)} onClick={ideas}>{busy === 'ideas' ? t('sc.searching') : t('sc.ideas')}</Button>
+        <div className="mt-3 space-y-2">
+          <div className="grid items-end gap-2 md:grid-cols-[160px_1fr_110px_180px]">
+            <Field label=" "><Select value={opt.mode} onChange={e => setOpt({ ...opt, mode: e.target.value as 'ai' | 'web' })}><option value="ai" disabled={!aiReady}>{t('sc.mode.ai')}</option><option value="web" disabled={!caps?.tavily}>{t('sc.mode.web')}</option></Select></Field>
+            {opt.mode === 'ai'
+              ? <Field label={t('rs.searchModel')}><Select value={opt.model} onChange={e => setOpt({ ...opt, model: e.target.value })}>{caps?.researchRoleSearches && <option value="">{t('news.aiDefault')} (research)</option>}{(caps?.webSearch ?? []).map(o => <option key={`${o.connectionId}|${o.model}`} value={`${o.connectionId}|${o.model}`}>{o.label} · {o.model}</option>)}</Select></Field>
+              : <div />}
+            <Field label={t('sc.count')}><Select value={opt.count} onChange={e => setOpt({ ...opt, count: Number(e.target.value) })}>{[3, 6, 9, 12].map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
+            <Field label={t('sc.image')}><Select value={opt.image} onChange={e => setOpt({ ...opt, image: e.target.value as 'stock' | 'ai' | 'none' })}>{(['stock', 'ai', 'none'] as const).map(x => <option key={x} value={x}>{t(`news.img.${x}` as MessageKey)}</option>)}</Select></Field>
+          </div>
+          <div className="grid items-end gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <Field label={t('sc.keywords')}><Input value={opt.keywords} placeholder={t('sc.keywordsPh')} onChange={e => setOpt({ ...opt, keywords: e.target.value })} onKeyDown={e => { if (e.key === 'Enter' && !busy) ideas(); }} /></Field>
+            <Field label={t('sc.focus')}><Input value={opt.focus} placeholder="เช่น เน้นลูกค้าต่างชาติ / ช่วงฤดูฝน" onChange={e => setOpt({ ...opt, focus: e.target.value })} /></Field>
+            <Button disabled={!!busy || (opt.mode === 'ai' ? !aiReady : !caps?.tavily)} onClick={ideas}>{busy === 'ideas' ? t('sc.searching') : t('sc.ideas')}</Button>
+          </div>
+          <p className="text-xs text-slate-500">{t('sc.keywordsHelp')}</p>
         </div>
       )}
       {scout?.profile && caps && !aiReady && !caps.tavily && <p className="mt-1 text-xs text-amber-300">{t('rs.noSearchModel')} · {t('rs.noTavily')}</p>}
@@ -108,7 +123,13 @@ export function PageScout({ base, pages, initialPageId, onBrief }: { base: strin
               {it.trend && <p className="text-xs text-amber-200">📈 {it.trend}</p>}
               {it.angle && <p className="text-xs text-slate-400">🎯 {it.angle}</p>}
               {it.sources.length > 0 && <div className="text-xs">{it.sources.map(k => { const s = src(k); return s ? <a key={k} href={s.url} target="_blank" rel="noreferrer" className="mr-2 text-sky-400 hover:underline">[{k}] {s.siteName ?? s.title}</a> : null; })}</div>}
-              <div className="pt-1">{it.briefId ? <span className="text-xs text-emerald-400">✔ {t('sc.researched')}</span> : null} <Button variant="ghost" disabled={!!busy} onClick={() => research(i)}>{busy === `r:${i}` ? t('rs.running') : t('sc.research')}</Button></div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button disabled={!!busy} onClick={() => writeNow(i)}>{busy === `w:${i}` ? t('sc.writing') : t('sc.writeNow')}</Button>
+                <Button variant="ghost" disabled={!!busy} onClick={() => research(i)}>{busy === `r:${i}` ? t('rs.running') : t('sc.research')}</Button>
+              </div>
+              {written[i] && <p className="text-xs text-emerald-400">✔ {t('sc.drafted').replace('{n}', String(written[i]!.drafted))}{written[i]!.flagged > 0 ? <span className="text-amber-300"> · ⚠ {t('sc.flagged').replace('{n}', String(written[i]!.flagged))}</span> : null}</p>}
+              {!written[i] && (it.drafted ?? 0) > 0 && <p className="text-xs text-emerald-400">✔ {t('sc.drafted').replace('{n}', String(it.drafted))}</p>}
+              {!written[i] && !it.drafted && it.briefId && <p className="text-xs text-slate-400">✔ {t('sc.researched')}</p>}
             </div>
           ))}</div>
         </div>

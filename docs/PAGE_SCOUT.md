@@ -17,7 +17,10 @@
     ไอเดียแต่ละข้อ: ประเภท (กำลังเป็นกระแส / ตามฤดูกาล / ความรู้-เคล็ดลับ / เชื่อมบริการ) · สไตล์ที่เหมาะ · ทำไมลูกค้าเพจนี้จะสนใจ
       · สัญญาณกระแส · มุมเล่า · แหล่งจริง [n]
     "กระแส" ที่ไม่มีแหล่งจริง ถูกลดเป็น "ความรู้-เคล็ดลับ" อัตโนมัติ (ไม่ให้ดูเหมือนข่าว)
- ③ กด "ค้นคว้า+เขียนเรื่องนี้"
+ ②' คำค้น (ค้นจริง) — ใส่คำเองได้ ≤ 5 คำ (คั่นด้วย ,) ระบบค้นคำเหล่านี้ก่อนคำค้นของโปรไฟล์
+     · "อยากได้แนวไหน" = บอกทิศทางให้ AI ตอนคัดไอเดีย (ไม่ได้เอาไปค้น)
+ ③ "✍️ เขียนโพสต์เลย" (คลิกเดียว: ค้นคว้า → เขียนตามสไตล์ของไอเดีย → ตรวจข้อเท็จจริง → ร่างรออนุมัติ พร้อมภาพประกอบที่เลือก)
+    กดซ้ำได้อีกมุม — ใช้ผลค้นคว้าเดิม ไม่ค้นซ้ำ · หรือกด "ค้นคว้า+เขียนเรื่องนี้"
     มีลิงก์แหล่ง → อ่านจากลิงก์ · ไม่มี/อ่านไม่ได้ → ค้นต่อด้วยคำค้นของไอเดีย (AI ค้นเอง หรือ Tavily)
     → เปิดในโต๊ะค้นคว้า (เลือกเพจไว้ให้) → เขียนโพสต์ + ตรวจข้อเท็จจริง → ร่างรออนุมัติ
 ```
@@ -35,7 +38,8 @@
 |---|---|---|
 | GET | `workspaces/:ws/pages/:pageId/scout` | content.read |
 | POST | `workspaces/:ws/pages/:pageId/scout/check` `{ modelOverride? }` | content.create + ai.use |
-| POST | `workspaces/:ws/pages/:pageId/scout/ideas` `{ mode: ai\|web, count, focus?, modelOverride? }` | content.create + ai.use |
+| POST | `workspaces/:ws/pages/:pageId/scout/ideas` `{ mode: ai\|web, count, keywords?, focus?, modelOverride? }` | content.create + ai.use |
+| POST | `workspaces/:ws/pages/:pageId/scout/ideas/:index/write` `{ count, style?, factCheck, imageFallback?, searchOverride?, writerOverride? }` | content.create + ai.use |
 | POST | `workspaces/:ws/pages/:pageId/scout/ideas/:index/research` `{ modelOverride?, searchOverride? }` | content.create + ai.use |
 
 ทดสอบ: `scout.int.test.ts` (mock Graph/AI/เว็บ/Tavily)

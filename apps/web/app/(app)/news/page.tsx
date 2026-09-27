@@ -123,7 +123,7 @@ function NewsInner() {
       {notice && <p className="text-sm text-emerald-400">✔ {notice}</p>}
       <ErrorBox error={error} />
 
-      {brandId && canAi && brandPages.length > 0 && <PageScout base={base} pages={brandPages} initialPageId={pageParam} onBrief={(brief, pageId) => setScoutBrief({ brief, pageId, seq: Date.now() })} />}
+      {brandId && canAi && brandPages.length > 0 && <PageScout base={base} pages={brandPages} initialPageId={pageParam} onBrief={(brief, pageId) => setScoutBrief({ brief, pageId, seq: Date.now() })} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 
       {brandId && canAi && <ResearchDesk base={base} brandId={brandId} pages={brandPages} conns={conns} openBrief={scoutBrief} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 

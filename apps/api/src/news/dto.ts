@@ -123,9 +123,22 @@ export const scoutIdeasSchema = z.object({
   /** ai = AI ค้นเว็บเอง · web = ค้น Tavily ตามคำค้นของโปรไฟล์เพจ */
   mode: z.enum(['ai', 'web']).default('ai'),
   count: z.number().int().min(3).max(12).default(6),
+  /** คำค้นที่ผู้ใช้อยากให้ค้นจริง (คั่นด้วย , หรือขึ้นบรรทัดใหม่ ≤ 5 คำ) — ใช้ก่อนคำค้นของโปรไฟล์เพจ */
+  keywords: z.string().trim().max(400).optional(),
   focus: z.string().trim().max(300).optional(),
   modelOverride: modelOverrideSchema.optional(),
 });
 export type ScoutIdeasDto = z.infer<typeof scoutIdeasSchema>;
 export const scoutResearchSchema = z.object({ modelOverride: modelOverrideSchema.optional(), searchOverride: modelOverrideSchema.optional() }).default({});
 export type ScoutResearchDto = z.infer<typeof scoutResearchSchema>;
+/** ไอเดีย → ค้นคว้า → เขียนโพสต์ → ร่างรออนุมัติ ในคลิกเดียว */
+export const scoutWriteSchema = z.object({
+  count: z.number().int().min(1).max(3).default(1),
+  style: z.enum(WRITE_STYLES).optional(),
+  factCheck: z.boolean().default(true),
+  imageFallback: z.enum(IMAGE_SOURCES).optional(),
+  modelOverride: modelOverrideSchema.optional(),
+  searchOverride: modelOverrideSchema.optional(),
+  writerOverride: modelOverrideSchema.optional(),
+}).default({ count: 1, factCheck: true });
+export type ScoutWriteDto = z.infer<typeof scoutWriteSchema>;
