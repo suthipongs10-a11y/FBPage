@@ -219,6 +219,8 @@ model Workspace {
   mediaConfigs      MediaModelConfig[]
   mediaJobs         MediaJob[]
   newsAutomations   NewsAutomation[]
+  contentInboxes    ContentInbox[]
+  contentImports    ContentImport[]
 }
 
 enum WorkspaceRole {
@@ -294,6 +296,8 @@ model Brand {
   newsSources     NewsSource[]
   newsItems       NewsItem[]
   newsAutomation  NewsAutomation?
+  contentInbox    ContentInbox?
+  contentImports  ContentImport[]
 
   @@index([clientId])
 }
@@ -1851,4 +1855,68 @@ model NewsAutomation {
   brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([enabled])
+}
+
+/// กล่องรับคอนเทนต์จาก AI ภายนอก (ChatGPT/Claude/Gemini) ต่อแบรนด์ — แพ็กเกจ fbpm-content-v1 ผ่าน URL รับไฟล์หรือโฟลเดอร์ Google Drive
+model ContentInbox {
+  id                  String    @id @default(cuid())
+  workspaceId         String
+  brandId             String    @unique
+  /// เพจเริ่มต้นเมื่อแพ็กเกจไม่ระบุ page
+  pageId              String?
+  theme               String    @default("dark")
+  /// โพสต์ที่ไม่มีรูป: none | stock | ai
+  imageFallback       String    @default("stock")
+  /// แพ็กเกจที่ตรวจผ่าน (ไม่มี error) สร้างเป็นร่างรออนุมัติทันที — ไม่โพสต์เองเด็ดขาด
+  autoDraft           Boolean   @default(true)
+  /// sha256 ของคีย์ URL รับไฟล์ (ตัวคีย์แสดงครั้งเดียวตอนสร้าง)
+  keyHash             String?   @unique
+  keyHint             String?
+  keyCreatedAt        DateTime?
+  /// Google Drive: โฟลเดอร์ที่แชร์ให้ service account (อ่านอย่างเดียว)
+  driveEnabled        Boolean   @default(false)
+  driveFolderId       String?
+  driveClientEmail    String?
+  /// JSON คีย์ service account เข้ารหัสด้วย common/crypto — ห้ามอยู่ใน select/response/audit
+  driveCredentialsEnc String?
+  driveLastPolledAt   DateTime?
+  driveLastError      String?
+  /// ผู้ตั้งค่า — ร่างจากช่องทางอัตโนมัติบันทึกในนามคนนี้ (audit)
+  createdById         String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([driveEnabled])
+}
+
+/// แพ็กเกจที่รับเข้ามาหนึ่งครั้ง + ผลตรวจรายโพสต์ (ผ่าน/เตือน/ไม่ผ่าน) + ร่างที่สร้าง
+model ContentImport {
+  id          String   @id @default(cuid())
+  workspaceId String
+  brandId     String
+  /// paste | api | gdrive
+  channel     String
+  /// gdrive: fileId:md5 — กันนำเข้าไฟล์เดิมซ้ำ
+  externalId  String?
+  fileName    String?
+  /// CHECKED (ยังไม่สร้างร่าง) | DRAFTED | PARTIAL | FAILED | DISMISSED
+  status      String
+  postCount   Int      @default(0)
+  draftCount  Int      @default(0)
+  /// { format, parseError, posts: [{ index, status, title, checks[], result? }] }
+  report      Json
+  /// แพ็กเกจที่ normalize แล้ว (ไว้กดสร้างร่างภายหลัง)
+  payload     Json?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, channel, externalId])
+  @@index([brandId, createdAt])
 }

@@ -22,6 +22,14 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   return data as T;
 }
 
+/** อัปโหลดไฟล์ดิบ (รูป) — body เป็นไบต์ตรง ๆ ไม่ห่อ JSON */
+export async function apiUpload<T>(path: string, file: Blob): Promise<T> {
+  const res = await fetch(`/api${path}`, { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file, credentials: 'same-origin', cache: 'no-store' });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, typeof data?.message === 'string' ? data.message : `HTTP ${res.status}`, data?.issues ?? []);
+  return data as T;
+}
+
 // ---------- types ที่หน้าเว็บใช้ (mirror ของ API response) ----------
 export interface User { id: string; email: string; name: string }
 export interface WorkspaceSummary { id: string; name: string; slug: string; timezone: string; automationPaused: boolean; role: string }
@@ -161,8 +169,8 @@ export interface EmailSendOutcome { status: 'SENT' | 'PARTIAL' | 'FAILED' | 'SKI
 
 // ---------- ห้องข่าว ----------
 export interface NewsSourceRow { id: string; brandId: string; kind: 'RSS' | 'SEARCH'; label: string; url: string | null; query: string | null; enabled: boolean; lastFetchedAt: string | null; lastError: string | null; lastNewCount: number; createdAt: string }
-export interface NewsAngle { headlineTh?: string; why?: string; category?: string; risk?: 'LOW' | 'HIGH'; riskReasons?: string[] }
-export interface NewsNotes { risk?: 'LOW' | 'HIGH'; riskReasons?: string[]; needsCheck?: string[] }
+export interface NewsAngle { headlineTh?: string; why?: string; category?: string; risk?: 'LOW' | 'HIGH'; riskReasons?: string[]; imported?: boolean }
+export interface NewsNotes { risk?: 'LOW' | 'HIGH'; riskReasons?: string[]; needsCheck?: string[]; suggestedAt?: string | null }
 export interface NewsItemRow {
   id: string; brandId: string; sourceId: string | null; url: string; title: string; snippet: string | null; sourceName: string | null; publishedAt: string | null; fetchedAt: string;
   status: 'NEW' | 'SHORTLISTED' | 'DRAFTED' | 'DISMISSED'; score: number | null; angle: NewsAngle | null; contentId: string | null;
@@ -171,3 +179,10 @@ export interface NewsItemRow {
 export type SearchProviderView = { configured: false; provider?: string } | { configured: true; provider: string; keyHint: string | null; status: string; lastError: string | null; verifiedAt: string | null; callCount: number };
 export interface AiMediaConfig { image: { connectionId: string; model: string; unitCostUsd: number | null; connectionLabel: string; kind: string; connectionStatus: string } | null; monthlyImageLimit: number | null; usedThisMonth: number; costThisMonthUsd: number | null; supportedKinds: string[] }
 export interface NewsAutomationRow { brandId: string; enabled: boolean; pageId: string; fetchEveryHours: number; draftsPerDay: number; minScore: number; skipHighRisk: boolean; imageSource: string; theme: string; postingSlots: string[]; lastRunAt: string | null; lastFetchAt: string | null; lastResult: { fetched: number; shortlisted: number; drafted: number; draftedToday: number; errors: string[] } | null; lastError: string | null; updatedAt: string }
+
+// ---------- นำเข้าแพ็กเกจจาก AI ภายนอก (fbpm-content-v1) ----------
+export interface ImportCheck { level: 'error' | 'warn' | 'info'; code: string; message: string }
+export interface ImportPostReport { index: number; status: 'PASS' | 'WARN' | 'FAIL'; title: string; checks: ImportCheck[]; pageId?: string | null; result?: { contentId?: string; error?: string; imageErrors?: string[]; cardError?: string | null } }
+export interface ImportReport { format: string | null; parseError: string | null; posts: ImportPostReport[] }
+export interface ContentImportRow { id: string; brandId: string; channel: 'paste' | 'api' | 'gdrive'; fileName: string | null; status: string; postCount: number; draftCount: number; report: ImportReport; createdAt: string; updatedAt: string }
+export interface ContentInboxView { configured: boolean; pageId: string | null; theme: string; imageFallback: string; autoDraft: boolean; hasKey: boolean; keyHint: string | null; keyCreatedAt: string | null; driveEnabled: boolean; driveFolderId: string | null; driveClientEmail: string | null; driveConfigured: boolean; driveLastPolledAt: string | null; driveLastError: string | null }

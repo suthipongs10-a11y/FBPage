@@ -55,3 +55,25 @@ export type AutomationDto = z.infer<typeof automationSchema>;
 export const nextSlotSchema = z.object({ pageId: z.string().trim().min(1) });
 export const suggestSourcesSchema = z.object({ count: z.number().int().min(1).max(10).default(5), focus: z.string().trim().max(200).optional(), modelOverride: modelOverrideSchema.optional() }).default({ count: 5 });
 export type SuggestSourcesDto = z.infer<typeof suggestSourcesSchema>;
+
+// ---- นำเข้าแพ็กเกจคอนเทนต์จาก AI ภายนอก (fbpm-content-v1) ----
+const themeEnum = z.enum(THEME_NAMES as [string, ...string[]]);
+/** ชื่อไฟล์รูปในแพ็กเกจ → id ของไฟล์ที่อัปโหลดไว้ (POST news/import/files) */
+const filesMap = z.record(z.string().trim().min(1).max(300), z.string().trim().min(1).max(40)).refine(m => Object.keys(m).length <= 60, 'ไฟล์แนบเกิน 60 ไฟล์');
+export const importCheckSchema = z.object({ text: z.string().min(2).max(1_500_000), pageId: z.string().trim().min(1).optional(), files: filesMap.optional() });
+export type ImportCheckDto = z.infer<typeof importCheckSchema>;
+export const importSchema = importCheckSchema.extend({ theme: themeEnum.optional(), imageFallback: z.enum(IMAGE_SOURCES).optional(), draft: z.boolean().default(true), fileName: z.string().trim().max(200).optional() });
+export type ImportDto = z.infer<typeof importSchema>;
+export const uploadQuerySchema = z.object({ name: z.string().trim().min(1).max(300) });
+export const inboxSchema = z.object({
+  pageId: z.string().trim().min(1).nullable().optional(),
+  theme: themeEnum.optional(),
+  imageFallback: z.enum(IMAGE_SOURCES).optional(),
+  autoDraft: z.boolean().optional(),
+  driveEnabled: z.boolean().optional(),
+  /** ลิงก์โฟลเดอร์ Google Drive หรือรหัสโฟลเดอร์ · null = เลิกใช้ */
+  driveFolder: z.string().trim().max(500).nullable().optional(),
+  /** ไฟล์คีย์ JSON ของ service account (ส่งเฉพาะตอนตั้ง/เปลี่ยน — ไม่แสดงกลับ) · null = ลบ */
+  driveCredentials: z.string().trim().min(20).max(12000).nullable().optional(),
+});
+export type InboxDto = z.infer<typeof inboxSchema>;

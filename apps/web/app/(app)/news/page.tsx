@@ -5,6 +5,7 @@ import { api, type AiConnectionsView, type NewsAutomationRow, type NewsItemRow, 
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } from '@/components/ui';
+import { ContentImport } from '@/components/content-import';
 
 const THEMES = ['dark', 'warm', 'ocean', 'gold', 'forest', 'default'];
 const TABS = ['SHORTLISTED', 'NEW', 'DRAFTED'] as const;
@@ -22,6 +23,9 @@ type ImageSource = (typeof IMAGE_SOURCES)[number];
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const pad = (n: number) => String(n).padStart(2, '0');
 /** ชั่วโมงถัดไปที่ห่างจากตอนนี้อย่างน้อย 30 นาที ในเวลาเครื่อง — ค่าเริ่มต้นของช่องตั้งเวลา */
+/** ISO → ค่า datetime-local ตามเวลาเครื่อง (เวลาที่แพ็กเกจนำเข้าเสนอมา) */
+const toLocalInput = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const suggested = (i: NewsItemRow) => { const s = i.content?.aiNotes?.suggestedAt; return s && Date.parse(s) > Date.now() + 10 * 60_000 ? toLocalInput(s) : ''; };
 const nextSlot = () => { const d = new Date(Date.now() + 30 * 60_000); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`; };
 /** "connectionId|model" ↔ modelOverride */
 const toOverride = (v: string) => { if (!v) return undefined; const [connectionId, model] = v.split('|'); return { connectionId: connectionId!, ...(model && { model }) }; };
@@ -83,10 +87,10 @@ export default function NewsPage() {
     return `เขียนเสร็จ (${r.model}) — รออนุมัติ${r.needsCheck.length ? ` · มี ${r.needsCheck.length} จุดต้องยืนยัน` : ''}${r.imageError ? ` · ${t('news.imageError')}: ${r.imageError}` : ''}${r.cardError ? ` · ${t('news.cardError')}: ${r.cardError}` : ''}`;
   });
   const setStatus = (i: NewsItemRow, status: 'NEW' | 'DISMISSED') => run(`st:${i.id}`, async () => { await api(`${base}/news/items/${i.id}`, { method: 'PATCH', body: { status } }); });
-  const slotFor = (i: NewsItemRow) => when[i.id] || (i.content?.pageId && slotOf[i.content.pageId]) || nextSlot();
+  const slotFor = (i: NewsItemRow) => when[i.id] || suggested(i) || (i.content?.pageId && slotOf[i.content.pageId]) || nextSlot();
   const approve = (i: NewsItemRow) => run(`ap:${i.id}`, async () => {
-    // เวลาจากช่องเวลาของเพจ (เขตเวลาเพจ) ส่งไปตามนั้น — ถ้าผู้ใช้แก้เวลาเองใช้เขตเวลาของเครื่อง
-    const own = !!when[i.id];
+    // เวลาจากช่องเวลาของเพจ (เขตเวลาเพจ) ส่งไปตามนั้น — ถ้าผู้ใช้แก้เวลาเอง/เวลาที่แพ็กเกจนำเข้าเสนอ ใช้เขตเวลาของเครื่อง
+    const own = !!when[i.id] || !!suggested(i);
     await api(`${base}/content/${i.contentId}/approve-schedule`, { method: 'POST', body: { scheduledLocal: slotFor(i), ...(own && { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) } });
     return `${t('news.scheduledAt')} ${slotFor(i).replace('T', ' ')}`;
   });
@@ -110,6 +114,8 @@ export default function NewsPage() {
       <p className="rounded-lg border border-sky-900/60 bg-sky-950/30 p-2 text-xs text-sky-200">{t('news.rules')}</p>
       {notice && <p className="text-sm text-emerald-400">✔ {notice}</p>}
       <ErrorBox error={error} />
+
+      {brandId && <ContentImport base={base} brandId={brandId} pages={brandPages} canWrite={canWrite} canConfigure={can('ai.configure')} onDrafted={() => { setTab('DRAFTED'); void load().catch(setError); }} />}
 
       <div className="grid gap-3 md:grid-cols-3">
         <Card title={t('news.sources')} className="md:col-span-2" actions={canWrite && <Button disabled={busy === 'fetch' || !sources.some(s => s.enabled)} onClick={fetchNow}>{busy === 'fetch' ? '…' : t('news.fetchNow')}</Button>}>
@@ -194,10 +200,11 @@ export default function NewsPage() {
             <Card key={i.id}>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                 {i.score != null && <Pill tone={i.score >= 70 ? 'ok' : 'muted'}>{i.score}</Pill>}
+                {i.angle?.imported && <Pill tone="ok">{t('imp.badge')}</Pill>}
                 {i.angle?.category && <Pill>{i.angle.category}</Pill>}
                 {risk && <Pill tone={risk === 'HIGH' ? 'bad' : 'ok'}>{t(`news.risk.${risk}` as MessageKey)}</Pill>}
                 <span>{i.sourceName ?? '—'} · {fmt(i.publishedAt ?? i.fetchedAt)}</span>
-                <a href={i.url} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">{t('news.source')} ↗</a>
+                {i.url && <a href={i.url} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">{t('news.source')} ↗</a>}
               </div>
               <h3 className="mt-2 font-semibold">{i.angle?.headlineTh ?? i.title}</h3>
               {i.angle?.headlineTh && <p className="text-xs text-slate-500">{i.title}</p>}

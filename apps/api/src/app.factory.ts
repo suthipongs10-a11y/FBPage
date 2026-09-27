@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { type INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
@@ -10,7 +11,9 @@ import { loadEnv, type Env } from './config/env';
 /** สร้าง Nest app พร้อม middleware มาตรฐาน — ใช้ทั้ง main.ts และ integration tests */
 export async function createApp(): Promise<{ app: INestApplication; env: Env }> {
   const env = loadEnv(); // ล้มเร็วถ้าค่าตั้งผิด (ก่อนสร้าง Nest app)
-  const app = await NestFactory.create(AppModule, { rawBody: true, logger: env.APP_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] });   // rawBody สำหรับตรวจลายเซ็น webhook (§14)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, logger: env.APP_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] });   // rawBody สำหรับตรวจลายเซ็น webhook (§14)
+  // แพ็กเกจคอนเทนต์ที่นำเข้า (หลายโพสต์ภาษาไทย) เกินค่าเริ่มต้น 100 KB ได้ — nginx จำกัดทั้งคำขอที่ 10 MB อยู่แล้ว
+  app.useBodyParser('json', { limit: '2mb' });
 
   // ทุก request มี correlation id (AGENTS.md §79) — ใช้ต่อใน audit log และ AI task log
   app.use((req: Request, res: Response, next: NextFunction) => {

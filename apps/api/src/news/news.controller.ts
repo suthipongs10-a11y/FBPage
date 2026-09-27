@@ -1,5 +1,6 @@
 /** ห้องข่าว — ใต้ workspaces/:workspaceId (แหล่งข่าวผูกกับแบรนด์) */
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { ZodPipe } from '../common/zod.pipe';
@@ -9,13 +10,14 @@ import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { NewsService } from './news.service';
 import { NewsAutomationService } from './automation.service';
-import { automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { ContentImportService } from './import.service';
+import { importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
 @UseGuards(AuthGuard, TenantGuard)
 export class NewsController {
-  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService) {}
+  constructor(@Inject(NewsService) private readonly news: NewsService, @Inject(NewsAutomationService) private readonly auto: NewsAutomationService, @Inject(ContentImportService) private readonly imports: ContentImportService) {}
 
   // ---- คีย์ค้นเว็บ ----
   @Get('news/search-provider') @RequirePermission('content.read')
@@ -58,4 +60,41 @@ export class NewsController {
   runAutomation(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.auto.runOne(t.workspaceId, brandId); }
   @Get('news/next-slot') @RequirePermission('content.read')
   nextSlot(@Tenant() t: TenantContext, @Query(new ZodPipe(nextSlotSchema)) q: z.infer<typeof nextSlotSchema>) { return this.auto.nextSlot(t.workspaceId, q.pageId); }
+
+  // ---- นำเข้าแพ็กเกจจาก AI ภายนอก (fbpm-content-v1) ----
+  @Get('brands/:brandId/news/import/template') @RequirePermission('content.read')
+  importTemplate(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.template(t.workspaceId, brandId); }
+  @Get('brands/:brandId/news/inbox') @RequirePermission('content.read')
+  inbox(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.getInbox(t.workspaceId, brandId); }
+  @Put('brands/:brandId/news/inbox') @RequirePermission('ai.configure')
+  setInbox(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(inboxSchema)) dto: InboxDto, @RequestId() rid: string) { return this.imports.setInbox(t.workspaceId, u.id, brandId, dto, rid); }
+  @Post('brands/:brandId/news/inbox/key') @HttpCode(200) @RequirePermission('ai.configure')
+  rotateKey(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @RequestId() rid: string) { return this.imports.rotateKey(t.workspaceId, u.id, brandId, rid); }
+  @Delete('brands/:brandId/news/inbox/key') @RequirePermission('ai.configure')
+  revokeKey(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @RequestId() rid: string) { return this.imports.revokeKey(t.workspaceId, u.id, brandId, rid); }
+  @Post('brands/:brandId/news/inbox/drive/poll') @HttpCode(200) @RequirePermission('content.create')
+  pollDrive(@Tenant() t: TenantContext, @Param('brandId') brandId: string, @RequestId() rid: string) { return this.imports.pollDriveOne(t.workspaceId, brandId, rid); }
+  /** อัปโหลดรูปแนบแพ็กเกจ — body เป็นไบต์ของรูปตรง ๆ (content-type image/*) ≤ 12 MB */
+  @Post('news/import/files') @RequirePermission('content.create')
+  async uploadFile(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Query(new ZodPipe(uploadQuerySchema)) q: z.infer<typeof uploadQuerySchema>, @Req() req: Request) { return this.imports.upload(t.workspaceId, u.id, q.name, await readRaw(req, 12 * 1024 * 1024)); }
+  @Post('brands/:brandId/news/import/check') @HttpCode(200) @RequirePermission('content.create')
+  checkImport(@Tenant() t: TenantContext, @Param('brandId') brandId: string, @Body(new ZodPipe(importCheckSchema)) dto: ImportCheckDto) { return this.imports.check(t.workspaceId, brandId, dto); }
+  @Post('brands/:brandId/news/import') @HttpCode(200) @RequirePermission('content.create')
+  importPackage(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('brandId') brandId: string, @Body(new ZodPipe(importSchema)) dto: ImportDto, @RequestId() rid: string) { return this.imports.importPaste(t.workspaceId, u.id, brandId, dto, rid); }
+  @Get('brands/:brandId/news/imports') @RequirePermission('content.read')
+  importsList(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.list(t.workspaceId, brandId); }
+  @Post('news/imports/:id/draft') @HttpCode(200) @RequirePermission('content.create')
+  draftImport(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.imports.draftImport(t.workspaceId, u.id, id, rid); }
+  @Delete('news/imports/:id') @RequirePermission('content.create')
+  dismissImport(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.imports.dismiss(t.workspaceId, u.id, id, rid); }
+}
+
+/** อ่าน body ดิบ (รูป/ข้อความ) พร้อมเพดาน — ใช้กับ content-type ที่ Nest ไม่ parse ให้ */
+export async function readRaw(req: Request, max: number): Promise<Buffer> {
+  if (Buffer.isBuffer(req.body)) return req.body;
+  const len = Number(req.headers['content-length'] ?? 0);
+  if (len > max) throw new BadRequestException(`ไฟล์ใหญ่เกิน ${Math.round(max / 1048576)} MB`);
+  const chunks: Buffer[] = []; let total = 0;
+  for await (const c of req) { total += (c as Buffer).byteLength; if (total > max) throw new BadRequestException(`ไฟล์ใหญ่เกิน ${Math.round(max / 1048576)} MB`); chunks.push(c as Buffer); }
+  return Buffer.concat(chunks);
 }

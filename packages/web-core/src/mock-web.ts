@@ -14,6 +14,8 @@ export interface MockWebState {
   wp: { posts: MockWpPost[]; tags: { id: number; name: string }[]; categories: { id: number; name: string }[]; disabled: boolean; authFail: boolean; failNext: number; roles: string[] };
   /** ห้องข่าว: ฟีด RSS จำลองที่ `/news/rss.xml` (+ `/news/atom.xml`, `/news/redirect`) และ Tavily ที่ `POST /tavily/search` (Bearer `TAVILY_OK`) */
   news: { rssItems: { title: string; link: string; description: string; pubDate: string }[]; tavilyResults: { title: string; url: string; content: string; published_date?: string }[]; tavilyQueries: string[]; pexelsQueries: string[]; pexelsEmpty: boolean };
+  /** Google Drive จำลอง (service account): `POST /google/token` → `DRIVE_TOKEN` · `GET /google/drive/v3/files?q='<folder>' in parents` · `…/files/<id>?alt=media` · Google Docs `…/export` */
+  drive: { folderId: string; files: { id: string; name: string; mimeType: string; md5Checksum: string; modifiedTime: string; content: Buffer }[]; tokenIssuers: string[]; downloads: string[] };
 }
 export interface MockWpPost { id: number; title: string; content: string; excerpt: string; slug: string; status: string; date: string; tags: number[]; categories: number[] }
 export const MOCK_WP_USER = 'wpadmin'; export const MOCK_WP_APP_PASSWORD = 'abcd EFGH ijkl MNOP';
@@ -39,6 +41,7 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
       ],
       tavilyQueries: [], pexelsQueries: [], pexelsEmpty: false,
     },
+    drive: { folderId: 'FOLDER_OK_1234', files: [], tokenIssuers: [], downloads: [] },
   };
   let nextId = 100;
   for (let i = 1; i <= 28; i++) { const d = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10); state.scRows[d] = { clicks: 5 + (i % 7), impressions: 120 + (i % 5) * 20, ctr: 0.05, position: 8.2 }; }
@@ -112,6 +115,28 @@ export async function startMockWeb(port = 0): Promise<{ server: Server; url: str
       const body = JSON.parse(bodyText || '{}') as { query?: string; topic?: string };
       state.news.tavilyQueries.push(String(body.query ?? ''));
       return json(200, { query: body.query, results: state.news.tavilyResults });
+    }
+    // ---- Google Drive จำลอง ----
+    if (u.pathname === '/google/token' && req.method === 'POST') {
+      const assertion = new URLSearchParams(bodyText).get('assertion') ?? '';
+      const [h, c, sig] = assertion.split('.');
+      try {
+        const head = JSON.parse(Buffer.from(h ?? '', 'base64url').toString()) as { alg?: string }; const claims = JSON.parse(Buffer.from(c ?? '', 'base64url').toString()) as { iss?: string; scope?: string };
+        if (head.alg !== 'RS256' || !sig || !claims.iss?.endsWith('.iam.gserviceaccount.com') || !claims.scope?.includes('drive')) return json(400, { error: 'invalid_grant', error_description: 'Invalid JWT Signature.' });
+        state.drive.tokenIssuers.push(claims.iss); return json(200, { access_token: 'DRIVE_TOKEN', expires_in: 3599, token_type: 'Bearer' });
+      } catch { return json(400, { error: 'invalid_grant', error_description: 'Invalid JWT.' }); }
+    }
+    if (u.pathname.startsWith('/google/drive/v3/files')) {
+      if (req.headers.authorization !== 'Bearer DRIVE_TOKEN') return json(401, { error: { message: 'Invalid Credentials' } });
+      if (u.pathname === '/google/drive/v3/files') {
+        const folder = (u.searchParams.get('q') ?? '').match(/'([^']+)' in parents/)?.[1];
+        if (folder !== state.drive.folderId) return json(404, { error: { message: `File not found: ${folder}.` } });
+        return json(200, { files: [...state.drive.files].sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime)).map(({ content: _c, ...f }) => ({ ...f, size: String(_c.byteLength) })) });
+      }
+      const m = u.pathname.match(/^\/google\/drive\/v3\/files\/([^/]+)(\/export)?$/); const f = m && state.drive.files.find(x => x.id === decodeURIComponent(m[1]!));
+      if (!f) return json(404, { error: { message: 'File not found.' } });
+      state.drive.downloads.push(f.id);
+      res.writeHead(200, { 'content-type': m![2] ? 'text/plain' : f.mimeType }); return res.end(f.content);
     }
     // ---- คลังภาพ Pexels จำลอง: GET /pexels/v1/search (header Authorization: PEXELS_OK) + ไฟล์ภาพ /img/*.png ----
     if (u.pathname === '/pexels/v1/search') {

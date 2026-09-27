@@ -115,7 +115,7 @@ export class NewsService {
   }
 
   /** ภาพถ่ายจริงจากคลังภาพฟรีที่ตรงบรรยากาศเรื่อง → บันทึกเป็นไฟล์ + MediaAsset(kind stock) พร้อมเครดิต */
-  private async stockPhoto(workspaceId: string, userId: string, contentId: string, query: string, used: Set<string>) {
+  async stockPhoto(workspaceId: string, userId: string, contentId: string, query: string, used: Set<string>) {
     const photos = await this.stockSearch(workspaceId, query);
     const pick = photos.find(p => !used.has(p.id));
     if (!pick) throw new UnprocessableEntityException(`ไม่พบภาพในคลังสำหรับ "${query}"`);
