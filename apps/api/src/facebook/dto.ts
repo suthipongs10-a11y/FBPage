@@ -14,6 +14,8 @@ export const updatePageSchema = z.object({
   automationLevel: z.enum(AUTOMATION_LEVELS).optional(),
   publishingPaused: z.boolean().optional(),
   timezone: z.string().trim().min(1).max(64).optional(),
+  /** ย้ายเพจไปแบรนด์อื่นใน workspace เดียวกัน (เช่นผูกผิดแบรนด์ตอนเชื่อม) */
+  brandId: z.string().trim().min(1).optional(),
 }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export type UpdatePageDto = z.infer<typeof updatePageSchema>;
 

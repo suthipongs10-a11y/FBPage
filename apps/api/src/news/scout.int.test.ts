@@ -108,12 +108,31 @@ run('page scout (integration)', () => {
     expect((await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas/9/research`, {})).status).toBe(404);
   });
 
-  it('หาเรื่อง (ai): AI ค้นเองได้แหล่งจาก citations · ไม่มี citations = 422', async () => {
-    ai.state.replies.push({ ...J({ ideas: [{ title: 'สงกรานต์ภูเก็ต', why: 'x', trend: 'y', angle: 'z', format: 'news', kind: 'seasonal', sources: [1], query: 'q' }], sourcesUsed: [{ title: 'Moon', url: `${web.url}/article/moon` }] }), citations: [{ url: `${web.url}/article/moon`, title: 'Moon' }] });
+  it('หาเรื่อง (ai): ค้นเว็บก่อนแล้วจัดเป็นไอเดีย · แหล่งมาจาก citations จริง · AI ไม่ค้น → ใช้ Tavily แทน', async () => {
+    ai.state.replies.push({ text: 'สงกรานต์ภูเก็ตปีนี้คึกคัก (Mock Times)', citations: [{ url: `${web.url}/article/moon`, title: 'Moon' }] });
+    ai.state.replies.push(J({ ideas: [{ title: 'สงกรานต์ภูเก็ต', why: 'x', trend: 'y', angle: 'z', format: 'news', kind: 'seasonal', sources: [1, 5], query: 'q' }] }));
     const r = await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas`, { mode: 'ai', count: 3, modelOverride: { connectionId: conn, model: 'sonar' } });
     expect(r.status).toBe(200);
     expect(r.json.ideas[0].sources).toEqual([1]); expect(r.json.ideaSources[0].url).toBe(`${web.url}/article/moon`);
-    ai.state.replies.push(J({ ideas: [{ title: 't', kind: 'evergreen' }], sourcesUsed: [] }));
-    expect((await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas`, { mode: 'ai', modelOverride: { connectionId: conn, model: 'sonar' } })).status).toBe(422);
+    expect(JSON.stringify(ai.state.requests.at(-1)!.messages)).toContain('สงกรานต์ภูเก็ตปีนี้คึกคัก');
+    ai.state.replies.push({ text: 'ไม่ได้ค้น' }, { text: 'ยังไม่ค้น' }, J({ ideas: [{ title: 'เตรียมบ้านรับหน้าฝน', kind: 'evergreen', sources: [1] }] }));
+    const fb = await a.http('POST', `/workspaces/${wsA}/pages/${pageA}/scout/ideas`, { mode: 'ai', modelOverride: { connectionId: conn, model: 'sonar' } });
+    expect(fb.status).toBe(200);
+    expect(fb.json.failures[0]).toContain('Tavily');
+    expect(fb.json.ideaSources[0].url).toBe(`${web.url}/article/elephant`);
+  });
+
+  it('ย้ายเพจไปแบรนด์อื่น: ห้องข่าวอัตโนมัติของแบรนด์เดิมที่ใช้เพจนี้ถูกปิด · แบรนด์ต่าง workspace = 404', async () => {
+    const c2 = await a.http('POST', `/workspaces/${wsA}/clients`, { name: 'ลูกค้าใหม่' });
+    const brand2 = (await a.http('POST', `/workspaces/${wsA}/clients/${c2.json.id}/brands`, { name: 'แบรนด์ที่ถูกต้อง' })).json.id;
+    await a.http('PUT', `/workspaces/${wsA}/brands/${brandA}/news/automation`, { enabled: true, pageId: pageA });
+    const cB = await b.http('POST', `/workspaces/${wsB}/clients`, { name: 'ของคนอื่น' });
+    const brandB = (await b.http('POST', `/workspaces/${wsB}/clients/${cB.json.id}/brands`, { name: 'x' })).json.id;
+    expect((await a.http('PATCH', `/workspaces/${wsA}/pages/${pageA}`, { brandId: brandB })).status).toBe(404);
+    const r = await a.http('PATCH', `/workspaces/${wsA}/pages/${pageA}`, { brandId: brand2 });
+    expect(r.status).toBe(200);
+    expect((await prisma.facebookPage.findUniqueOrThrow({ where: { id: pageA } })).brandId).toBe(brand2);
+    const auto = await prisma.newsAutomation.findUniqueOrThrow({ where: { brandId: brandA } });
+    expect(auto.enabled).toBe(false); expect(auto.lastError).toContain('ย้าย');
   });
 });

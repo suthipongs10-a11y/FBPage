@@ -72,8 +72,16 @@ export class PagesService {
   }
 
   async update(workspaceId: string, userId: string, pageId: string, dto: UpdatePageDto, requestId: string) {
-    const before = await this.prisma.facebookPage.findFirst({ where: { id: pageId, ...pageInWorkspace(workspaceId) }, select: { automationLevel: true, publishingPaused: true, timezone: true } });
+    const before = await this.prisma.facebookPage.findFirst({ where: { id: pageId, ...pageInWorkspace(workspaceId) }, select: { automationLevel: true, publishingPaused: true, timezone: true, brandId: true } });
     if (!before) throw new NotFoundException('ไม่พบเพจ');
+    const moving = dto.brandId && dto.brandId !== before.brandId;
+    if (moving) {
+      const target = await this.prisma.brand.findFirst({ where: { id: dto.brandId, ...brandInWorkspace(workspaceId) }, select: { id: true } });
+      if (!target) throw new NotFoundException('ไม่พบแบรนด์ปลายทาง');
+      // ห้องข่าวอัตโนมัติ/กล่องรับของแบรนด์เดิมที่ชี้เพจนี้ต้องหยุด ไม่งั้นจะเขียนร่างให้เพจที่ไม่ใช่ของแบรนด์นั้นแล้ว
+      await this.prisma.newsAutomation.updateMany({ where: { brandId: before.brandId, pageId }, data: { enabled: false, lastError: 'เพจถูกย้ายไปแบรนด์อื่น — เลือกเพจใหม่แล้วเปิดอีกครั้ง' } });
+      await this.prisma.contentInbox.updateMany({ where: { brandId: before.brandId, pageId }, data: { pageId: null } });
+    }
     const page = await this.prisma.facebookPage.update({ where: { id: pageId }, data: dto, select: PAGE_SELECT });
     await this.audit.log({ workspaceId, userId, action: 'facebook.page.update', resourceType: 'facebookPage', resourceId: pageId, before, after: dto, requestId });
     return page;

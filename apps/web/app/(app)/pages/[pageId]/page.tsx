@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AUTOMATION_LEVELS } from '@fbpm/shared';
-import { api, type MetricCell, type PageAnalysisRow, type PageDetail, type PagePost, type SyncResult } from '@/lib/api';
+import { api, type Client, type ClientDetail, type MetricCell, type PageAnalysisRow, type PageDetail, type PagePost, type SyncResult } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Kpi, Loading, Pill, Select } from '@/components/ui';
@@ -22,6 +22,13 @@ export default function PageDetailPage() {
   const [days, setDays] = useState(90);
   const [plan, setPlan] = useState({ days: 7, postsPerWeek: 3, objective: '' });
   const [error, setError] = useState<unknown>(null); const [busy, setBusy] = useState(''); const [notice, setNotice] = useState('');
+  // ย้ายเพจไปแบรนด์อื่น (กรณีผูกผิดแบรนด์ตอนเชื่อม)
+  const [brandOpts, setBrandOpts] = useState<{ id: string; label: string }[] | null>(null); const [moveTo, setMoveTo] = useState('');
+  const loadBrands = () => run('brands', async () => {
+    const cs = await api<Client[]>(`/workspaces/${ws.id}/clients`);
+    const ds = await Promise.all(cs.map(c => api<ClientDetail>(`/workspaces/${ws.id}/clients/${c.id}`)));
+    setBrandOpts(ds.flatMap(c => c.brands.map(b => ({ id: b.id, label: `${c.name} / ${b.name}` }))));
+  });
 
   const load = useCallback(async () => {
     try { const [p, ps, an] = await Promise.all([api<PageDetail>(`/workspaces/${ws.id}/pages/${pageId}`), api<PagePost[]>(`/workspaces/${ws.id}/pages/${pageId}/posts?limit=50`), api<PageAnalysisRow[]>(`/workspaces/${ws.id}/analytics/pages/${pageId}/analyses`).catch(() => [] as PageAnalysisRow[])]); setPage(p); setPosts(ps); setAnalyses(an); }
@@ -79,6 +86,18 @@ export default function PageDetailPage() {
           <div className="space-y-3">
             <Field label={t('pages.automation')}><Select value={page.automationLevel} disabled={!manage || busy === 'patch'} onChange={e => patch({ automationLevel: e.target.value })}>{AUTOMATION_LEVELS.map(l => <option key={l} value={l}>{t(`auto.${l}` as MessageKey)}</option>)}</Select></Field>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={page.publishingPaused} disabled={!manage || busy === 'patch' || !live} onChange={e => patch({ publishingPaused: e.target.checked })} /> {t('pages.publishingPaused')}</label>
+            {manage && (
+              <div className="border-t border-slate-800 pt-3">
+                <div className="text-sm">{t('pages.brand')}: <b>{page.brand.client.name} / {page.brand.name}</b></div>
+                {!brandOpts ? <Button variant="ghost" className="mt-1" disabled={!!busy} onClick={loadBrands}>{t('pages.moveBrand')}</Button> : (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <Select className="w-64" value={moveTo} onChange={e => setMoveTo(e.target.value)}><option value="">—</option>{brandOpts.filter(b => b.id !== page.brand.id).map(b => <option key={b.id} value={b.id}>{b.label}</option>)}</Select>
+                    <Button disabled={!moveTo || busy === 'patch'} onClick={() => { if (window.confirm(t('pages.moveConfirm'))) { void patch({ brandId: moveTo }).then(() => { setBrandOpts(null); setMoveTo(''); }); } }}>{t('pages.moveBrand')}</Button>
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-slate-500">{t('pages.moveHelp')}</p>
+              </div>
+            )}
           </div>
         </Card>
       </div>

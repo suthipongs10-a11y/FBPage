@@ -106,17 +106,31 @@ run('research desk (integration)', () => {
     expect((await b.http('POST', `/workspaces/${wsB}/news/research/${briefId}/write`, {})).status).toBe(404);
   });
 
-  it('ai: AI ค้นเว็บเอง → แหล่งจาก citations จริง (อ่าน excerpt) · โมเดลที่ไม่ค้นเว็บ = 422', async () => {
-    ai.state.replies.push({ ...J({ ...brief({ headline: 'น้ำแข็งบนดวงจันทร์', keyPoints: [{ text: 'พบน้ำแข็งใกล้ขั้วใต้', sources: [1] }] }), sourcesUsed: [{ title: 'Moon', url: `${web.url}/article/moon` }] }), citations: [{ url: `${web.url}/article/moon`, title: 'Moon ice' }, { url: 'https://unreachable.invalid/x', title: 'X' }] });
+  it('ai: ขั้น 1 AI ค้นเว็บ (ข้อความ + citations จริง) → ขั้น 2 สรุปเป็น JSON · ไม่ค้นจริง → สลับไป Tavily · ไม่มี Tavily = 422', async () => {
+    ai.state.replies.push({ text: 'ข้อค้นพบ: พบน้ำแข็งใกล้ขั้วใต้ของดวงจันทร์ (Mock Times)', citations: [{ url: `${web.url}/article/moon`, title: 'Moon ice' }, { url: 'https://unreachable.invalid/x', title: 'X' }] });
+    ai.state.replies.push(J(brief({ headline: 'น้ำแข็งบนดวงจันทร์', keyPoints: [{ text: 'พบน้ำแข็งใกล้ขั้วใต้', sources: [1, 7] }] })));
     const r = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/research`, { mode: 'ai', query: 'น้ำแข็งบนดวงจันทร์', recency: 'any', modelOverride: { connectionId: conn, model: 'sonar' } });
     expect(r.status).toBe(200);
+    expect(r.json.mode).toBe('ai');
     expect(r.json.sources[0]).toMatchObject({ n: 1, fetched: true, url: `${web.url}/article/moon` });
     expect(r.json.sources[1]).toMatchObject({ n: 2, fetched: false });
     expect(r.json.brief.keyPoints[0].sources).toEqual([1]);
-    expect(ai.state.requests.at(-1)!.extra!.response_format).toBeUndefined();
-    ai.state.replies.push(J({ ...brief(), sourcesUsed: [] }));
+    const [search, structure] = ai.state.requests.slice(-2);
+    expect(search!.extra!.response_format).toBeUndefined();                  // ขั้นค้นไม่บังคับ JSON
+    expect(JSON.stringify(structure!.messages)).toContain('ข้อค้นพบจากการค้นเว็บ');
+    expect(structure!.extra!.response_format).toEqual({ type: 'json_object' }); // ขั้นจัดรูปใช้ JSON mode ได้ตามปกติ
+
+    // โมเดลไม่ค้นจริงทั้งสองรอบ → ใช้ Tavily แทน (มีคีย์)
+    ai.state.replies.push({ text: 'ตอบจากความจำ' }, { text: 'ตอบจากความจำอีกรอบ' }, J({ queries: ['moon ice'] }), J(brief()));
+    const fb = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/research`, { mode: 'ai', query: 'น้ำแข็งบนดวงจันทร์', modelOverride: { connectionId: conn, model: 'sonar' } });
+    expect(fb.status).toBe(200); expect(fb.json.mode).toBe('web');
+    expect(fb.json.failures[0]).toContain('ไม่ได้ค้นเว็บ');
+    // ไม่มีคีย์ Tavily → แจ้งชัดเจน
+    await a.http('DELETE', `/workspaces/${wsA}/news/search-provider?provider=tavily`);
+    ai.state.replies.push({ text: 'x' }, { text: 'y' });
     const bad = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/research`, { mode: 'ai', query: 'อะไรก็ได้', modelOverride: { connectionId: conn, model: 'sonar' } });
     expect(bad.status).toBe(422); expect(bad.json.message).toContain('ไม่ได้ค้นเว็บ');
+    await a.http('PUT', `/workspaces/${wsA}/news/search-provider`, { provider: 'tavily', apiKey: 'TAVILY_OK' });
   });
 
   it('urls + text: อ่านจากลิงก์ (ลิงก์เสียรายงานแยก) · ข้อความที่วาง → โพสต์ของเพจเอง (ไม่ต้องมีที่มา)', async () => {
