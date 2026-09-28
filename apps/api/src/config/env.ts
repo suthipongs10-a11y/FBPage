@@ -11,6 +11,9 @@ export const envSchema = z.object({
   APP_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_URL: z.string().min(1).default('http://localhost:3000'),
+  /** หน้าสาธารณะ /privacy และ /data-deletion (Meta ต้องใช้ตอนเปลี่ยนแอปเป็น Live) — อีเมลติดต่อ + ชื่อผู้ให้บริการ */
+  LEGAL_CONTACT_EMAIL: z.preprocess(v => v === '' ? undefined : v, z.string().email().optional()),
+  LEGAL_OPERATOR_NAME: z.preprocess(v => v === '' ? undefined : v, z.string().max(200).optional()),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   AUTH_SECRET: z.string().min(32, 'AUTH_SECRET must be at least 32 characters'),

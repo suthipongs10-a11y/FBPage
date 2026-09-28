@@ -23,6 +23,14 @@ test.afterAll(async () => { graph.server.close(); yt.server.close(); ai.server.c
 
 test.describe.configure({ mode: 'serial' });
 
+test('privacy policy and data deletion pages are public (needed for the Meta App to go Live)', async ({ page }) => {
+  for (const [path, heading] of [['/privacy', 'Privacy Policy'], ['/data-deletion', 'User Data Deletion']]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(heading);
+  }
+});
+
 test('register through the UI lands on the overview with the workspace', async ({ page }) => {
   await page.goto('/register');
   await page.getByLabel('ชื่อ', { exact: true }).fill(USER.name);
