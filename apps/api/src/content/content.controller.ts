@@ -73,6 +73,8 @@ export class ContentController {
 
   @Post('content/:id/publish') @HttpCode(200) @RequirePermission('content.publish')
   publish(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.content.publishNow(t.workspaceId, u.id, id, rid); }
+  @Post('content/:id/reconcile-not-posted') @HttpCode(200) @RequirePermission('content.publish')
+  reconcile(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.content.reconcileNotPosted(t.workspaceId, u.id, id, rid); }
 
   // ---------- agents ----------
   @Post('pages/:pageId/content/plan') @HttpCode(200) @RequirePermission('content.create', 'ai.use')

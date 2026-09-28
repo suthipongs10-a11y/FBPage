@@ -72,17 +72,20 @@ export class GraphClient {
     if (token) body.set('access_token', token);   // oauth/access_token ใช้ client_id+secret แทน
     const url = `${this.base}/${path.replace(/^\/+/, '')}`;
 
+    // อ่านไฟล์ก่อนยิงเครือข่าย — ไฟล์หาย/อ่านไม่ได้เป็นความผิดพลาดในเครื่อง (ยังไม่มีอะไรไปถึง Facebook) ไม่ใช่ "ต่อ Graph ไม่ได้"
+    const uploads = files ? Object.entries(files).map(([k, f]) => {
+      if (typeof f !== 'string') return { k, blob: new Blob([f.data]), name: f.filename };
+      try { return { k, blob: new Blob([readFileSync(f)]), name: basename(f) }; }
+      catch (e) { throw new Error(`อ่านไฟล์รูปไม่ได้ (${basename(f)}): ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}`); }
+    }) : null;
     let attempt = 0;
     for (;;) {
       let res: Response;
       try {
-        if (files) {
+        if (uploads) {
           const form = new FormData();
           for (const [k, v] of body) form.set(k, v);
-          for (const [k, f] of Object.entries(files)) {
-            if (typeof f === 'string') form.set(k, new Blob([readFileSync(f)]), basename(f));
-            else form.set(k, new Blob([f.data]), f.filename);
-          }
+          for (const u of uploads) form.set(u.k, u.blob, u.name);
           res = await this.fetchImpl(url, { method, body: form });
         } else if (method === 'GET') {
           res = await this.fetchImpl(`${url}?${body}`);

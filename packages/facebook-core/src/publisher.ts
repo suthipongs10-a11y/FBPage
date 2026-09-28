@@ -47,30 +47,53 @@ export async function publishContent(d: SyncDeps, contentId: string, _opts: { re
   if (existingOp?.externalId) return finalize(d, c.id, c.pageId, existingOp.externalId, message, true);
   // Legacy PENDING and interrupted claims are ambiguous. Never guess ownership
   // from matching captions and never issue a second write without reconciliation.
-  if (existingOp) return { status: 'SKIPPED', reason: 'RECONCILIATION_REQUIRED: ตรวจผลที่ Facebook ก่อนส่งอีกครั้ง' };
+  // FAILED = รู้แน่ว่า Facebook ไม่ได้สร้างโพสต์ (ปฏิเสธชัดเจน หรือผู้ใช้ตรวจแล้วยืนยันว่าไม่มี) → ส่งใหม่ได้
+  if (existingOp && existingOp.status !== 'FAILED') return { status: 'SKIPPED', reason: 'RECONCILIATION_REQUIRED: ตรวจผลที่ Facebook ก่อนส่งอีกครั้ง' };
   const { facebookPageId, token } = await loadPageToken(d, c.pageId);
   const op = await d.prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${idempotencyKey}))::text`;
-    if (await tx.externalOperation.findUnique({ where: { idempotencyKey } })) return null;
+    const prior = await tx.externalOperation.findUnique({ where: { idempotencyKey } });
+    if (prior && (prior.status !== 'FAILED' || prior.externalId)) return null;
     // CAS also rejects edits made after this invocation read the approved draft.
     const claimed = await tx.contentItem.updateMany({ where: { id: c.id, updatedAt: c.updatedAt, status: { in: ['APPROVED', 'SCHEDULED', 'PUBLISH_FAILED'] } }, data: { status: 'PUBLISHING', lastError: null } });
     if (!claimed.count) return null;
+    if (prior) return tx.externalOperation.update({ where: { id: prior.id }, data: { requestHash, status: 'IN_FLIGHT', error: null } });
     return tx.externalOperation.create({ data: { workspaceId, provider: 'facebook', operationType: 'publish-post', idempotencyKey, requestHash, status: 'IN_FLIGHT' } });
   });
   if (!op) return { status: 'SKIPPED', reason: 'มีคำขอเผยแพร่อยู่แล้ว หรือเนื้อหาถูกแก้ไข' };
+  let r: { externalId: string };
   try {
     const photos: PhotoPostInput['photos'] = c.mediaPaths.map(p => (/^https?:\/\//.test(p) ? { url: p } : p));
-    const r = photos.length ? await d.fb.createPhotoPost(facebookPageId, token, { message, photos }) : await d.fb.createPost(facebookPageId, token, { message });
-    await d.prisma.externalOperation.update({ where: { id: op.id }, data: { externalId: r.externalId, status: 'SUCCEEDED', error: null } });
-    return finalize(d, c.id, c.pageId, r.externalId, message, false);
+    r = photos.length ? await d.fb.createPhotoPost(facebookPageId, token, { message, photos }) : await d.fb.createPost(facebookPageId, token, { message });
   } catch (e) {
-    const err = e instanceof FacebookApiError && (e.isTokenError || e.isPermissionError) ? e.userMessage : 'RECONCILIATION_REQUIRED: ไม่ยืนยันผลการส่ง กรุณาตรวจสอบที่ Facebook';
-    const retryable = false;
-    await d.prisma.externalOperation.updateMany({ where: { id: op.id, externalId: null }, data: { status: 'UNKNOWN', error: err } });
+    const f = classifyPublishError(e);
+    const err = f.message;
+    const retryable = f.definite && e instanceof FacebookApiError && e.isRateLimited;
+    // definite = Facebook ไม่ได้สร้างโพสต์แน่นอน → FAILED (ส่งใหม่ได้) · ไม่แน่ใจ → UNKNOWN (ต้องตรวจที่ Facebook ก่อน กันโพสต์ซ้ำ)
+    await d.prisma.externalOperation.updateMany({ where: { id: op.id, externalId: null }, data: { status: f.definite ? 'FAILED' : 'UNKNOWN', error: err } });
     await d.prisma.contentItem.update({ where: { id: c.id }, data: { status: 'PUBLISH_FAILED', retryCount: { increment: 1 }, lastError: err.slice(0, 500) } });
     if (e instanceof FacebookApiError && e.isTokenError) await d.prisma.facebookPage.update({ where: { id: c.pageId }, data: { tokenStatus: 'INVALID' } });
     return { status: 'FAILED', error: err, retryable };
   }
+  // โพสต์เกิดขึ้นแล้ว — ถ้าบันทึกฐานข้อมูลล้มตรงนี้ op จะค้าง IN_FLIGHT = ต้องตรวจก่อนส่งซ้ำ (ไม่มีทางโพสต์ซ้ำ)
+  await d.prisma.externalOperation.update({ where: { id: op.id }, data: { externalId: r.externalId, status: 'SUCCEEDED', error: null } });
+  return finalize(d, c.id, c.pageId, r.externalId, message, false);
+}
+
+/**
+ * แยก "Facebook ปฏิเสธชัดเจน" (ไม่มีโพสต์เกิดขึ้น ส่งใหม่ได้) ออกจาก "ไม่รู้ผล" (อาจโพสต์ไปแล้ว ห้ามส่งซ้ำจนกว่าจะตรวจ)
+ * และเก็บข้อความจริงจาก Facebook ไว้ให้ผู้ใช้เห็นว่าติดอะไร (ข้อความ error ของ Graph ไม่มี token)
+ */
+export function classifyPublishError(e: unknown): { definite: boolean; message: string } {
+  if (e instanceof FacebookApiError) {
+    if (e.isTokenError || e.isPermissionError) return { definite: true, message: `${e.userMessage} (${e.message}${e.code != null ? `, code ${e.code}` : ''})`.slice(0, 500) };
+    // Graph ตอบ error JSON กลับมา (4xx) = คำขอถูกปฏิเสธ ไม่ได้สร้างโพสต์ — ยกเว้น code 1/2 (ข้อผิดพลาดฝั่ง Facebook ที่อาจทำไปแล้ว)
+    const rejected = e.httpStatus >= 400 && e.httpStatus < 500 && e.code != null && e.code !== 1 && e.code !== 2;
+    if (rejected) return { definite: true, message: `Facebook ปฏิเสธโพสต์: ${e.message} (code ${e.code}${e.subcode ? `/${e.subcode}` : ''})`.slice(0, 500) };
+    return { definite: false, message: `RECONCILIATION_REQUIRED: ไม่ยืนยันผลการส่ง กรุณาตรวจสอบที่ Facebook (${e.message})`.slice(0, 500) };
+  }
+  // ผิดพลาดในเครื่องก่อนยิง Facebook (เช่น หาไฟล์รูปไม่เจอ) → ยังไม่มีอะไรไปถึงเพจ
+  return { definite: true, message: `เตรียมโพสต์ไม่สำเร็จ: ${(e as Error)?.message ?? String(e)}`.slice(0, 500) };
 }
 
 async function finalize(d: SyncDeps, contentId: string, pageId: string, externalId: string, message: string, duplicateRecovered: boolean): Promise<PublishOutcome> {

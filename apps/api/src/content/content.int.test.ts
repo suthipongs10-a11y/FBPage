@@ -142,6 +142,37 @@ run('content lifecycle + publish (integration)', () => {
     expect(graph.state.published.length).toBe(before);
   });
 
+  it('a clear Facebook refusal or a missing image shows the real reason and can be retried; an uncertain result needs a human check first', async () => {
+    const approved = async (caption: string, mediaPaths: string[] = []) => { const id = (await a.http('POST', `/workspaces/${wsA}/content`, { pageId: pageA, caption, mediaPaths })).json.id; await a.http('POST', `/workspaces/${wsA}/content/${id}/submit`, {}); await a.http('POST', `/workspaces/${wsA}/content/${id}/approve`, {}); return id as string; };
+    const op = (id: string) => prisma.externalOperation.findUniqueOrThrow({ where: { idempotencyKey: `publish:${id}` } });
+    // 1) Facebook ปฏิเสธชัดเจน (4xx + code) → เห็นข้อความจริง, ส่งใหม่ได้ทันที, โพสต์ขึ้นครั้งเดียว
+    const c1 = await approved(`ปฏิเสธแล้วส่งใหม่ ${stamp}`);
+    graph.state.feedError = { status: 400, code: 100, message: '(#100) Invalid parameter' };
+    const f1 = await a.http('POST', `/workspaces/${wsA}/content/${c1}/publish`, {});
+    expect(f1.json.outcome.status).toBe('FAILED'); expect(f1.json.content.lastError).toContain('Facebook ปฏิเสธโพสต์'); expect(f1.json.content.lastError).toContain('(#100) Invalid parameter');
+    expect((await op(c1)).status).toBe('FAILED');
+    graph.state.feedError = null; const before = graph.state.published.length;
+    const ok1 = await a.http('POST', `/workspaces/${wsA}/content/${c1}/publish`, {}); expect(ok1.json.outcome.status).toBe('PUBLISHED');
+    expect(graph.state.published.length).toBe(before + 1);
+    // 2) ไฟล์รูปหาย → ความผิดพลาดในเครื่อง ยังไม่ถึง Facebook → บอกชัด ไม่ล็อก
+    const c2 = await approved(`รูปหาย ${stamp}`, ['/nonexistent/fbpm-missing-card.png']);
+    const f2 = await a.http('POST', `/workspaces/${wsA}/content/${c2}/publish`, {});
+    expect(f2.json.outcome.status).toBe('FAILED'); expect(f2.json.content.lastError).toContain('อ่านไฟล์รูปไม่ได้'); expect(f2.json.content.lastError).not.toContain('RECONCILIATION_REQUIRED');
+    expect((await op(c2)).status).toBe('FAILED');
+    // 3) ไม่รู้ผล (5xx / code 1) → ล็อก ห้ามส่งซ้ำ จนกว่าคนจะตรวจที่ Facebook แล้วยืนยันว่าไม่มี
+    const c3 = await approved(`ไม่รู้ผล ${stamp}`);
+    graph.state.feedError = { status: 500, code: 1, message: 'An unknown error occurred' };
+    const f3 = await a.http('POST', `/workspaces/${wsA}/content/${c3}/publish`, {});
+    expect(f3.json.content.lastError).toContain('RECONCILIATION_REQUIRED'); expect(f3.json.content.lastError).toContain('An unknown error occurred'); expect((await op(c3)).status).toBe('UNKNOWN');
+    graph.state.feedError = null; const mid = graph.state.published.length;
+    expect((await a.http('POST', `/workspaces/${wsA}/content/${c3}/publish`, {})).json.outcome.status).toBe('SKIPPED'); expect(graph.state.published.length).toBe(mid);
+    expect((await b.http('POST', `/workspaces/${wsB}/content/${c3}/reconcile-not-posted`, {})).status).toBe(404);
+    const rec = await a.http('POST', `/workspaces/${wsA}/content/${c3}/reconcile-not-posted`, {}); expect(rec.status, rec.text).toBe(200);
+    expect(await prisma.auditLog.count({ where: { workspaceId: wsA, action: 'content.publish.reconcile', resourceId: c3 } })).toBe(1);
+    expect((await a.http('POST', `/workspaces/${wsA}/content/${c3}/publish`, {})).json.outcome.status).toBe('PUBLISHED'); expect(graph.state.published.length).toBe(mid + 1);
+    expect((await a.http('POST', `/workspaces/${wsA}/content/${c3}/reconcile-not-posted`, {})).status).toBe(409);
+  });
+
   it('changing the approved title also requires another human approval', async () => {
     const item = await prisma.contentItem.create({ data: { pageId: pageA, caption: 'approved', status: 'APPROVED' } });
     const edited = await a.http('PATCH', `/workspaces/${wsA}/content/${item.id}`, { title: 'changed title' });

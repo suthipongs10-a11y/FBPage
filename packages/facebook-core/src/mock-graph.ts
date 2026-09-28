@@ -20,6 +20,8 @@ export interface MockState {
   privateReplies: { pageId: string; commentId: string; text: string }[];
   /** จำลองยังไม่มีสิทธิ์ pages_messaging */
   denyMessaging: boolean;
+  /** จำลองการโพสต์ล้ม: http 400 + code = Facebook ปฏิเสธชัดเจน · http 500/0 = ไม่รู้ผล */
+  feedError: { status: number; code: number; message: string } | null;
   rateLimitNext: number;                     // จำนวนคำขอถัดไปที่จะตอบ code 4
   published: { pageId: string; body: Record<string, string> }[];
   requests: string[];
@@ -45,7 +47,7 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
         { id: 'c3', message: 'รับสมัครงานออนไลน์ รายได้ดี ทักมา', created_time: new Date(Date.now() - 1000_000).toISOString(), from: { id: 'u_c', name: 'spam' } },
       ],
       '111_2': [],
-    }, replies: [], likes: [], privateReplies: [], denyMessaging: false,
+    }, replies: [], likes: [], privateReplies: [], denyMessaging: false, feedError: null,
   };
   const err = (res: import('node:http').ServerResponse, code: number, message: string, status = 400, type = 'OAuthException') => {
     res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message, code, type } }));
@@ -98,6 +100,7 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
         if (req.method === 'DELETE') return ok({ success: true });
         return ok({ id: page.id, name: page.name, category: page.category, about: 'about', phone: '+66000000000', is_published: true, fan_count: 1829, picture: { data: { url: `http://x/${page.id}.jpg`, is_silhouette: false } }, cover: { source: `http://x/${page.id}-cover.jpg` } });
       }
+      if (edge === 'feed' && req.method === 'POST' && state.feedError) return err(res, state.feedError.code, state.feedError.message, state.feedError.status);
       if (edge === 'feed' && req.method === 'POST') { state.published.push({ pageId, body: Object.fromEntries(params) }); return ok({ id: `${pageId}_new${state.published.length}` }); }
       if (['published_posts', 'feed', 'posts'].includes(edge)) {
         const fields = params.get('fields') ?? '';

@@ -73,6 +73,12 @@ function FacebookCard({ item, onChange }: { item: ContentItem & { page: NonNulla
       </div>
       {notice && <p className="mt-2 text-xs text-emerald-400">✔ {notice}</p>}
       {item.lastError && <p className="mt-2 text-xs text-rose-400">{t('content.lastError')}: {item.lastError}</p>}
+      {cPublish && item.lastError?.startsWith('RECONCILIATION_REQUIRED') && ['APPROVED', 'PUBLISH_FAILED', 'SCHEDULED'].includes(s) && (
+        <div className="mt-2 rounded-lg border border-amber-900/60 bg-amber-950/30 p-2 text-xs text-amber-200">
+          <p>{t('content.reconcileHint')}</p>
+          <Button variant="ghost" className="mt-2" disabled={busy === 'reconcile'} onClick={() => { if (confirm(t('content.reconcileConfirm'))) void run('reconcile', async () => { await api(`${base}/reconcile-not-posted`, { method: 'POST', body: {} }); setNotice(t('content.reconciled')); }); }}>{t('content.reconcileBtn')}</Button>
+        </div>
+      )}
       <ErrorBox error={error} />
       {open && (
         <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">

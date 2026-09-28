@@ -188,6 +188,22 @@ export class ContentService {
     return this.publishNow(workspaceId, userId, id, requestId);
   }
 
+  /**
+   * ผู้ใช้ไปดูที่เพจแล้วยืนยันว่า "ไม่มีโพสต์นี้บน Facebook" → ปลดล็อกคำขอที่ไม่รู้ผล ให้โพสต์ใหม่ได้
+   * ไม่เดาเอง — ต้องเป็นคนยืนยัน และบันทึก audit ทุกครั้ง (กันโพสต์ซ้ำตาม §48)
+   */
+  async reconcileNotPosted(workspaceId: string, userId: string, id: string, requestId: string) {
+    const c = await this.load(workspaceId, id);
+    if (!['PUBLISH_FAILED', 'APPROVED', 'SCHEDULED'].includes(c.status)) throw new ConflictException('สถานะนี้ไม่ต้องตรวจผลการโพสต์');
+    const op = await this.prisma.externalOperation.findUnique({ where: { idempotencyKey: `publish:${id}` } });
+    if (!op || op.externalId || op.status === 'SUCCEEDED' || op.status === 'FAILED') throw new ConflictException('ไม่มีคำขอโพสต์ที่รอตรวจผล — กดโพสต์ได้เลย');
+    if (op.status === 'IN_FLIGHT' && Date.now() - op.updatedAt.getTime() < 5 * 60_000) throw new ConflictException('กำลังส่งโพสต์นี้อยู่ รอสักครู่แล้วตรวจใหม่');
+    await this.prisma.externalOperation.update({ where: { id: op.id }, data: { status: 'FAILED', error: `ผู้ใช้ตรวจแล้วไม่พบโพสต์บน Facebook (เดิม: ${op.error ?? op.status})`.slice(0, 500) } });
+    await this.prisma.contentItem.update({ where: { id }, data: { lastError: 'ตรวจแล้วว่าไม่มีโพสต์นี้บน Facebook — กดโพสต์ใหม่ได้' } });
+    await this.audit.log({ workspaceId, userId, action: 'content.publish.reconcile', resourceType: 'contentItem', resourceId: id, before: { operationStatus: op.status }, after: { operationStatus: 'FAILED', confirmedNotOnFacebook: true }, requestId });
+    return this.load(workspaceId, id);
+  }
+
   /** โพสต์ตอนนี้ (ต้อง APPROVED) — รัน publisher ทันทีในคำขอนี้เพื่อให้ผู้ใช้เห็นผลเลย */
   async publishNow(workspaceId: string, userId: string, id: string, requestId: string): Promise<{ outcome: PublishOutcome; content: Awaited<ReturnType<ContentService['load']>> }> {
     const c = await this.load(workspaceId, id);
