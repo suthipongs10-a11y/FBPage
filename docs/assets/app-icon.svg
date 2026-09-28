@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="0.55" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#db2777"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1e1b4b" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <circle cx="880" cy="140" r="260" fill="#ffffff" opacity="0.07"/>
+  <circle cx="120" cy="930" r="220" fill="#ffffff" opacity="0.06"/>
+  <!-- page card -->
+  <g filter="url(#shadow)">
+    <rect x="210" y="200" width="520" height="600" rx="64" fill="#ffffff"/>
+  </g>
+  <rect x="270" y="270" width="400" height="170" rx="28" fill="#ede9fe"/>
+  <circle cx="340" cy="355" r="42" fill="#a78bfa"/>
+  <path d="M400 410 L480 330 L540 390 L580 350 L640 410 Z" fill="#8b5cf6"/>
+  <rect x="270" y="480" width="400" height="30" rx="15" fill="#c7d2fe"/>
+  <rect x="270" y="540" width="330" height="30" rx="15" fill="#c7d2fe"/>
+  <rect x="270" y="600" width="250" height="30" rx="15" fill="#e0e7ff"/>
+  <!-- chat bubble -->
+  <g filter="url(#shadow)">
+    <path d="M600 560 h200 a70 70 0 0 1 70 70 v110 a70 70 0 0 1 -70 70 h-90 l-70 64 v-64 h-40 a70 70 0 0 1 -70 -70 v-110 a70 70 0 0 1 70 -70 z" fill="url(#bubble)"/>
+  </g>
+  <circle cx="630" cy="685" r="22" fill="#ffffff"/>
+  <circle cx="700" cy="685" r="22" fill="#ffffff"/>
+  <circle cx="770" cy="685" r="22" fill="#ffffff"/>
+  <!-- AI sparkle -->
+  <g fill="#ffffff">
+    <path d="M800 170 C812 250 834 272 914 284 C834 296 812 318 800 398 C788 318 766 296 686 284 C766 272 788 250 800 170 Z"/>
+    <path d="M905 395 C910 428 919 437 952 442 C919 447 910 456 905 489 C900 456 891 447 858 442 C891 437 900 428 905 395 Z" opacity="0.85"/>
+  </g>
+</svg>
