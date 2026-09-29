@@ -124,17 +124,32 @@ test('ChatGPT batch: build prompt → paste result → per-topic image + times �
   await page.getByText('ดูคำสั่งที่สร้าง').click();
   await expect(page.locator('textarea[readonly]')).toHaveValue(/ดูแลบ้านหน้าฝน[\s\S]*คัดมา 2 หัวข้อ/);
   const orig = (title: string) => ({ type: 'original', title, caption: `🌧️ ${title}\n\n✅ เปิดหน้าต่างระบายอากาศทุกเช้า\n✅ ซักผ้าปูด้วยน้ำร้อน\n\n💬 บ้านไหนเจอปัญหานี้บ้าง?`, hashtags: ['หน้าฝน'], images: [], imagePrompt: 'cozy clean bedroom on a rainy day' });
-  const answer = 'นี่คือผลลัพธ์ครับ\n```json\n' + JSON.stringify({ format: 'fbpm-content-v1', posts: [orig(`กันเชื้อราหน้าฝน ${stamp}`), orig(`ไรฝุ่นกับภูมิแพ้ ${stamp}`)] }) + '\n```';
+  const risky = { ...orig(`ทำบุญขึ้นบ้านใหม่ ${stamp}`), risk: 'HIGH', riskReasons: ['เรื่องศาสนา'] };
+  const answer = 'นี่คือผลลัพธ์ครับ\n```json\n' + JSON.stringify({ format: 'fbpm-content-v1', posts: [orig(`กันเชื้อราหน้าฝน ${stamp}`), orig(`ไรฝุ่นกับภูมิแพ้ ${stamp}`), risky] }) + '\n```';
   await page.getByPlaceholder(/วางคำตอบของ ChatGPT/).fill(answer);
   await page.getByRole('button', { name: 'ตรวจและแยกหัวข้อ' }).click();
-  await expect(page.getByText('พบ 2 หัวข้อ')).toBeVisible();
+  await expect(page.getByText('พบ 3 หัวข้อ')).toBeVisible();
+  // ไม่มีการเติมเวลาให้เอง — ต้องกดกระจายเวลาหรือเลือกเอง
+  await expect(page.getByLabel('เวลาโพสต์หัวข้อ 1')).toHaveValue('');
+  await expect(page.getByRole('button', { name: /นำเข้า 3 · ตั้งเวลาแล้ว 0/ })).toBeVisible();
+  await page.getByRole('button', { name: 'กระจายเวลาให้ทุกหัวข้อ' }).click();
+  await expect(page.getByLabel('เวลาโพสต์หัวข้อ 1')).not.toHaveValue('');
+  // หัวข้อเสี่ยงไม่ถูกนับเป็นตั้งเวลา จนกว่าจะติ๊กว่าอ่านแล้ว (ปล่อยไว้ไม่ติ๊ก)
+  await expect(page.getByRole('button', { name: /นำเข้า 3 · ตั้งเวลาแล้ว 2/ })).toBeVisible();
+  await expect(page.getByText(/เนื้อหาเสี่ยง — อ่านข้อความแล้ว/)).toBeVisible();
   const first = page.locator('li', { hasText: `1. กันเชื้อราหน้าฝน ${stamp}` });
   await first.locator('input[type=file]').setInputFiles({ name: 'topic-1.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
   await expect(first.locator('img')).toBeVisible();
   await expect(first.getByRole('button', { name: /คำสั่งสร้างรูป/ })).toBeVisible();
   const before = graph.state.published.length;
-  await page.getByRole('button', { name: /นำเข้า \+ อนุมัติ \+ ตั้งเวลา \(2\)/ }).click();
-  await expect(page.getByText(/นำเข้า 2\/2 · ตั้งเวลาแล้ว 2/)).toBeVisible({ timeout: 30_000 });
+  let confirmText = '';
+  page.once('dialog', d => { confirmText = d.message(); void d.accept(); });
+  await page.getByRole('button', { name: /นำเข้า 3 · ตั้งเวลาแล้ว 2/ }).click();
+  await expect(page.getByText(/นำเข้า 3\/3 · ตั้งเวลาแล้ว 2/)).toBeVisible({ timeout: 30_000 });
+  expect(confirmText).toContain('อนุมัติและตั้งเวลา 2'); expect(confirmText).toContain('เป็นร่างรออนุมัติ (ไม่ตั้งเวลา) 1');
+  await expect(page.getByText(/เนื้อหาเสี่ยง — เป็นร่างรออนุมัติ/)).toBeVisible();
+  const riskyItem = (await api(page.request, 'GET', `/workspaces/${ws}/content?status=READY_FOR_APPROVAL`) as { title: string }[]).find(i => i.title === `ทำบุญขึ้นบ้านใหม่ ${stamp}`);
+  expect(riskyItem).toBeTruthy();
   const items = await api(page.request, 'GET', `/workspaces/${ws}/content?status=SCHEDULED`);
   const mine = (items as { title: string; scheduledAt: string; mediaPaths: string[] }[]).filter(i => i.title.endsWith(String(stamp)));
   expect(mine.map(i => i.title).sort()).toEqual([`กันเชื้อราหน้าฝน ${stamp}`, `ไรฝุ่นกับภูมิแพ้ ${stamp}`].sort());

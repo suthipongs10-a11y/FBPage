@@ -1,4 +1,4 @@
-import { PROMPT_IMAGES, PROMPT_KINDS, PROMPT_LENGTHS } from './chatgpt-prompt';
+import { PROMPT_DEPTHS, PROMPT_IMAGES, PROMPT_KINDS, PROMPT_LENGTHS } from './chatgpt-prompt';
 import { z } from 'zod';
 import { THEME_NAMES } from '../media/card-templates';
 import { modelOverrideSchema } from '../ai/dto';
@@ -156,6 +156,7 @@ export const chatPromptSchema = z.object({
   length: z.enum(PROMPT_LENGTHS).default('medium'),
   emoji: z.boolean().default(true),
   images: z.enum(PROMPT_IMAGES).default('chatgpt'),
+  depth: z.enum(PROMPT_DEPTHS).default('deep'),
   recencyDays: z.number().int().min(1).max(365).optional(),
   extra: z.string().trim().max(1000).optional(),
   /** คีย์เวิร์ดของเพจที่ผู้ใช้เลือกไว้ (ไม่ใส่ = ใช้ที่ระบบรวบรวมให้ทั้งหมด) */

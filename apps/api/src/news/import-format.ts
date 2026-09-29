@@ -37,6 +37,8 @@ const postIn = z.object({
   needsCheck: z.array(z.string().trim().max(300)).max(20).default([]),
   /** คีย์กันซ้ำแทนลิงก์ที่มา — ใช้เมื่อหลายโพสต์มาจากแหล่งเดียวกันโดยตั้งใจ (เช่นโต๊ะค้นคว้าเขียนหลายมุม) */
   dedupeKey: z.string().trim().min(3).max(300).optional(),
+  /** มุมที่โพสต์นี้เพิ่มจากแหล่งต้นทาง (คำสั่ง ChatGPT แบบเจาะลึก) — ให้คนตรวจดูคุณภาพ ไม่ลงในโพสต์ */
+  angle: z.string().trim().max(400).optional(),
 });
 export type PostIn = z.infer<typeof postIn>;
 
@@ -47,7 +49,7 @@ export interface NormalizedPost {
   type: 'news' | 'original'; page?: string; title: string; caption: string; hashtags: string[];
   sources: { name: string; url: string }[]; card: { kicker?: string; headline: string; sub?: string };
   images: ImageRef[]; imageCredit?: string; photoQuery?: string; imagePrompt?: string; category?: string;
-  scheduleAt: string | null; risk: 'LOW' | 'HIGH'; riskReasons: string[]; needsCheck: string[]; dedupeKey?: string;
+  scheduleAt: string | null; risk: 'LOW' | 'HIGH'; riskReasons: string[]; needsCheck: string[]; dedupeKey?: string; angle?: string;
 }
 export interface PostReport { index: number; status: 'PASS' | 'WARN' | 'FAIL'; title: string; checks: Check[]; post: NormalizedPost | null }
 export interface PackageReport { format: string | null; parseError: string | null; posts: PostReport[] }
@@ -180,7 +182,7 @@ export function checkPost(raw: unknown, index: number, o: CheckOptions = {}): Po
     type: p.type, ...(p.page && { page: p.page }), title: (p.title || headline).slice(0, 200), caption, hashtags: hashtags.slice(0, 5), sources,
     card: { ...(p.card?.kicker && { kicker: p.card.kicker.slice(0, 24) }), headline: headline.slice(0, 90), ...(p.card?.sub && { sub: p.card.sub.slice(0, 140) }) },
     images, ...(p.imageCredit && { imageCredit: p.imageCredit }), ...(p.photoQuery && { photoQuery: p.photoQuery }), ...(p.imagePrompt && { imagePrompt: p.imagePrompt }), ...(p.category && { category: p.category }),
-    scheduleAt, risk: p.risk ?? 'LOW', riskReasons: p.riskReasons, needsCheck, ...(p.dedupeKey && { dedupeKey: p.dedupeKey }),
+    scheduleAt, risk: p.risk ?? 'LOW', riskReasons: p.riskReasons, needsCheck, ...(p.dedupeKey && { dedupeKey: p.dedupeKey }), ...(p.angle && { angle: p.angle }),
   };
   return { index, status: statusOf(checks), title: post.title, checks, post };
 }
@@ -228,7 +230,7 @@ export function aiInstructions(pageNames: string[]): string {
     JSON.stringify(PACKAGE_EXAMPLE, null, 2),
     '',
     'กฎ:',
-    '1) caption เขียนใหม่ด้วยสำนวนของเพจ ห้ามคัดลอกประโยคต้นทางเกิน 8 คำติดกัน ใช้เฉพาะข้อเท็จจริงที่อ่านเจอจริง',
+    '1) caption เขียนใหม่ด้วยสำนวนของเพจ ห้ามคัดลอกประโยคต้นทางเกิน 8 คำติดกัน ใช้เฉพาะข้อเท็จจริงที่อ่านเจอจริง · อย่าสรุปแค่เว็บเดียว — เสริมข้อมูลจากแหล่งอื่น (ไทย+ต่างประเทศ) และเพิ่มมุมมอง/วิเคราะห์ของเพจว่าทำไมเรื่องนี้สำคัญกับผู้อ่าน',
     '2) ไม่แน่ใจตรงไหนให้เขียน [ต้องยืนยัน: ...] ในข้อความ และใส่ใน needsCheck — ห้ามเดาตัวเลข ชื่อ วันที่',
     '3) sources ต้องเป็นลิงก์บทความจริงที่เปิดได้ อย่างน้อย 1 แหล่งต่อโพสต์ข่าว',
     '4) images ห้ามใช้รูปจากเว็บสำนักข่าว — ใช้ลิงก์ https จากคลังภาพฟรี (Pexels/Unsplash) พร้อม credit หรือเว้นว่างแล้วใส่ photoQuery ภาษาอังกฤษให้ระบบหาเอง',

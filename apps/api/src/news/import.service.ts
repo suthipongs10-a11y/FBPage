@@ -329,7 +329,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     if (srcs.length) lines.push('', `ที่มา: ${srcs.map(s => s.name).join(', ')}`, ...srcs.map(s => s.url));
     const credits = [...new Set(p.images.map(i => i.credit).filter((c): c is string => !!c && !p.caption.includes(c)))];
     let caption = lines.join('\n'); if (credits.length) caption += `\nภาพประกอบ: ${credits.join(', ')}`;
-    const notes = { import: { importId: row.id, index, channel: row.channel, fileName: row.fileName }, news: url ? { url, source } : undefined, risk: p.risk, riskReasons: p.riskReasons, needsCheck: p.needsCheck, suggestedAt: p.scheduleAt };
+    const notes = { import: { importId: row.id, index, channel: row.channel, fileName: row.fileName }, news: url ? { url, source } : undefined, risk: p.risk, riskReasons: p.riskReasons, needsCheck: p.needsCheck, suggestedAt: p.scheduleAt, ...(p.angle && { angle: p.angle }) };
     const content = await this.content.create(workspaceId, userId, { pageId: page.id, contentType: 'post', title: p.title.slice(0, 120), caption, hashtags: p.hashtags, mediaBrief: `การ์ด: ${p.card.headline}`, mediaPaths: [], objective: 'engagement', contentPillar: p.category?.slice(0, 60) ?? (p.type === 'news' ? 'ข่าว' : 'นำเข้า') }, requestId, { provider: 'import', model: row.channel, promptVersion: IMPORT_PROMPT, notes });
 
     // รูป: ลิงก์ (ดาวน์โหลดกัน SSRF) / ไฟล์อัปโหลด / ไฟล์ในโฟลเดอร์ Drive

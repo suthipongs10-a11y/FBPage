@@ -11,6 +11,7 @@ import { Button, ErrorBox, Field, Input, Pill, Select, Textarea } from '@/compon
 const KINDS = ['original', 'news', 'mixed'] as const;
 const LENGTHS = ['short', 'medium', 'long'] as const;
 const IMAGES = ['chatgpt', 'stock', 'own'] as const;
+const DEPTHS = ['deep', 'standard'] as const;
 const FALLBACKS = ['stock', 'ai', 'none'] as const;
 const GAPS = [24, 48, 12, 6, 3] as const;
 const tone = (s: string) => (s === 'PASS' ? 'ok' : s === 'FAIL' ? 'bad' : 'warn') as 'ok' | 'bad' | 'warn';
@@ -18,10 +19,11 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const toLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const tomorrowAt = (h: number) => { const d = new Date(Date.now() + 86_400_000); d.setHours(h, 0, 0, 0); return toLocal(d); };
 
-type Row = { include: boolean; when: string; image?: { id: string; name: string; preview: string }; result?: string; ok?: boolean };
+/** risky = AI ติดธงเนื้อหาเสี่ยง → ไม่อนุมัติให้เองจนกว่าจะติ๊ก "อ่านแล้ว" (riskAck) */
+type Row = { include: boolean; when: string; risky: boolean; riskAck?: boolean; image?: { id: string; name: string; preview: string }; result?: string; ok?: boolean };
 
 export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDone }: { base: string; brandId: string; pages: PageRow[]; canWrite: boolean; canSchedule: boolean; onDone: () => void }) {
-  const [f, setF] = useState({ pageId: pages.length === 1 ? pages[0]!.id : '', count: 5, topic: '', kind: 'original' as (typeof KINDS)[number], length: 'medium' as (typeof LENGTHS)[number], emoji: true, images: 'chatgpt' as (typeof IMAGES)[number], recencyDays: 0, extra: '' });
+  const [f, setF] = useState({ pageId: pages.length === 1 ? pages[0]!.id : '', count: 5, topic: '', kind: 'original' as (typeof KINDS)[number], length: 'medium' as (typeof LENGTHS)[number], emoji: true, images: 'chatgpt' as (typeof IMAGES)[number], depth: 'deep' as (typeof DEPTHS)[number], recencyDays: 0, extra: '' });
   const [prompt, setPrompt] = useState('');
   const [kw, setKw] = useState<{ list: string[]; on: string[]; hasProfile: boolean } | null>(null);
   useEffect(() => {
@@ -42,7 +44,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
   const url = `${base}/brands/${brandId}/news/import`;
 
   const makePrompt = () => run('prompt', async () => {
-    const r = await api<{ prompt: string }>(`${url}/chat-prompt`, { method: 'POST', body: { ...(f.pageId && { pageId: f.pageId }), count: f.count, topic: f.topic || undefined, kind: f.kind, length: f.length, emoji: f.emoji, images: f.images, ...(f.recencyDays && { recencyDays: f.recencyDays }), extra: f.extra || undefined, ...(f.pageId && kw && { keywords: kw.on }) } });
+    const r = await api<{ prompt: string }>(`${url}/chat-prompt`, { method: 'POST', body: { ...(f.pageId && { pageId: f.pageId }), count: f.count, topic: f.topic || undefined, kind: f.kind, length: f.length, emoji: f.emoji, images: f.images, depth: f.depth, ...(f.recencyDays && { recencyDays: f.recencyDays }), extra: f.extra || undefined, ...(f.pageId && kw && { keywords: kw.on }) } });
     setPrompt(r.prompt);
     try { await navigator.clipboard.writeText(r.prompt); return t('gpt.copied'); } catch { return t('gpt.copyManual'); }
   });
@@ -53,7 +55,8 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
   const check = () => run('check', async () => {
     const rep = await api<ImportReport>(`${url}/check`, { method: 'POST', body: { text, ...(f.pageId && { pageId: f.pageId }) } });
     setReport(rep);
-    setRows(spreadTimes(rep.posts.map(p => ({ include: p.status !== 'FAIL', when: '' }))));
+    // ไม่เติมเวลาให้เอง — ผู้ใช้เลือกทีละหัวข้อ หรือกด "กระจายเวลา" เอง (หัวข้อที่ไม่มีเวลา = ร่างรออนุมัติ)
+    setRows(rep.posts.map(p => ({ include: p.status !== 'FAIL', when: '', risky: p.checks.some(c => c.code === 'RISK_HIGH') })));
     if (!rep.parseError) return `${t('gpt.found')} ${rep.posts.length} ${t('gpt.topics')}`;
   });
   const setRow = (i: number, patch: Partial<Row>) => setRows(rs => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -66,7 +69,15 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
   const copy = (s: string) => run('copy', async () => { await navigator.clipboard.writeText(s); return t('gpt.copied'); });
 
   const chosen = useMemo(() => rows.map((r, i) => ({ r, i })).filter(x => x.r.include && report?.posts[x.i]?.status !== 'FAIL'), [rows, report]);
-  const submit = () => run('import', async () => {
+  const willSchedule = (r: Row) => canSchedule && !!r.when && (!r.risky || !!r.riskAck);
+  const toSchedule = chosen.filter(x => willSchedule(x.r));
+  const submit = () => {
+    const lines = toSchedule.map(x => `• ${new Date(x.r.when).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })} — ${report?.posts[x.i]?.title ?? ''}`);
+    const drafts = chosen.length - toSchedule.length;
+    if (!confirm([`${t('gpt.confirmTitle')} ${chosen.length} ${t('gpt.topics')}`, ...(lines.length ? [`${t('gpt.confirmSchedule')} ${lines.length}:`, ...lines] : []), ...(drafts ? [`${t('gpt.confirmDrafts')} ${drafts}`] : [])].join('\n'))) return;
+    void doSubmit();
+  };
+  const doSubmit = () => run('import', async () => {
     const postImages = Object.fromEntries(chosen.filter(x => x.r.image).map(x => [String(x.i), x.r.image!.id]));
     const imp = await api<ContentImportRow>(url, { method: 'POST', body: { text, ...(f.pageId && { pageId: f.pageId }), postImages, include: chosen.map(x => x.i), cardMode: photoOnly ? 'photo' : 'auto', imageFallback: fallback } });
     let scheduled = 0; const next = [...rows];
@@ -74,7 +85,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
       const { i, r } = chosen[j]!;
       const id = p.result?.contentId;
       if (!id) { next[i] = { ...r, ok: false, result: p.result?.error ?? p.checks.find(c => c.level === 'error')?.message ?? t('gpt.notImported') }; continue; }
-      if (!canSchedule || !r.when) { next[i] = { ...r, ok: true, result: t('gpt.drafted') }; continue; }
+      if (!willSchedule(r)) { next[i] = { ...r, ok: true, result: r.risky && r.when && canSchedule ? t('gpt.riskyDraft') : t('gpt.drafted') }; continue; }
       try { await api(`${base}/content/${id}/approve-schedule`, { method: 'POST', body: { scheduledLocal: r.when } }); scheduled++; next[i] = { ...r, ok: true, result: `${t('gpt.scheduled')} ${new Date(r.when).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}` }; }
       catch (e) { next[i] = { ...r, ok: false, result: `${t('gpt.draftedNotScheduled')}: ${(e as Error).message}` }; }
     }
@@ -103,7 +114,8 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
             {!kw.hasProfile && <p className="mt-1 text-xs text-amber-500">{t('gpt.noProfile')}</p>}
           </div>
         )}
-        <div className="grid gap-2 md:grid-cols-3">
+        <div className="grid gap-2 md:grid-cols-4">
+          <Field label={t('gpt.depth')}><Select value={f.depth} onChange={e => setF({ ...f, depth: e.target.value as typeof f.depth })}>{DEPTHS.map(k => <option key={k} value={k}>{L(`gpt.depth.${k}`)}</option>)}</Select></Field>
           <Field label={t('gpt.images')}><Select value={f.images} onChange={e => setF({ ...f, images: e.target.value as typeof f.images })}>{IMAGES.map(k => <option key={k} value={k}>{L(`gpt.images.${k}`)}</option>)}</Select></Field>
           <Field label={t('gpt.recency')}><Select value={f.recencyDays} onChange={e => setF({ ...f, recencyDays: Number(e.target.value) })}>{[0, 7, 30, 90].map(d => <option key={d} value={d}>{d ? `${d} ${t('gpt.days')}` : t('gpt.anyTime')}</option>)}</Select></Field>
           <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={f.emoji} onChange={e => setF({ ...f, emoji: e.target.checked })} /> {t('gpt.emoji')}</label>
@@ -134,6 +146,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
             <Field label={t('gpt.gap')}><Select value={spread.gap} onChange={e => setSpread({ ...spread, gap: Number(e.target.value) as typeof spread.gap })}>{GAPS.map(g => <option key={g} value={g}>{L(`gpt.gap.${g}`)}</option>)}</Select></Field>
             <Button variant="ghost" onClick={() => setRows(rs => spreadTimes(rs))}>{t('gpt.spread')}</Button>
           </div>
+          {canSchedule && rows.some(r => r.include && !r.when) && <p className="text-xs text-amber-500">{t('gpt.noTimeHint')}</p>}
           <ul className="space-y-3">{report.posts.map((p, i) => {
             const r = rows[i]; if (!r) return null; const post = p.post;
             return (
@@ -144,6 +157,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
                   <span className="font-medium">{i + 1}. {p.title}</span>
                 </div>
                 {p.checks.filter(c => c.level !== 'info').map((c, k) => <div key={k} className={`text-xs ${c.level === 'error' ? 'text-rose-400' : 'text-amber-500'}`}>{c.level === 'error' ? '✖' : '⚠'} {c.message}</div>)}
+                {post?.angle && <p className="mt-1 text-xs text-sky-500">💡 {t('content.angle')}: {post.angle}</p>}
                 {post && <details className="mt-1"><summary className="cursor-pointer text-xs text-sky-400">{t('gpt.preview')}</summary><p className="mt-1 whitespace-pre-wrap rounded bg-slate-950 p-2 text-sm">{post.caption}{post.hashtags.length ? `\n\n${post.hashtags.map(h => `#${h}`).join(' ')}` : ''}</p></details>}
                 <div className="mt-2 grid gap-2 md:grid-cols-[auto_1fr_auto] md:items-center">
                   <div className="flex items-center gap-2">
@@ -154,6 +168,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
                   <div />
                   {canSchedule && <Input type="datetime-local" aria-label={`${t('gpt.time')} ${i + 1}`} value={r.when} disabled={!r.include || r.ok !== undefined} onChange={e => setRow(i, { when: e.target.value })} />}
                 </div>
+                {r.risky && r.ok === undefined && canSchedule && <label className="mt-2 flex items-center gap-2 text-xs text-amber-500"><input type="checkbox" checked={!!r.riskAck} onChange={e => setRow(i, { riskAck: e.target.checked })} /> {t('gpt.riskAck')}</label>}
                 {r.result && <p className={`mt-2 text-xs ${r.ok ? 'text-emerald-500' : 'text-rose-400'}`}>{r.ok ? '✔' : '✖'} {r.result}</p>}
               </li>
             );
@@ -162,7 +177,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
             <label className="flex items-center gap-2"><input type="checkbox" checked={photoOnly} onChange={e => setPhotoOnly(e.target.checked)} /> {t('gpt.photoOnly')}</label>
             <label className="flex items-center gap-2">{t('gpt.fallback')} <Select className="w-auto" value={fallback} onChange={e => setFallback(e.target.value as typeof fallback)}>{FALLBACKS.map(x => <option key={x} value={x}>{t(`news.img.${x}` as MessageKey)}</option>)}</Select></label>
           </div>
-          {canWrite && <Button disabled={!!busy || chosen.length === 0} onClick={submit}>{busy === 'import' ? '…' : `${canSchedule ? t('gpt.importSchedule') : t('gpt.importOnly')} (${chosen.length})`}</Button>}
+          {canWrite && <Button disabled={!!busy || chosen.length === 0} onClick={submit}>{busy === 'import' ? '…' : canSchedule ? `${t('gpt.importSchedule')} · ${t('gpt.imported')} ${chosen.length} · ${t('gpt.scheduled')} ${toSchedule.length}` : `${t('gpt.importOnly')} (${chosen.length})`}</Button>}
           <p className="text-xs text-slate-400">{canSchedule ? t('gpt.step3Help') : t('gpt.noSchedulePermission')}</p>
         </section>
       )}

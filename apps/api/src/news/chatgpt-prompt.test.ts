@@ -51,6 +51,21 @@ describe('buildChatGptPrompt — ข้อมูลเพจ', () => {
   });
 });
 
+describe('buildChatGptPrompt — ความลึกของการค้นคว้า', () => {
+  it('ค่าเริ่มต้น = เจาะลึก: หลายแหล่งไทย+ต่างประเทศ ตรวจไขว้ + บทวิเคราะห์ของเพจ + angle และตัวอย่างยังตรวจผ่าน', () => {
+    const p = buildChatGptPrompt(brand, base);
+    for (const s of ['วิธีค้นคว้า', 'แหล่งไทยอย่างน้อย 1', 'แหล่งต่างประเทศ', 'ตรวจไขว้', 'มุมมอง/บทวิเคราะห์ของเพจ', 'ห้ามสร้างตัวเลข สถิติ งานวิจัย', '3–5 แหล่งต่อโพสต์', '"angle"']) expect(p).toContain(s);
+    const rep = checkPackage(p.slice(p.lastIndexOf('```json') >= 0 ? p.indexOf('{') : 0));
+    expect(rep.parseError).toBeNull(); expect(rep.posts[0]!.status).not.toBe('FAIL');
+    expect(rep.posts[0]!.post?.sources).toHaveLength(3);
+    expect(rep.posts[0]!.post?.angle).toContain('เพิ่มอะไร');
+  });
+  it('มาตรฐาน: ไม่มีส่วนวิธีค้นคว้าแบบเจาะลึก', () => {
+    const p = buildChatGptPrompt(brand, { ...base, depth: 'standard' });
+    expect(p).not.toContain('วิธีค้นคว้า'); expect(p).not.toContain('"angle"'); expect(p).toContain('อย่างน้อย 1 แหล่งต่อโพสต์');
+  });
+});
+
 describe('withPostImages', () => {
   const pkg = { format: 'fbpm-content-v1', posts: [{ caption: 'a'.repeat(30), images: ['old.png'] }, { caption: 'b'.repeat(30) }] };
   it('ผูกรูปรายหัวข้อกับข้อความจากแชต (```json) array และโพสต์เดี่ยว', () => {
