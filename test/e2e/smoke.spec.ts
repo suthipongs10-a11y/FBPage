@@ -24,12 +24,15 @@ test.afterAll(async () => { graph.server.close(); yt.server.close(); ai.server.c
 
 test.describe.configure({ mode: 'serial' });
 
-test('privacy policy and data deletion pages are public (needed for the Meta App to go Live)', async ({ page }) => {
-  for (const [path, heading] of [['/privacy', 'Privacy Policy'], ['/data-deletion', 'User Data Deletion']]) {
+test('privacy policy, terms and data deletion pages are public (needed for Meta / Google / TikTok app review)', async ({ page }) => {
+  for (const [path, heading] of [['/privacy', 'Privacy Policy'], ['/terms', 'Terms of Service'], ['/data-deletion', 'User Data Deletion']]) {
     await page.goto(path);
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(page.getByRole('heading', { level: 1 })).toContainText(heading);
+    await expect(page.locator('main footer').getByRole('link', { name: /Terms of Service/ })).toBeVisible();   // ท้ายหน้าลิงก์ถึงกันทุกหน้า
   }
+  await page.goto('/privacy');
+  await expect(page.getByText('YouTube API Services').first()).toBeVisible(); await expect(page.getByRole('heading', { name: 'TikTok', exact: true })).toHaveCount(2);   // ไทย + อังกฤษ
 });
 
 test('register through the UI lands on the overview with the workspace', async ({ page }) => {

@@ -7,7 +7,7 @@ export type LegalSection = { h: string; body: (c: LegalContext) => ReactNode };
 export type LegalContext = { operator: string; email: ReactNode; host: string };
 
 /**
- * หน้าสาธารณะสำหรับ Meta App (Privacy Policy / Data deletion) — ไม่ต้องล็อกอิน
+ * หน้าสาธารณะสำหรับการตรวจแอปของ Meta / Google / TikTok (Privacy Policy / Terms / Data deletion) — ไม่ต้องล็อกอิน
  * อีเมลและชื่อผู้ให้บริการมาจาก LEGAL_CONTACT_EMAIL / LEGAL_OPERATOR_NAME ฝั่ง API
  */
 export function LegalPage({ title, updated, th, en }: { title: string; updated: string; th: LegalSection[]; en: LegalSection[] }) {
@@ -25,6 +25,11 @@ export function LegalPage({ title, updated, th, en }: { title: string; updated: 
       <div className="space-y-6">{render(th, 'th')}</div>
       <hr className="border-slate-800" />
       <div lang="en" className="space-y-6">{render(en, 'en')}</div>
+      <footer className="flex flex-wrap gap-4 border-t border-slate-800 pt-4 text-xs">
+        <a className="text-sky-600 underline" href="/privacy">นโยบายความเป็นส่วนตัว · Privacy Policy</a>
+        <a className="text-sky-600 underline" href="/terms">ข้อกำหนดการใช้งาน · Terms of Service</a>
+        <a className="text-sky-600 underline" href="/data-deletion">การลบข้อมูล · Data Deletion</a>
+      </footer>
     </main>
   );
 }
