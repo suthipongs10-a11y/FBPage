@@ -25,7 +25,7 @@ import { checkRateLimit } from '../common/rate-limit.guard';
 import { NewsService } from './news.service';
 import { PACKAGE_EXAMPLE, PACKAGE_FORMAT, aiInstructions, checkPackage, pickPosts, statusOf, withPostImages, type Check, type ImageRef, type NormalizedPost, type PackageReport, type PostReport } from './import-format';
 import type { ChatPromptDto, ImportCheckDto, ImportDto, InboxDto } from './dto';
-import { buildChatGptPrompt } from './chatgpt-prompt';
+import { buildChatGptPrompt, type PromptPage } from './chatgpt-prompt';
 
 export const IMPORT_PROMPT = 'content-import-v1';
 const TITLE_DEDUPE_DAYS = 14;
@@ -100,7 +100,37 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     const pages = await this.brandPages(workspaceId, brandId);
     const page = dto.pageId ? pages.find(p => p.id === dto.pageId) : pages.length === 1 ? pages[0] : undefined;
     if (dto.pageId && !page) throw new NotFoundException('ไม่พบเพจในแบรนด์นี้');
-    return { prompt: buildChatGptPrompt(brand, { ...dto, pageName: page?.name ?? null }), pageId: page?.id ?? null };
+    const ctx = page ? (await this.pageKeywords(workspaceId, brandId, page.id)).page : null;
+    const { keywords, ...opts } = dto;
+    if (ctx && keywords) ctx.keywords = keywords;
+    // แบรนด์ที่มีหลายเพจ (คนละธุรกิจ) — ใช้ข้อมูลเพจเป็นหลัก ไม่ปนรายละเอียดแบรนด์ของเพจอื่น
+    return { prompt: buildChatGptPrompt(brand, { ...opts, pageName: page?.name ?? null, page: ctx, brandInfo: pages.length <= 1 }), pageId: page?.id ?? null };
+  }
+
+  /**
+   * คีย์เวิร์ด + ข้อมูลของเพจสำหรับคำสั่ง ChatGPT — ไม่เรียก AI: หมวด/about จาก Facebook, โปรไฟล์จากผู้ช่วยหาเรื่องโพสต์ (ถ้าเคยกดเช็ค),
+   * แฮชแท็กที่เพจใช้บ่อยใน 80 โพสต์ล่าสุด
+   */
+  async pageKeywords(workspaceId: string, brandId: string, pageId: string): Promise<{ page: PromptPage; hasProfile: boolean; profiledAt: Date | null }> {
+    const p = await this.prisma.facebookPage.findFirst({ where: { id: pageId, brandId, ...pageInWorkspace(workspaceId) }, select: { id: true, name: true, category: true, profile: true } });
+    if (!p) throw new NotFoundException('ไม่พบเพจในแบรนด์นี้');
+    const [scout, posts] = await Promise.all([
+      this.prisma.pageScout.findUnique({ where: { pageId }, select: { profile: true, profiledAt: true } }),
+      this.prisma.facebookPost.findMany({ where: { pageId }, orderBy: { publishedAt: 'desc' }, take: 80, select: { message: true } }),
+    ]);
+    const info = (p.profile ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const prof = (scout?.profile ?? null) as { businessType?: string; audience?: string; location?: string | null; pillars?: { name: string }[]; seasonalHooks?: string[]; avoid?: string[]; searchTopics?: { query: string }[] } | null;
+    const tags = new Map<string, number>();
+    for (const m of posts) for (const h of (m.message ?? '').matchAll(/#([\p{L}\p{M}\p{N}_]{2,40})/gu)) tags.set(h[1]!, (tags.get(h[1]!) ?? 0) + 1);
+    const topTags = [...tags.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) => t);
+    const seen = new Set<string>();
+    const keywords = [...(prof?.searchTopics ?? []).map(t => t.query), ...(prof?.pillars ?? []).map(x => x.name), ...topTags, p.category ?? '']
+      .map(k => k.trim()).filter(k => k.length >= 2 && k.length <= 80 && !seen.has(k.toLowerCase()) && seen.add(k.toLowerCase())).slice(0, 15);
+    return {
+      page: { category: p.category, about: str(info.about) ?? str(info.description), businessType: prof?.businessType ?? null, audience: prof?.audience ?? null, location: prof?.location ?? null, pillars: (prof?.pillars ?? []).map(x => x.name), seasonalHooks: prof?.seasonalHooks ?? [], avoid: prof?.avoid ?? [], keywords },
+      hasProfile: !!prof, profiledAt: scout?.profiledAt ?? null,
+    };
   }
 
   // ---------- ตั้งค่ากล่องรับ ----------

@@ -57,7 +57,7 @@ export function ContentImport({ base, brandId, pages, canWrite, canConfigure, on
   const hide = (h: ContentImportRow) => run(`h:${h.id}`, async () => { await api(`${base}/news/imports/${h.id}`, { method: 'DELETE' }); });
 
   return (
-    <Card title={t('imp.title')} actions={tpl && <Button variant="ghost" disabled={!!busy} onClick={copyPrompt}>📋 {t('imp.copyPrompt')}</Button>}>
+    <Card title={t('imp.title')} actions={tpl && tab !== 'gpt' && <Button variant="ghost" disabled={!!busy} onClick={copyPrompt}>📋 {t('imp.copyPrompt')}</Button>}>
       <p className="text-xs text-slate-400">{t('imp.help')}</p>
       {tpl && <details className="mt-1 text-xs"><summary className="cursor-pointer text-sky-400">{t('imp.showExample')}</summary><pre className="mt-1 max-h-72 overflow-auto rounded bg-slate-900 p-2 text-[11px] text-slate-300">{tpl.instructions}</pre></details>}
       {notice && <p className="mt-2 text-sm text-emerald-400">✔ {notice}</p>}

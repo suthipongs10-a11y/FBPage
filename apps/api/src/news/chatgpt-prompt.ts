@@ -13,9 +13,15 @@ export interface PromptBrand {
   name: string; description?: string | null; industry?: string | null; targetAudience?: string | null; toneOfVoice?: string | null;
   serviceArea?: string | null; primaryCTA?: string | null; website?: string | null;
 }
+/** ข้อมูลเฉพาะเพจ (หมวด/about จาก Facebook + โปรไฟล์จากผู้ช่วยหาเรื่องโพสต์ + แฮชแท็กที่ใช้บ่อย) — ใช้แทนข้อมูลแบรนด์เมื่อแบรนด์มีหลายเพจ */
+export interface PromptPage {
+  category?: string | null; about?: string | null; businessType?: string | null; audience?: string | null; location?: string | null;
+  pillars?: string[]; seasonalHooks?: string[]; avoid?: string[]; keywords: string[];
+}
 export interface PromptOptions {
   pageName: string | null; count: number; topic?: string; kind: (typeof PROMPT_KINDS)[number]; length: (typeof PROMPT_LENGTHS)[number];
   emoji: boolean; images: (typeof PROMPT_IMAGES)[number]; recencyDays?: number; extra?: string;
+  page?: PromptPage | null; brandInfo?: boolean;
 }
 
 const LENGTH: Record<PromptOptions['length'], string> = { short: 'สั้น ประมาณ 300–500 ตัวอักษร', medium: 'ปานกลาง ประมาณ 600–1,000 ตัวอักษร', long: 'ยาว ประมาณ 1,000–1,800 ตัวอักษร' };
@@ -30,7 +36,14 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
   const info = [
     ['ชื่อแบรนด์', brand.name], ['ธุรกิจ', brand.industry], ['รายละเอียด', brand.description], ['กลุ่มเป้าหมาย', brand.targetAudience],
     ['น้ำเสียง', brand.toneOfVoice], ['พื้นที่ให้บริการ', brand.serviceArea], ['CTA หลัก', brand.primaryCTA], ['เว็บไซต์', brand.website],
-  ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `- ${k}: ${String(v).trim().slice(0, 500)}`);
+  ].filter(([k, v]) => v && String(v).trim() && (o.brandInfo !== false || k === 'ชื่อแบรนด์' || k === 'CTA หลัก' || k === 'น้ำเสียง')).map(([k, v]) => `- ${k}: ${String(v).trim().slice(0, 500)}`);
+  const pg = o.page;
+  const list = (xs?: string[]) => (xs ?? []).filter(Boolean).slice(0, 8).join(' · ');
+  const pageInfo = pg ? [
+    ['หมวดหมู่เพจ', pg.category], ['เกี่ยวกับเพจ', pg.about], ['ประเภทธุรกิจ/เนื้อหา', pg.businessType], ['กลุ่มผู้ติดตาม', pg.audience], ['พื้นที่', pg.location],
+    ['เสาหลักคอนเทนต์', list(pg.pillars)], ['จังหวะ/เทศกาลที่เกี่ยวข้อง', list(pg.seasonalHooks)], ['สิ่งที่ควรเลี่ยง', list(pg.avoid)],
+  ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `- ${k}: ${String(v).trim().slice(0, 500)}`) : [];
+  const keywords = (pg?.keywords ?? []).filter(Boolean).slice(0, 15);
   const example = {
     format: PACKAGE_FORMAT,
     posts: [{
@@ -62,12 +75,15 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
 
   return [
     `คุณคือทีมคอนเทนต์ของเพจ Facebook${o.pageName ? ` "${o.pageName}"` : ''}`,
-    info.length ? ['ข้อมูลแบรนด์:', ...info].join('\n') : '',
+    pageInfo.length ? ['ข้อมูลเพจ:', ...pageInfo].join('\n') : '',
+    keywords.length ? `คีย์เวิร์ดของเพจ: ${keywords.join(', ')}` : '',
+    info.length ? [pageInfo.length ? 'ข้อมูลแบรนด์ (ภาพรวม):' : 'ข้อมูลแบรนด์:', ...info].join('\n') : '',
     '',
     'งานของคุณ:',
-    `1) ค้นหาข้อมูลจากเว็บ (เปิดใช้การค้นหาเว็บ) ${o.topic?.trim() ? `ในเรื่อง: ${o.topic.trim()}` : 'ในเรื่องที่เหมาะกับแบรนด์และกลุ่มเป้าหมายด้านบน'}${o.recencyDays ? ` — เน้นข้อมูลภายใน ${o.recencyDays} วันล่าสุด` : ''}`,
+    `1) ค้นหาข้อมูลจากเว็บ (เปิดใช้การค้นหาเว็บ) ${o.topic?.trim() ? `ในเรื่อง: ${o.topic.trim()}` : keywords.length ? 'ในเรื่องที่เกี่ยวกับคีย์เวิร์ดของเพจด้านบน' : 'ในเรื่องที่เหมาะกับเพจและกลุ่มเป้าหมายด้านบน'}${o.recencyDays ? ` — เน้นข้อมูลภายใน ${o.recencyDays} วันล่าสุด` : ''}`,
     `2) คัดมา ${n} หัวข้อที่ไม่ซ้ำกัน ประเภท: ${KIND[o.kind]}`,
     '3) สรุปและเขียนเป็นโพสต์ Facebook ภาษาไทย หัวข้อละ 1 โพสต์',
+    ...(keywords.length ? ['- ทุกหัวข้อต้องเกี่ยวกับเพจนี้จริง ใช้คีย์เวิร์ดของเพจเป็นแนวทางค้นหา และเลือกคำที่เหมาะเป็น hashtags'] : []),
     '',
     'รูปแบบข้อความโพสต์ (caption):',
     `- ความยาว${LENGTH[o.length]}`,

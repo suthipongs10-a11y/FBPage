@@ -68,6 +68,8 @@ export class NewsController {
   importTemplate(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.template(t.workspaceId, brandId); }
   @Post('brands/:brandId/news/import/chat-prompt') @HttpCode(200) @RequirePermission('content.read')
   chatPrompt(@Tenant() t: TenantContext, @Param('brandId') brandId: string, @Body(new ZodPipe(chatPromptSchema)) b: ChatPromptDto) { return this.imports.chatPrompt(t.workspaceId, brandId, b); }
+  @Get('brands/:brandId/news/import/page-keywords') @RequirePermission('content.read')
+  pageKeywords(@Tenant() t: TenantContext, @Param('brandId') brandId: string, @Query('pageId', new ZodPipe(z.string().min(1))) pageId: string) { return this.imports.pageKeywords(t.workspaceId, brandId, pageId); }
   @Get('brands/:brandId/news/inbox') @RequirePermission('content.read')
   inbox(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.getInbox(t.workspaceId, brandId); }
   @Put('brands/:brandId/news/inbox') @RequirePermission('ai.configure')

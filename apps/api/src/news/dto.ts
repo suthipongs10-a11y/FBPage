@@ -158,5 +158,7 @@ export const chatPromptSchema = z.object({
   images: z.enum(PROMPT_IMAGES).default('chatgpt'),
   recencyDays: z.number().int().min(1).max(365).optional(),
   extra: z.string().trim().max(1000).optional(),
+  /** คีย์เวิร์ดของเพจที่ผู้ใช้เลือกไว้ (ไม่ใส่ = ใช้ที่ระบบรวบรวมให้ทั้งหมด) */
+  keywords: z.array(z.string().trim().min(2).max(80)).max(15).optional(),
 }).strict();
 export type ChatPromptDto = z.infer<typeof chatPromptSchema>;

@@ -23,6 +23,15 @@ type Row = { include: boolean; when: string; image?: { id: string; name: string;
 export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDone }: { base: string; brandId: string; pages: PageRow[]; canWrite: boolean; canSchedule: boolean; onDone: () => void }) {
   const [f, setF] = useState({ pageId: pages.length === 1 ? pages[0]!.id : '', count: 5, topic: '', kind: 'original' as (typeof KINDS)[number], length: 'medium' as (typeof LENGTHS)[number], emoji: true, images: 'chatgpt' as (typeof IMAGES)[number], recencyDays: 0, extra: '' });
   const [prompt, setPrompt] = useState('');
+  const [kw, setKw] = useState<{ list: string[]; on: string[]; hasProfile: boolean } | null>(null);
+  useEffect(() => {
+    setKw(null); if (!f.pageId) return;
+    let live = true;
+    api<{ page: { keywords: string[] }; hasProfile: boolean }>(`${base}/brands/${brandId}/news/import/page-keywords?pageId=${encodeURIComponent(f.pageId)}`)
+      .then(r => { if (live) setKw({ list: r.page.keywords, on: r.page.keywords, hasProfile: r.hasProfile }); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [base, brandId, f.pageId]);
+  const toggleKw = (k: string) => setKw(v => v && ({ ...v, on: v.on.includes(k) ? v.on.filter(x => x !== k) : [...v.on, k] }));
   const [text, setText] = useState(''); const [report, setReport] = useState<ImportReport | null>(null); const [rows, setRows] = useState<Row[]>([]);
   const [spread, setSpread] = useState({ start: tomorrowAt(9), gap: 24 as (typeof GAPS)[number] });
   const [photoOnly, setPhotoOnly] = useState(true); const [fallback, setFallback] = useState<(typeof FALLBACKS)[number]>('stock');
@@ -33,7 +42,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
   const url = `${base}/brands/${brandId}/news/import`;
 
   const makePrompt = () => run('prompt', async () => {
-    const r = await api<{ prompt: string }>(`${url}/chat-prompt`, { method: 'POST', body: { ...(f.pageId && { pageId: f.pageId }), count: f.count, topic: f.topic || undefined, kind: f.kind, length: f.length, emoji: f.emoji, images: f.images, ...(f.recencyDays && { recencyDays: f.recencyDays }), extra: f.extra || undefined } });
+    const r = await api<{ prompt: string }>(`${url}/chat-prompt`, { method: 'POST', body: { ...(f.pageId && { pageId: f.pageId }), count: f.count, topic: f.topic || undefined, kind: f.kind, length: f.length, emoji: f.emoji, images: f.images, ...(f.recencyDays && { recencyDays: f.recencyDays }), extra: f.extra || undefined, ...(f.pageId && kw && { keywords: kw.on }) } });
     setPrompt(r.prompt);
     try { await navigator.clipboard.writeText(r.prompt); return t('gpt.copied'); } catch { return t('gpt.copyManual'); }
   });
@@ -87,6 +96,13 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
           <Field label={t('gpt.length')}><Select value={f.length} onChange={e => setF({ ...f, length: e.target.value as typeof f.length })}>{LENGTHS.map(k => <option key={k} value={k}>{L(`gpt.length.${k}`)}</option>)}</Select></Field>
         </div>
         <Field label={t('gpt.topic')} hint={t('gpt.topicHint')}><Textarea className="min-h-16" value={f.topic} maxLength={1000} placeholder={t('gpt.topicPlaceholder')} onChange={e => setF({ ...f, topic: e.target.value })} /></Field>
+        {f.pageId && kw && (
+          <div className="text-sm">
+            <div className="mb-1 text-slate-400">{t('gpt.pageKeywords')} <span className="text-xs text-slate-500">— {t('gpt.pageKeywordsHint')}</span></div>
+            {kw.list.length ? <div className="flex flex-wrap gap-1">{kw.list.map(k => <button key={k} type="button" aria-pressed={kw.on.includes(k)} onClick={() => toggleKw(k)} className={`rounded-full border px-2 py-0.5 text-xs ${kw.on.includes(k) ? 'border-sky-500 bg-sky-500/10 text-sky-600' : 'border-slate-700 text-slate-500 line-through'}`}>{k}</button>)}</div> : <p className="text-xs text-slate-500">{t('gpt.noKeywords')}</p>}
+            {!kw.hasProfile && <p className="mt-1 text-xs text-amber-500">{t('gpt.noProfile')}</p>}
+          </div>
+        )}
         <div className="grid gap-2 md:grid-cols-3">
           <Field label={t('gpt.images')}><Select value={f.images} onChange={e => setF({ ...f, images: e.target.value as typeof f.images })}>{IMAGES.map(k => <option key={k} value={k}>{L(`gpt.images.${k}`)}</option>)}</Select></Field>
           <Field label={t('gpt.recency')}><Select value={f.recencyDays} onChange={e => setF({ ...f, recencyDays: Number(e.target.value) })}>{[0, 7, 30, 90].map(d => <option key={d} value={d}>{d ? `${d} ${t('gpt.days')}` : t('gpt.anyTime')}</option>)}</Select></Field>

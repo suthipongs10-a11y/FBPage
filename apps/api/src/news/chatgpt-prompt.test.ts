@@ -33,6 +33,24 @@ describe('buildChatGptPrompt', () => {
   });
 });
 
+describe('buildChatGptPrompt — ข้อมูลเพจ', () => {
+  it('ใส่ข้อมูลเพจ + คีย์เวิร์ด และไม่ปนรายละเอียดแบรนด์เมื่อแบรนด์มีหลายเพจ', () => {
+    const page = { category: 'ศาสนา', about: 'ชวนทำบุญ ปฏิทินวันพระ', businessType: 'เพจสายบุญ', audience: 'ชาวพุทธวัยทำงาน', pillars: ['วันพระ', 'บทสวดมนต์'], seasonalHooks: ['ออกพรรษา'], avoid: ['เรื่องการเมือง'], keywords: ['ทำบุญ', 'วันพระ', 'สวดมนต์'] };
+    const p = buildChatGptPrompt({ ...brand, description: 'ขายฝาแดงของแท้' }, { ...base, pageName: 'ระเบียงบุญ', page, brandInfo: false });
+    expect(p).toContain('ข้อมูลเพจ:');
+    expect(p).toContain('- ประเภทธุรกิจ/เนื้อหา: เพจสายบุญ');
+    expect(p).toContain('- เสาหลักคอนเทนต์: วันพระ · บทสวดมนต์');
+    expect(p).toContain('คีย์เวิร์ดของเพจ: ทำบุญ, วันพระ, สวดมนต์');
+    expect(p).toContain('ในเรื่องที่เกี่ยวกับคีย์เวิร์ดของเพจด้านบน');
+    expect(p).toContain('ทุกหัวข้อต้องเกี่ยวกับเพจนี้จริง');
+    expect(p).not.toContain('ขายฝาแดงของแท้');
+    expect(p).not.toContain('บริการทำความสะอาด');
+    expect(p).toContain('ข้อมูลแบรนด์ (ภาพรวม):');
+    // ระบุเรื่องเองได้ คีย์เวิร์ดยังอยู่เป็นแนวทาง
+    expect(buildChatGptPrompt(brand, { ...base, page, topic: 'ออกพรรษา' })).toContain('ในเรื่อง: ออกพรรษา');
+  });
+});
+
 describe('withPostImages', () => {
   const pkg = { format: 'fbpm-content-v1', posts: [{ caption: 'a'.repeat(30), images: ['old.png'] }, { caption: 'b'.repeat(30) }] };
   it('ผูกรูปรายหัวข้อกับข้อความจากแชต (```json) array และโพสต์เดี่ยว', () => {

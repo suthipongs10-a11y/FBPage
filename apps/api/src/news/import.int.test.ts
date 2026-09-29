@@ -162,6 +162,31 @@ run('content import (integration)', () => {
     expect(new Date(s1.json.scheduledAt).getTime() - new Date(s0.json.scheduledAt).getTime()).toBe(9 * 3_600_000);
   });
 
+  it('คีย์เวิร์ดของเพจ: จากโปรไฟล์ผู้ช่วยหาเรื่องโพสต์ + แฮชแท็กที่ใช้บ่อย → อยู่ในคำสั่ง ChatGPT · แบรนด์หลายเพจไม่ปนข้อมูลแบรนด์', async () => {
+    const path = `/workspaces/${wsA}/brands/${brandA}/news/import`;
+    const none = await a.http('GET', `${path}/page-keywords?pageId=${pageA}`);
+    expect(none.status).toBe(200); expect(none.json.hasProfile).toBe(false);
+    await prisma.pageScout.upsert({ where: { pageId: pageA }, create: { workspaceId: wsA, pageId: pageA, profiledAt: new Date(), profile: { summary: 's', businessType: 'เพจสายบุญ', audience: 'ชาวพุทธวัยทำงาน', location: null, pillars: [{ name: 'วันพระ', why: '' }], seasonalHooks: ['ออกพรรษา'], avoid: ['การเมือง'], searchTopics: [{ query: 'ทำบุญวันเกิด', why: '' }] } }, update: {} });
+    for (const [i, m] of ['กราบพระ #สายบุญ #วันพระ', 'บุญใหญ่ #สายบุญ', 'สวดมนต์ #สายบุญ'].entries()) await prisma.facebookPost.create({ data: { pageId: pageA, facebookPostId: `kw-${stamp}-${i}`, message: m, publishedAt: new Date() } });
+    const kw = await a.http('GET', `${path}/page-keywords?pageId=${pageA}`);
+    expect(kw.json.hasProfile).toBe(true);
+    expect(kw.json.page.keywords.slice(0, 3)).toEqual(['ทำบุญวันเกิด', 'วันพระ', 'สายบุญ']);   // วันพระ ซ้ำกับแฮชแท็ก → นับครั้งเดียว
+    expect((await b.http('GET', `/workspaces/${wsB}/brands/${brandA}/news/import/page-keywords?pageId=${pageA}`)).status).toBe(404);
+    expect((await a.http('GET', `${path}/page-keywords?pageId=nope`)).status).toBe(404);
+
+    const pr = await a.http('POST', `${path}/chat-prompt`, { pageId: pageA, count: 2 });
+    for (const s of ['ข้อมูลเพจ:', 'เพจสายบุญ', 'คีย์เวิร์ดของเพจ: ทำบุญวันเกิด, วันพระ, สายบุญ', 'ในเรื่องที่เกี่ยวกับคีย์เวิร์ดของเพจด้านบน']) expect(pr.json.prompt).toContain(s);
+    const picked = await a.http('POST', `${path}/chat-prompt`, { pageId: pageA, count: 2, keywords: ['สายบุญ'] });
+    expect(picked.json.prompt).toContain('คีย์เวิร์ดของเพจ: สายบุญ\n'); expect(picked.json.prompt).not.toContain('ทำบุญวันเกิด');
+    // แบรนด์ที่มีเพจเดียว → มีรายละเอียดแบรนด์ · เพิ่มเพจที่สอง → ตัดรายละเอียดแบรนด์ออก เหลือชื่อ/CTA/น้ำเสียง
+    await prisma.brand.update({ where: { id: brandA }, data: { description: 'รายละเอียดของอีกธุรกิจ' } });
+    expect((await a.http('POST', `${path}/chat-prompt`, { pageId: pageA, count: 2 })).json.prompt).toContain('รายละเอียดของอีกธุรกิจ');
+    const p0 = await prisma.facebookPage.findUniqueOrThrow({ where: { id: pageA } });
+    const second = await prisma.facebookPage.create({ data: { brandId: brandA, connectionId: p0.connectionId, facebookPageId: `kw-second-${stamp}`, name: 'เพจที่สอง', pageAccessTokenEncrypted: p0.pageAccessTokenEncrypted } });
+    expect((await a.http('POST', `${path}/chat-prompt`, { pageId: pageA, count: 2 })).json.prompt).not.toContain('รายละเอียดของอีกธุรกิจ');
+    await prisma.facebookPage.delete({ where: { id: second.id } }); await prisma.brand.update({ where: { id: brandA }, data: { description: null } });
+  });
+
   it('URL รับไฟล์: คีย์แสดงครั้งเดียว เก็บเป็น hash · ไม่มีคีย์ = 401 · ข้อความ text/plain ได้ · ยกเลิกคีย์แล้วใช้ไม่ได้', async () => {
     const k = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/inbox/key`);
     expect(k.status).toBe(200); expect(k.json.key).toMatch(/^fbin_/);
