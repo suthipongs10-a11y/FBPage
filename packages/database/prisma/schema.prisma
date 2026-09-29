@@ -940,6 +940,7 @@ model YouTubeChannel {
   recommendations YouTubeRecommendation[]
   clusters        CommentCluster[]
   analyses        YouTubeChannelAnalysis[]
+  commentHighlights YouTubeCommentHighlightRun[]
   reports         YouTubeReport[]
 
   @@unique([brandId, youtubeChannelId])
@@ -1249,6 +1250,23 @@ model YouTubeChannelAnalysis {
   id            String   @id @default(cuid())
   channelId     String
   days          Int
+  result        Json
+  provider      String
+  model         String
+  promptVersion String
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+}
+
+/// ผลวิเคราะห์ "คอมเมนต์ที่น่าสนใจ" ของช่อง (จัดอันดับ + ไอเดียหัวข้อ) — แยกจาก YouTubeChannelAnalysis เพื่อไม่ปนกับผลวิเคราะห์ช่อง
+model YouTubeCommentHighlightRun {
+  id            String   @id @default(cuid())
+  channelId     String
+  commentCount  Int
   result        Json
   provider      String
   model         String

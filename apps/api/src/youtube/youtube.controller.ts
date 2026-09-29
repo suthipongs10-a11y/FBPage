@@ -103,6 +103,10 @@ export class YoutubeController {
   listComments(@Tenant() t: TenantContext, @Query(new ZodPipe(d.listYtCommentsSchema)) q: d.ListYtCommentsDto) { return this.comments.list(t.workspaceId, q); }
   @Post('channels/:id/comments/sync') @HttpCode(200) @RequirePermission('youtube.comments.read')
   syncComments(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.comments.sync(t.workspaceId, u.id, id, rid); }
+  @Post('channels/:id/comments/highlights') @HttpCode(200) @RequirePermission('youtube.comments.read', 'ai.use')
+  highlights(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.highlightsSchema)) b: z.infer<typeof d.highlightsSchema>, @RequestId() rid: string) { return this.comments.highlights(t.workspaceId, u.id, id, b?.days ?? 180, rid); }
+  @Get('channels/:id/comments/highlights') @RequirePermission('youtube.comments.read')
+  latestHighlights(@Tenant() t: TenantContext, @Param('id') id: string) { return this.comments.latestHighlights(t.workspaceId, id); }
   @Get('comments/threads') @RequirePermission('youtube.comments.read')
   threads(@Tenant() t: TenantContext, @Query('channelId') channelId?: string) { return this.comments.threads(t.workspaceId, channelId || undefined); }
   @Post('comments/reply-bulk') @HttpCode(200) @RequirePermission('youtube.comments.reply')

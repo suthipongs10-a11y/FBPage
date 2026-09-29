@@ -28,4 +28,15 @@ nginx: location อัปโหลดคลิปใน `deploy/nginx-fbpm.conf`
 - `POST youtube/comments/reply-bulk { ids ≤ 30 }` ส่งร่างที่คนตรวจแล้ว (UI ถามยืนยันก่อน) · หยุดเมื่อ kill switch / โควตาหมด
 - ไม่มีการตอบเองอัตโนมัติเพิ่มจากนี้ — การตอบเองยังเป็นไปตาม `policy.allowAutoReply` + automation level เดิม
 
+- ทุกข้อความแสดงอายุแบบ YouTube ("4 สัปดาห์ที่ผ่านมา", ชี้ดูวันเวลาจริง) — `timeAgo` ใน `apps/web/lib/yt-comment.ts`
+- ปุ่ม "📋 คัดลอกถาม AI" คัดลอกข้อความพร้อมวางใน ChatGPT: ชื่อคลิป + ลิงก์ + บทสนทนาก่อนหน้า + คอมเมนต์ที่ต้องตอบ + คำสั่งขอคำตอบ 3 แบบ (`replyPrompt`) — ทำในเบราว์เซอร์ล้วน ไม่เรียก AI ของระบบ
+
+## ⭐ คอมเมนต์น่าสนใจ
+หน้า `/youtube/comments` แท็บ "⭐ คอมเมนต์น่าสนใจ"
+
+- `POST youtube/channels/:id/comments/highlights { days }` (บทบาท AI `analysis`) — ส่งเฉพาะคอมเมนต์ของผู้ชม (ไม่รวมของช่อง/สแปม) สูงสุด 300 รายการ แบบย่อ (ข้อความ ≤ 300, likes, จำนวนคนตอบต่อ, อายุวัน, ยังไม่ได้ตอบ)
+- AI คืน: ภาพรวม, คอมเมนต์น่าสนใจ ≤ 15 (คะแนน/ชนิด/เหตุผล/ไอเดียหัวข้อ), ไอเดียหัวข้อคลิป ≤ 6 — id ที่ไม่มีจริงถูกตัด, ข้อความ/คลิป/วันที่ที่แสดงประกอบจาก DB ไม่ใช้ข้อความจาก AI
+- เก็บใน `YouTubeCommentHighlightRun` (แยกจาก `YouTubeChannelAnalysis`) · `GET .../comments/highlights` = ผลล่าสุด
+- "➕ ส่งไป Content Lab" = `POST youtube/content` (IDEA) พร้อม notes อ้างคอมเมนต์ต้นทาง → ทำสคริปต์/ชื่อ/SEO ต่อใน YT · Content Lab
+
 ทดสอบ: `apps/api/src/youtube/youtube.int.test.ts` (quick upload, threads) และ E2E `YouTube: quick upload …` ใน `test/e2e/smoke.spec.ts`

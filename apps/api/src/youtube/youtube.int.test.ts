@@ -232,6 +232,31 @@ run('youtube module (integration)', () => {
     const rest = again[0]; if (rest) { await a.http('PATCH', `/workspaces/${ws}/youtube/comments/${rest.target.id}`, { resolved: true }); expect(((await a.http('GET', `/workspaces/${ws}/youtube/comments/threads?channelId=${channelId}`)).json as Th[]).some(x => x.threadId === rest.threadId)).toBe(false); }
   });
 
+  it('comment highlights: AI ranks interesting viewer comments (unknown ids dropped, channel comments excluded) and suggests topics for Content Lab', async () => {
+    const empty = await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/comments/highlights`); expect(empty.status).toBe(200); expect(empty.json).toBeNull();
+    const byYt = Object.fromEntries((await prisma.youTubeComment.findMany({ where: { channelId }, select: { id: true, youtubeCommentId: true } })).map(c => [c.youtubeCommentId, c.id]));
+    await prisma.youTubeComment.update({ where: { id: byYt.x1 }, data: { classification: null } });   // ยังไม่จำแนก ต้องถูกส่งให้ AI ด้วย
+    ai.state.replies.push({ text: JSON.stringify({ summary: ['ผู้ชมถามเรื่องปุ๋ยกับดินเป็นหลัก'], highlights: [
+      { id: byYt.c4, score: 70, kind: 'LEAD', why: 'ถามซื้อพร้อมราคา', topicIdea: null, shouldReply: true },
+      { id: byYt.x1, score: 90, kind: 'QUESTION', why: 'ถามต่อยอดใช้กับนาข้าว', topicIdea: 'ปุ๋ยสั่งตัดสำหรับนาข้าว', shouldReply: true },
+      { id: 'not-a-real-id', score: 99, kind: 'INSIGHT', why: 'แต่งขึ้น', topicIdea: null, shouldReply: false },
+    ], topicIdeas: [{ title: 'ปุ๋ยสั่งตัดสำหรับนาข้าว ทำยังไง', why: 'ถามซ้ำหลายคน', commentIds: [byYt.x1, byYt.c2, 'fake'] }] }) });
+    const r = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/comments/highlights`, { days: 365 });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.highlights.map((h: { id: string }) => h.id)).toEqual([byYt.x1, byYt.c4]);   // เรียงตามคะแนน, id แต่งถูกตัด
+    expect(r.json.highlights[0].comment.text).toBe('แล้วใช้กับนาข้าวได้ไหมครับ');   // ข้อความจาก DB ไม่ใช่จาก AI
+    expect(r.json.highlights[0].comment.video.title).toBeTruthy();
+    expect(r.json.topicIdeas[0].commentIds).toEqual([byYt.x1, byYt.c2]);
+    const sent = JSON.stringify(ai.state.requests.at(-1)?.messages);
+    expect(sent).toContain('แล้วใช้กับนาข้าวได้ไหมครับ'); expect(sent).not.toContain('กำลังทำคลิปปุ๋ยสั่งตัดครับ');   // ความเห็นของช่องเองไม่ส่งให้ AI
+    const again = await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/comments/highlights`); expect(again.json.id).toBe(r.json.id);
+    // ไอเดีย → Content Lab (IDEA) พร้อมโน้ตคอมเมนต์ต้นทาง
+    const idea = await a.http('POST', `/workspaces/${ws}/youtube/content`, { channelId, title: r.json.topicIdeas[0].title, objective: 'ตอบคำถามจากคอมเมนต์', notes: 'จากคอมเมนต์: แล้วใช้กับนาข้าวได้ไหมครับ' });
+    expect(idea.status, idea.text).toBe(201); expect(idea.json.ytStatus).toBe('IDEA');
+    // ข้อเสนอฟื้นวิดีโอ/วิเคราะห์ช่องไม่ถูกปน
+    expect((await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/analyses`)).json.every((x: { promptVersion: string }) => x.promptVersion !== 'youtube-comment-highlights-v1')).toBe(true);
+  });
+
   // ---------- YT-4/YT-5 content lab → approval → upload ----------
   it('topic ideas → script → titles → SEO metadata → policy fields → submit → approve', async () => {
     ai.state.replies.push({ text: JSON.stringify({ ideas: [{ topic: 'ยูเรียต่อไร่', title: 'ยูเรียใส่กี่กิโลต่อไร่ถึงพอดี', whyNow: 'คอมเมนต์ถามซ้ำ', evidence: ['c1', 'v1 views'], contentPillar: 'ปุ๋ย', format: 'LONG_FORM', objective: 'ตอบคำถามผู้ชม', hook: 'ใส่มากไปเสียเงินฟรี', priority: 90, confidence: 0.8, source: 'COMMENTS' }, { topic: 'ปุ๋ยอินทรีย์', title: 'ปุ๋ยอินทรีย์ทำเองใน 7 วัน', whyNow: 'ผู้ชมขอ', evidence: ['c2'], contentPillar: 'ปุ๋ย', format: 'SHORT', objective: 'ขยายฐาน', hook: '7 วันได้ปุ๋ยฟรี', priority: 70, confidence: 0.6, source: 'COMMENTS' }],

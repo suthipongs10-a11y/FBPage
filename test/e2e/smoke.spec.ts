@@ -238,6 +238,14 @@ test('YouTube: quick upload a clip as Private in one click, and answer a viewer 
   const thread = page.locator('div.rounded-xl').filter({ hasText: 'แล้วหน้าฝนล่ะคะ' });
   await expect(thread.getByText('ตอบใต้เธรด')).toBeVisible();
   await expect(thread.getByText('ใส่ช่วงเย็นครับ')).toBeVisible();
+  await expect(thread.getByText('10 นาทีที่ผ่านมา')).toBeVisible();   // อายุคอมเมนต์แบบ YouTube
+  // คัดลอกไปถาม ChatGPT: ชื่อคลิป + บทสนทนา + คอมเมนต์ + ขอ 3 แบบ
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await thread.getByRole('button', { name: /คัดลอกถาม AI/ }).click();
+  await expect(page.getByText('คัดลอกแล้ว — วางใน ChatGPT ได้เลย')).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain('คลิป: "ใส่ปุ๋ยยูเรียตอนไหนดีที่สุด"'); expect(copied).toContain('"แล้วหน้าฝนล่ะคะ"'); expect(copied).toContain('[ช่องของเรา');
+  expect(copied).toContain('ขอคำตอบภาษาไทย 3 แบบ');
   await thread.getByPlaceholder('ข้อความตอบ (กด AI ร่าง หรือพิมพ์เอง)').fill('หน้าฝนเว้นช่วงฝนตกหนักครับ');
   const before = yt.state.replies.length;
   await thread.getByRole('button', { name: 'ส่งคำตอบ', exact: true }).click();
@@ -245,6 +253,20 @@ test('YouTube: quick upload a clip as Private in one click, and answer a viewer 
   expect(yt.state.replies.length).toBe(before + 1);
   expect(yt.state.replies.at(-1)).toEqual({ parentId: 'c1', text: '@สมศรี หน้าฝนเว้นช่วงฝนตกหนักครับ' });
   await expect(page.getByText('แล้วหน้าฝนล่ะคะ')).toHaveCount(0);
+
+  // ⭐ คอมเมนต์น่าสนใจ: AI จัดอันดับ → ส่งไอเดียเข้า Content Lab
+  const all = await api(page.request, 'GET', `/workspaces/${ws}/youtube/comments?channelId=${channelId}`);
+  const x = all.find((c: { youtubeCommentId: string }) => c.youtubeCommentId === 'e2e-x');
+  ai.state.replies.push({ text: JSON.stringify({ summary: ['ผู้ชมอยากรู้เรื่องปุ๋ยตามฤดู'], highlights: [{ id: x.id, score: 88, kind: 'QUESTION', why: 'ถามต่อเรื่องหน้าฝน', topicIdea: 'ใส่ปุ๋ยหน้าฝนยังไงไม่ให้ละลายทิ้ง', shouldReply: false }], topicIdeas: [{ title: 'ปุ๋ยตามฤดูกาล: ร้อน ฝน หนาว', why: 'ถามซ้ำ', commentIds: [x.id] }] }) });
+  await page.getByRole('button', { name: /คอมเมนต์น่าสนใจ/ }).click();
+  await page.getByRole('button', { name: '🔍 วิเคราะห์คอมเมนต์ทั้งหมด' }).click();
+  await expect(page.getByText('#1')).toBeVisible({ timeout: 20_000 });
+  const item = page.locator('div.rounded-xl').filter({ hasText: '#1' });
+  await expect(item.getByText('แล้วหน้าฝนล่ะคะ')).toBeVisible(); await expect(item.getByText('คำถาม')).toBeVisible();
+  await item.getByRole('button', { name: /ส่งไป Content Lab/ }).click();
+  await expect(item.getByRole('button', { name: /อยู่ใน Content Lab แล้ว/ })).toBeVisible();
+  const lab = await api(page.request, 'GET', `/workspaces/${ws}/youtube/content?channelId=${channelId}`);
+  expect(lab.some((c: { title: string; ytStatus: string }) => c.title === 'ใส่ปุ๋ยหน้าฝนยังไงไม่ให้ละลายทิ้ง' && c.ytStatus === 'IDEA')).toBe(true);
 });
 
 test('Websites: add a site in the UI, see status/SEO issues, connect Search Console and see top queries', async ({ page }) => {

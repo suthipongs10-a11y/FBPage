@@ -14,6 +14,7 @@ import type { ClassifyYtDto, ListYtCommentsDto, UpdateYtCommentDto } from './dto
 
 export const YT_COMMENT_PROMPT_VERSION = 'youtube-comment-classifier-v1';
 export const YT_CLUSTER_PROMPT_VERSION = 'youtube-comment-cluster-v1';
+export const YT_HIGHLIGHT_PROMPT_VERSION = 'youtube-comment-highlights-v1';
 const SELECT = { id: true, channelId: true, videoId: true, youtubeCommentId: true, parentCommentId: true, authorDisplayName: true, text: true, likeCount: true, publishedAt: true, isReply: true, classification: true, sentiment: true, riskFlag: true, aiSummary: true, draftReply: true, replyStatus: true, needsReply: true, replyExternalId: true, repliedAt: true, resolvedAt: true, clusterId: true, video: { select: { id: true, title: true, youtubeVideoId: true } }, channel: { select: { id: true, title: true, automationLevel: true } }, lead: { select: { id: true, leadScore: true, status: true } } } as const;
 const AUTO_SAFE: YtCommentClass[] = ['QUESTION', 'PRAISE', 'CONTENT_REQUEST', 'EXPERIENCE_SHARE'];
 interface Classified { id: string; classification: YtCommentClass; sentiment: 'positive' | 'neutral' | 'negative'; risk: boolean; summary: string; draftReply: string | null; lead: { intent: string | null; product: string | null; service: string | null; location: string | null; phone: string | null; leadScore: number; confidence: number } | null }
@@ -143,6 +144,53 @@ export class YtCommentsService {
       return out;
     } catch (e) { await this.prisma.youTubeComment.update({ where: { id }, data: { replyStatus: 'FAILED' } }); rethrowYt(e); }
   }
+  /**
+   * วิเคราะห์คอมเมนต์ทั้งหมดของช่อง → จัดอันดับความเห็นที่น่าสนใจ + ไอเดียหัวข้อคลิป (ส่งต่อ Content Lab ได้)
+   * ส่งแค่ข้อความสั้น/ตัวเลขที่มีจริงให้ AI (§84) · id ที่ AI ตอบต้องมีอยู่จริง · ความเห็นของช่องเองไม่นับ
+   */
+  async highlights(workspaceId: string, userId: string, channelId: string, days: number, requestId: string) {
+    const ch = await this.prisma.youTubeChannel.findFirst({ where: { id: channelId, ...channelInWorkspace(workspaceId) }, select: { id: true, title: true, youtubeChannelId: true, brand: { select: { name: true, industry: true, targetAudience: true } } } });
+    if (!ch) throw new NotFoundException('ไม่พบช่อง');
+    const since = new Date(Date.now() - days * 86_400_000);
+    // คอลัมน์ที่เป็น null ได้ต้องเขียน OR null เอง — `not` ใน SQL ตัดแถว null ทิ้ง (คอมเมนต์ที่ยังไม่จำแนกจะหลุด)
+    const rows = await this.prisma.youTubeComment.findMany({ where: { channelId, publishedAt: { gte: since }, AND: [{ OR: [{ authorChannelId: null }, { authorChannelId: { not: ch.youtubeChannelId } }] }, { OR: [{ classification: null }, { classification: { not: 'SPAM' } }] }] }, orderBy: [{ likeCount: 'desc' }, { publishedAt: 'desc' }], take: 300, select: { id: true, youtubeCommentId: true, parentCommentId: true, authorDisplayName: true, text: true, likeCount: true, publishedAt: true, isReply: true, needsReply: true, classification: true, video: { select: { id: true, title: true, youtubeVideoId: true } } } });
+    if (rows.length < 3) throw new UnprocessableEntityException(`มีคอมเมนต์ของผู้ชมในช่วง ${days} วันเพียง ${rows.length} รายการ — กด "ซิงก์คอมเมนต์" ก่อน หรือขยายช่วงเวลา`);
+    const replies = new Map<string, number>(); for (const r of rows) if (r.parentCommentId) replies.set(r.parentCommentId, (replies.get(r.parentCommentId) ?? 0) + 1);
+    const now = Date.now();
+    const compact = rows.map(r => ({ id: r.id, v: r.video?.title?.slice(0, 60) ?? null, t: r.text.slice(0, 300), likes: r.likeCount, replies: replies.get(r.youtubeCommentId) ?? 0, ageDays: Math.floor((now - r.publishedAt.getTime()) / 86_400_000), reply: r.isReply || undefined, waiting: r.needsReply || undefined }));
+    const KINDS = ['QUESTION', 'CONTENT_REQUEST', 'DEBATE', 'INSIGHT', 'COMPLAINT', 'MISINFO', 'LEAD', 'PRAISE'] as const;
+    type Kind = (typeof KINDS)[number];
+    const out = await this.ai.structured({ workspaceId, userId, taskType: 'youtube.comments.highlights', role: 'analysis', requestId, promptVersion: YT_HIGHLIGHT_PROMPT_VERSION, resourceType: 'youtubeChannel', resourceId: channelId }, {
+      system: `คุณคือผู้ช่วยครีเอเตอร์ YouTube ช่อง "${ch.title}" (แบรนด์ ${ch.brand.name}${ch.brand.industry ? `, ${ch.brand.industry}` : ''}${ch.brand.targetAudience ? `, ผู้ชม ${ch.brand.targetAudience}` : ''})
+อ่านคอมเมนต์ของผู้ชม แล้วคัด "ความเห็นที่น่าสนใจ" สูงสุด 15 รายการ เรียงจากน่าสนใจที่สุด
+น่าสนใจ = ถามสิ่งที่คนอื่นน่าจะสงสัยด้วย, ขอหัวข้อคลิป, เปิดประเด็นถกเถียง, ให้ข้อมูล/ประสบการณ์ใหม่, ติเพื่อก่อ, เข้าใจผิดที่ควรแก้, สนใจซื้อ/ใช้บริการ — likes/replies สูงช่วยยืนยัน แต่ไม่ใช่เกณฑ์เดียว
+ห้ามแต่งตัวเลข ใช้ id ที่ให้เท่านั้น เหตุผลสั้นๆ ภาษาไทย แล้วสรุปภาพรวม 3–5 ข้อ และเสนอไอเดียหัวข้อคลิปใหม่ 3–6 เรื่องที่มาจากคอมเมนต์เหล่านี้ (บอก id ที่เป็นหลักฐาน)`,
+      prompt: `คอมเมนต์ ${compact.length} รายการ (ageDays = อายุเป็นวัน, replies = จำนวนคนตอบต่อ, waiting = ช่องยังไม่ได้ตอบ):\n${JSON.stringify(compact)}`,
+      schemaDescription: `{ "summary": string[], "highlights": [{ "id": string, "score": number (0-100), "kind": ${KINDS.map(k => `"${k}"`).join('|')}, "why": string, "topicIdea": string|null, "shouldReply": boolean }], "topicIdeas": [{ "title": string, "why": string, "commentIds": string[] }] }`,
+      validate: v => {
+        const o = v as { summary?: unknown; highlights?: unknown; topicIdeas?: unknown };
+        if (!Array.isArray(o.highlights)) throw new Error('highlights ต้องเป็น array');
+        const known = new Set(rows.map(r => r.id));
+        const highlights = (o.highlights as Record<string, unknown>[]).filter(h => typeof h.id === 'string' && known.has(h.id)).slice(0, 15).map(h => ({ id: h.id as string, score: Math.max(0, Math.min(100, Math.round(Number(h.score) || 0))), kind: ((KINDS as readonly string[]).includes(h.kind as string) ? h.kind : 'INSIGHT') as Kind, why: String(h.why ?? '').slice(0, 400), topicIdea: typeof h.topicIdea === 'string' && h.topicIdea.trim() ? h.topicIdea.trim().slice(0, 200) : null, shouldReply: h.shouldReply === true }));
+        const topicIdeas = (Array.isArray(o.topicIdeas) ? o.topicIdeas as Record<string, unknown>[] : []).filter(x => typeof x.title === 'string' && x.title.trim()).slice(0, 6).map(x => ({ title: String(x.title).trim().slice(0, 200), why: String(x.why ?? '').slice(0, 400), commentIds: (Array.isArray(x.commentIds) ? x.commentIds : []).filter((id): id is string => typeof id === 'string' && known.has(id)).slice(0, 10) }));
+        return { summary: (Array.isArray(o.summary) ? o.summary : []).map(String).slice(0, 6), highlights: highlights.sort((a, b) => b.score - a.score), topicIdeas };
+      }, maxTokens: 6000,
+    });
+    const r = out.result.data;
+    const run = await this.prisma.youTubeCommentHighlightRun.create({ data: { channelId, commentCount: rows.length, result: { days, ...r } as unknown as Prisma.InputJsonValue, provider: out.provider, model: out.model, promptVersion: YT_HIGHLIGHT_PROMPT_VERSION, createdById: userId }, select: { id: true } });
+    await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_COMMENTS_HIGHLIGHTED', resourceType: 'youtubeChannel', resourceId: channelId, after: { runId: run.id, comments: rows.length, highlights: r.highlights.length, costUsd: out.costUsd }, requestId });
+    return this.latestHighlights(workspaceId, channelId);
+  }
+  /** ผลล่าสุด + ข้อมูลคอมเมนต์จริง (ข้อความ/คลิป/วันที่) ประกอบจาก DB ไม่ใช้ข้อความที่ AI ส่งกลับ */
+  async latestHighlights(workspaceId: string, channelId: string) {
+    const run = await this.prisma.youTubeCommentHighlightRun.findFirst({ where: { channelId, channel: channelInWorkspace(workspaceId) }, orderBy: { createdAt: 'desc' } });
+    if (!run) return null;
+    const res = run.result as { days: number; summary: string[]; highlights: { id: string; score: number; kind: string; why: string; topicIdea: string | null; shouldReply: boolean }[]; topicIdeas: { title: string; why: string; commentIds: string[] }[] };
+    const ids = [...new Set([...res.highlights.map(h => h.id), ...res.topicIdeas.flatMap(t => t.commentIds)])];
+    const comments = new Map((await this.prisma.youTubeComment.findMany({ where: { id: { in: ids }, channelId }, select: SELECT })).map(c => [c.id, c]));
+    return { id: run.id, createdAt: run.createdAt, model: run.model, commentCount: run.commentCount, days: res.days, summary: res.summary, highlights: res.highlights.filter(h => comments.has(h.id)).map(h => ({ ...h, comment: comments.get(h.id)! })), topicIdeas: res.topicIdeas.map(t => ({ ...t, comments: t.commentIds.map(id => comments.get(id)).filter(Boolean).map(c => ({ id: c!.id, text: c!.text.slice(0, 200), authorDisplayName: c!.authorDisplayName })) })) };
+  }
+
   /** ส่งร่างที่คนตรวจแล้วหลายรายการ (ทีละรายการ ≤ 30) — หยุดเมื่อโควตาหมด/kill switch */
   async replyBulk(workspaceId: string, userId: string, ids: string[], requestId: string) {
     const results: { id: string; ok: boolean; error?: string }[] = [];

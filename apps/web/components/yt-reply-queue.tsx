@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type YtThread } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { Button, Empty, ErrorBox, Pill, Textarea } from '@/components/ui';
-
-const fmt = (d: string) => new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+import { copyText, fullDate, replyPrompt, timeAgo } from '@/lib/yt-comment';
 
 export function YtReplyQueue({ wsId, channelId, canReply, canAi, version = 0, onChanged }: { wsId: string; channelId: string; canReply: boolean; canAi: boolean; version?: number; onChanged?: () => void }) {
   const [threads, setThreads] = useState<YtThread[] | null>(null);
@@ -26,6 +25,11 @@ export function YtReplyQueue({ wsId, channelId, canReply, canAi, version = 0, on
     setNotice(`${t('ytr.drafted')} ${n}`);
   });
   const send = (th: YtThread) => run(`send:${th.target.id}`, async () => { await api(`/workspaces/${wsId}/youtube/comments/${th.target.id}/reply`, { method: 'POST', body: { message: text(th) } }); setNotice(t('ytr.sentOne')); });
+  const copyForAi = async (th: YtThread) => {
+    const tg = th.target; const msg = th.messages.find(m => m.id === tg.id);
+    const ok = await copyText(replyPrompt({ channel: tg.channel?.title, videoTitle: tg.video?.title, videoUrl: tg.video ? `https://www.youtube.com/watch?v=${tg.video.youtubeVideoId}&lc=${tg.youtubeCommentId}` : null, target: { author: tg.authorDisplayName, text: tg.text, publishedAt: tg.publishedAt, fromChannel: false }, thread: th.messages.filter(m => m.id !== tg.id && (!msg || m.publishedAt <= msg.publishedAt)) }));
+    setError(null); setNotice(ok ? t('ytr.copied') : t('ytr.copyFailed'));
+  };
   const skip = (th: YtThread) => run(`skip:${th.target.id}`, async () => { await api(`/workspaces/${wsId}/youtube/comments/${th.target.id}`, { method: 'PATCH', body: { resolved: true } }); });
   const sendPicked = () => run('bulk', async () => {
     const list = (threads ?? []).filter(th => picked[th.target.id] && text(th).trim());
@@ -65,7 +69,7 @@ export function YtReplyQueue({ wsId, channelId, canReply, canAi, version = 0, on
               {hidden > 0 && <div className="text-xs text-slate-500">… {t('ytr.earlier').replace('{n}', String(hidden))}</div>}
               {th.messages.map(m => (
                 <div key={m.id} className={`rounded-md p-1.5 ${m.fromChannel ? 'bg-sky-950/40' : m.id === tg.id ? 'bg-amber-950/30' : ''} ${m.isReply ? 'ml-4' : ''}`}>
-                  <span className={`text-xs font-medium ${m.fromChannel ? 'text-sky-400' : ''}`}>{m.fromChannel ? `🎬 ${t('ytr.channel')}` : m.author ?? '—'}</span> <span className="text-xs text-slate-500">{fmt(m.publishedAt)}</span>
+                  <span className={`text-xs font-medium ${m.fromChannel ? 'text-sky-400' : ''}`}>{m.fromChannel ? `🎬 ${t('ytr.channel')}` : m.author ?? '—'}</span> <span className="text-xs text-slate-500" title={fullDate(m.publishedAt)}>· {timeAgo(m.publishedAt)}</span>
                   <p className="whitespace-pre-wrap">{m.text}</p>
                 </div>))}
             </div>
@@ -74,6 +78,7 @@ export function YtReplyQueue({ wsId, channelId, canReply, canAi, version = 0, on
               <div className="flex flex-col gap-1">
                 <Button disabled={busy === `send:${tg.id}` || !text(th).trim()} onClick={() => send(th)}>{t('comments.send')}</Button>
                 <Button variant="ghost" disabled={busy === `skip:${tg.id}`} onClick={() => skip(th)}>{t('ytr.skip')}</Button>
+                <Button variant="ghost" title={t('ytr.copyHint')} onClick={() => void copyForAi(th)}>📋 {t('ytr.copyAi')}</Button>
               </div>
             </div>}
             {tg.isReply && tg.authorDisplayName && <p className="mt-1 text-xs text-slate-500">{t('ytr.tagNote').replace('{a}', tg.authorDisplayName.startsWith('@') ? tg.authorDisplayName : `@${tg.authorDisplayName}`)}</p>}

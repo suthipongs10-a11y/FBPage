@@ -22,7 +22,8 @@ export type ClassifyYtDto = z.infer<typeof classifyYtSchema>;
 export const updateYtCommentSchema = z.object({ draftReply: z.string().trim().max(5000).optional(), resolved: z.boolean().optional(), classification: z.enum(YT_COMMENT_CLASSES).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export type UpdateYtCommentDto = z.infer<typeof updateYtCommentSchema>;
 export const replyYtSchema = z.object({ message: z.string().trim().min(1).max(5000).optional() });
-export const replyBulkSchema = z.object({ ids: z.array(z.string().min(1)).min(1).max(30) });
+export const highlightsSchema = z.object({ days: z.coerce.number().int().min(7).max(730).default(180) }).optional();
+export const replyBulkSchema =z.object({ ids: z.array(z.string().min(1)).min(1).max(30) });
 // ---- Content Lab ----
 export const ideasSchema = z.object({ count: z.coerce.number().int().min(1).max(10).default(5), objective: opt(300), notes: opt(1000) }).optional();
 export type IdeasDto = z.infer<typeof ideasSchema>;

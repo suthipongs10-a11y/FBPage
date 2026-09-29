@@ -5,6 +5,8 @@ import { api, type YtChannel, type YtCluster, type YtComment, type YtCommentInsi
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { YtReplyQueue } from '@/components/yt-reply-queue';
+import { YtCommentHighlights } from '@/components/yt-comment-highlights';
+import { timeAgo } from '@/lib/yt-comment';
 import { Button, Card, Empty, ErrorBox, Loading, Pill, Select, Textarea } from '@/components/ui';
 
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -14,7 +16,7 @@ export default function YtCommentsPage() {
   const { ws, can } = useWorkspace();
   const [channels, setChannels] = useState<YtChannel[] | null>(null); const [rows, setRows] = useState<YtComment[] | null>(null); const [clusters, setClusters] = useState<YtCluster[]>([]); const [ins, setIns] = useState<YtCommentInsights | null>(null);
   const [filter, setFilter] = useState({ channelId: '', classification: '', unresolved: '1' }); const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [tab, setTab] = useState<'pending' | 'all'>('pending'); const [ver, setVer] = useState(0); const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<'pending' | 'highlights' | 'all'>('pending'); const [ver, setVer] = useState(0); const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
   const load = useCallback(async () => {
     try {
       const q = new URLSearchParams(); Object.entries(filter).forEach(([k, v]) => { if (v) q.set(k, v); });
@@ -58,10 +60,12 @@ export default function YtCommentsPage() {
       {clusters.length > 0 && <Card title={t('yt.clusters')}><div className="grid gap-2 md:grid-cols-2">{clusters.map(cl => <div key={cl.id} className="flex items-start justify-between gap-2 rounded-lg border border-slate-800 p-2 text-sm"><div><div className="font-medium">{cl.label} <span className="text-xs text-slate-500">×{cl.count}</span> <Pill tone="muted">{cl.kind}</Pill></div>{cl.description && <div className="text-xs text-slate-400">{cl.description}</div>}</div>{can('youtube.content.create') && <Button variant="ghost" disabled={busy === `idea:${cl.id}`} onClick={() => idea(cl)}>{t('yt.makeIdea')}</Button>}</div>)}</div></Card>}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
         <Button variant={tab === 'pending' ? 'primary' : 'ghost'} onClick={() => setTab('pending')}>💬 {t('ytr.tab')} ({ins.needsReply ?? 0})</Button>
+        <Button variant={tab === 'highlights' ? 'primary' : 'ghost'} onClick={() => setTab('highlights')}>⭐ {t('ytk.tab')}</Button>
         <Button variant={tab === 'all' ? 'primary' : 'ghost'} onClick={() => setTab('all')}>{t('ytr.tabAll')}</Button>
         {tab === 'pending' && <Select className="w-auto" value={filter.channelId} onChange={e => setFilter(v => ({ ...v, channelId: e.target.value }))}><option value="">{t('yt.channel')}: {t('content.all')}</option>{channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>}
       </div>
       {tab === 'pending' && <YtReplyQueue key={filter.channelId} wsId={ws.id} channelId={filter.channelId} canReply={reply && oauth} canAi={can('ai.use')} version={ver} onChanged={() => void load()} />}
+      {tab === 'highlights' && <YtCommentHighlights wsId={ws.id} channels={channels} canAi={can('ai.use')} canCreate={can('youtube.content.create')} />}
       {tab === 'all' && <><div className="flex flex-wrap gap-2">
         <Select className="w-auto" value={filter.channelId} onChange={e => setFilter(v => ({ ...v, channelId: e.target.value }))}><option value="">{t('yt.channel')}: {t('content.all')}</option>{channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>
         <Select className="w-auto" value={filter.classification} onChange={e => setFilter(v => ({ ...v, classification: e.target.value }))}><option value="">{t('comments.filterClass')}: {t('content.all')}</option>{YT_COMMENT_CLASSES.map(c => <option key={c} value={c}>{t(`ycc.${c}` as MessageKey)}</option>)}</Select>
@@ -70,7 +74,7 @@ export default function YtCommentsPage() {
       {rows.length === 0 ? <Empty text={t('comments.empty')} /> : <div className="space-y-2">{rows.map(c => (
         <div key={c.id} className={`rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm ${c.resolvedAt ? 'opacity-60' : ''}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{c.authorDisplayName ?? '—'}</span><Pill tone={classTone(c.classification)}>{c.classification ? t(`ycc.${c.classification}` as MessageKey) : '—'}</Pill>{c.riskFlag && <Pill tone="bad">{t('comments.risk')}</Pill>}{c.lead && <Pill tone="ok">{t('leads.title')} {c.lead.leadScore}</Pill>}{c.replyStatus === 'SENT' && <Pill tone="ok">{t('comments.sent' as MessageKey)}</Pill>}<span className="text-xs text-slate-500">{fmt(c.publishedAt)} · 👍 {c.likeCount}</span></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{c.authorDisplayName ?? '—'}</span><Pill tone={classTone(c.classification)}>{c.classification ? t(`ycc.${c.classification}` as MessageKey) : '—'}</Pill>{c.riskFlag && <Pill tone="bad">{t('comments.risk')}</Pill>}{c.lead && <Pill tone="ok">{t('leads.title')} {c.lead.leadScore}</Pill>}{c.replyStatus === 'SENT' && <Pill tone="ok">{t('comments.sent' as MessageKey)}</Pill>}<span className="text-xs text-slate-500" title={fmt(c.publishedAt)}>{timeAgo(c.publishedAt)} · 👍 {c.likeCount}</span></div>
             {c.video && <a href={`https://www.youtube.com/watch?v=${c.video.youtubeVideoId}&lc=${c.youtubeCommentId}`} target="_blank" rel="noreferrer" className="text-xs text-sky-400 hover:underline">{t('yt.onVideo')}: {c.video.title.slice(0, 40)}</a>}
           </div>
           <p className="mt-1 whitespace-pre-wrap">{c.text}</p>
