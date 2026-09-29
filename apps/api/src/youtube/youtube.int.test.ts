@@ -139,6 +139,26 @@ run('youtube module (integration)', () => {
     const an = await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/analyses`); expect(an.json).toHaveLength(1);
     const rev = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/revival`, {}); expect(rev.status).toBe(200);
   });
+  it('rarely-uploading channel: analyze widens to the latest videos (noted), revival titles show the video title not the internal id', async () => {
+    const orig = await prisma.youTubeVideo.findMany({ where: { channelId }, select: { id: true, title: true, publishedAt: true } });
+    const old = new Date(Date.now() - 200 * 86_400_000);
+    await prisma.youTubeVideo.updateMany({ where: { channelId }, data: { publishedAt: old } });
+    try {
+      ai.state.replies.push({ text: JSON.stringify({ summary: 'ช่องลงคลิปไม่บ่อย', observations: [], inferences: [], recommendations: [] }) });
+      const r = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/analyze`, { days: 90 });
+      expect(r.status, r.text).toBe(200); expect(r.json.videosAnalyzed).toBe(orig.length);
+      expect(r.json.windowNote).toMatch(/ช่วง 90 วันมีวิดีโอเพียง 0 รายการ/);
+      expect(JSON.stringify(ai.state.requests.at(-1)?.messages)).toMatch(/ช่วง 90 วันมีวิดีโอเพียง 0/);
+    } finally { for (const v of orig) await prisma.youTubeVideo.update({ where: { id: v.id }, data: { publishedAt: v.publishedAt } }); }
+    // ข้อเสนอรุ่นเก่าที่เก็บรหัสแทนชื่อ → แสดงชื่อคลิปจริง
+    const v = orig[0]!;
+    const legacy = await prisma.youTubeRecommendation.create({ data: { channelId, videoId: v.id, actionType: 'REVIVE_VIDEO', title: `ฟื้นวิดีโอ: ${v.id}`, why: 'test', evidence: {}, confidence: 'MEDIUM', priority: 50, source: 'revival-rules' } });
+    const recs = await a.http('GET', `/workspaces/${ws}/youtube/recommendations?channelId=${channelId}`);
+    const shown = (recs.json as { id: string; title: string }[]).find(x => x.id === legacy.id)!;
+    expect(shown.title).toBe(`ฟื้นวิดีโอ: ${v.title}`);
+    for (const x of recs.json as { title: string }[]) expect(x.title).not.toMatch(/ฟื้นวิดีโอ: c[a-z0-9]{20,}$/);
+    await prisma.youTubeRecommendation.delete({ where: { id: legacy.id } });
+  });
   it('metadata edit of a published video goes through the API with audit; never bulk (§67)', async () => {
     const v4 = (await a.http('GET', `/workspaces/${ws}/youtube/videos?channelId=${channelId}&q=${encodeURIComponent('ดินเปรี้ยว')}`)).json[0];
     const r = await a.http('PATCH', `/workspaces/${ws}/youtube/videos/${v4.id}/metadata`, { title: 'ดินเปรี้ยว ปรับอย่างไรให้ผลผลิตเพิ่ม' });

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AUTOMATION_LEVELS } from '@fbpm/shared';
-import { api, type BrandLite, type Client, type ClientDetail, type YtChannel, type YtConnection, type YtHealth, type YtQuota, type YtRecommendation } from '@/lib/api';
+import { api, type YtAnalysis, type BrandLite, type Client, type ClientDetail, type YtChannel, type YtConnection, type YtHealth, type YtQuota, type YtRecommendation } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Kpi, Loading, Pill, Select } from '@/components/ui';
@@ -15,13 +15,16 @@ export default function YoutubePage() {
   const { ws, can } = useWorkspace(); const sp = useSearchParams();
   const [health, setHealth] = useState<YtHealth | null>(null); const [quota, setQuota] = useState<YtQuota | null>(null);
   const [conns, setConns] = useState<YtConnection[]>([]); const [channels, setChannels] = useState<YtChannel[] | null>(null); const [brands, setBrands] = useState<(BrandLite & { clientName: string })[]>([]);
-  const [recs, setRecs] = useState<YtRecommendation[]>([]);
+  const [recs, setRecs] = useState<YtRecommendation[]>([]); const [analyses, setAnalyses] = useState<Record<string, YtAnalysis>>({});
   const [form, setForm] = useState({ brandId: '', mode: 'OAUTH', connectionId: '', handle: '' }); const [token, setToken] = useState(''); const [showToken, setShowToken] = useState(false);
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
   const load = useCallback(async () => {
     try {
       const [h, q, c, ch, cl, r] = await Promise.all([api<YtHealth>(`/workspaces/${ws.id}/youtube/health`), api<YtQuota>(`/workspaces/${ws.id}/youtube/quota`), api<YtConnection[]>(`/workspaces/${ws.id}/youtube/connections`), api<YtChannel[]>(`/workspaces/${ws.id}/youtube/channels`), api<Client[]>(`/workspaces/${ws.id}/clients`), api<YtRecommendation[]>(`/workspaces/${ws.id}/youtube/recommendations`)]);
       setHealth(h); setQuota(q); setConns(c); setChannels(ch); setRecs(r);
+      // ผลวิเคราะห์ล่าสุดของแต่ละช่อง (แสดงใต้การ์ดช่อง)
+      const an = await Promise.all(ch.filter(x => !x.disconnectedAt).map(x => api<YtAnalysis[]>(`/workspaces/${ws.id}/youtube/channels/${x.id}/analyses`).then(rows => [x.id, rows[0]] as const).catch(() => [x.id, undefined] as const)));
+      setAnalyses(Object.fromEntries(an.filter((e): e is readonly [string, YtAnalysis] => !!e[1])));
       const details = await Promise.all(cl.map(x => api<ClientDetail>(`/workspaces/${ws.id}/clients/${x.id}`)));
       const bs = details.flatMap(d => d.brands.map(b => ({ ...b, clientName: d.name }))); setBrands(bs);
       const active = c.find(x => x.status === 'ACTIVE');
@@ -39,8 +42,8 @@ export default function YoutubePage() {
   const sync = (id: string, stage: string) => run(`sync:${id}:${stage}`, async () => { await api(`/workspaces/${ws.id}/youtube/channels/${id}/sync`, { method: 'POST', body: { stage } }); });
   const patch = (id: string, body: Record<string, unknown>) => run(`patch:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/channels/${id}`, { method: 'PATCH', body }); });
   const disconnect = (id: string) => { if (!confirm(t('yt.disconnectConfirm'))) return; void run(`dc:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/channels/${id}`, { method: 'DELETE' }); }); };
-  const analyze = (id: string) => run(`an:${id}`, async () => { const r = await api<{ recommendationsCreated: number; result: { summary: string } }>(`/workspaces/${ws.id}/youtube/channels/${id}/analyze`, { method: 'POST', body: { days: 90 } }); setNotice(`${r.result.summary.slice(0, 200)} · ${r.recommendationsCreated} ${t('yt.recommendations')}`); });
-  const revival = (id: string) => run(`rv:${id}`, async () => { const r = await api<{ candidates?: unknown[]; created?: number }>(`/workspaces/${ws.id}/youtube/channels/${id}/revival`, { method: 'POST', body: {} }); setNotice(`${t('yt.revival')}: ${r.created ?? r.candidates?.length ?? 0}`); });
+  const analyze = (id: string) => run(`an:${id}`, async () => { const r = await api<{ recommendationsCreated: number; result: { summary: string } }>(`/workspaces/${ws.id}/youtube/channels/${id}/analyze`, { method: 'POST', body: { days: 90 } }); setNotice(`${t('yt.analyzeDone')} · ${r.recommendationsCreated} ${t('yt.recommendations')}`); });
+  const revival = (id: string) => run(`rv:${id}`, async () => { const r = await api<{ candidates?: unknown[]; created?: number }>(`/workspaces/${ws.id}/youtube/channels/${id}/revival`, { method: 'POST', body: {} }); const n = r.created ?? r.candidates?.length ?? 0; setNotice(n ? `${t('yt.revival')}: ${n} — ${t('yt.revivalFound')}` : (r as { note?: string }).note ?? t('yt.revivalNone')); });
   const rec = (id: string, status: string) => run(`rec:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/recommendations/${id}`, { method: 'PATCH', body: { status } }); });
   const applyRec = (id: string) => run(`apply:${id}`, async () => { const r = await api<{ added: number; createdPlaylist: boolean; skipped: string[] }>(`/workspaces/${ws.id}/youtube/recommendations/${id}/apply`, { method: 'POST', body: {} }); setNotice(`${t('yt.applyRec')} ✔ ${r.createdPlaylist ? 'สร้าง playlist ใหม่ · ' : ''}เพิ่ม ${r.added} วิดีโอ${r.skipped.length ? ` · ข้าม ${r.skipped.length} (อยู่แล้ว)` : ''}`); });
   if (!health || !channels || !quota) return <div><ErrorBox error={error} /><Loading /></div>;
@@ -88,22 +91,39 @@ export default function YoutubePage() {
             {!c.disconnectedAt && <div className="mt-2 flex flex-wrap items-center gap-2">
               <Button variant="ghost" disabled={busy.startsWith(`sync:${c.id}`)} onClick={() => sync(c.id, 'all')}>{t('yt.syncAll')}</Button>
               <Button variant="ghost" disabled={busy.startsWith(`sync:${c.id}`)} onClick={() => sync(c.id, 'history')}>{t('yt.syncHistory')}</Button>
-              {can('ai.use') && can('youtube.analytics.read') && <Button variant="ghost" disabled={busy === `an:${c.id}`} onClick={() => analyze(c.id)}>{t('yt.analyze')}</Button>}
-              {can('youtube.analytics.read') && <Button variant="ghost" disabled={busy === `rv:${c.id}`} onClick={() => revival(c.id)}>{t('yt.revival')}</Button>}
+              {can('ai.use') && can('youtube.analytics.read') && <Button variant="ghost" disabled={busy === `an:${c.id}`} onClick={() => analyze(c.id)} title={t('yt.analyzeHint')}>{busy === `an:${c.id}` ? t('common.loading') : t('yt.analyze')}</Button>}
+              {can('youtube.analytics.read') && <Button variant="ghost" disabled={busy === `rv:${c.id}`} onClick={() => revival(c.id)} title={t('yt.revivalHint')}>{t('yt.revival')}</Button>}
               {settings && <><Select className="w-auto" value={c.automationLevel} onChange={e => patch(c.id, { automationLevel: e.target.value })}>{AUTOMATION_LEVELS.map(l => <option key={l} value={l}>{t(`auto.${l}` as MessageKey)}</option>)}</Select>
                 <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={c.uploadsPaused} onChange={e => patch(c.id, { uploadsPaused: e.target.checked })} /> {t('yt.uploadsPaused')}</label>
                 <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={c.automationPaused} onChange={e => patch(c.id, { automationPaused: e.target.checked })} /> {t('yt.automationPaused')}</label></>}
               {manage && <Button variant="danger" disabled={busy === `dc:${c.id}`} onClick={() => disconnect(c.id)}>{t('yt.disconnect')}</Button>}
             </div>}
+            {analyses[c.id] && <AnalysisPanel a={analyses[c.id]!} />}
           </div>))}</div>}
       </Card>
       <Card title={`${t('yt.recommendations')} (${recs.length})`}>
         {recs.length === 0 ? <Empty /> : <div className="space-y-2 text-sm">{recs.map(r => (
           <div key={r.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-800 p-2">
-            <div><div className="font-medium"><Pill tone="muted">{r.actionType}</Pill> {r.title}</div><div className="text-xs text-slate-400">{r.why}</div><div className="text-xs text-slate-500">{t('yt.confidence')}: {r.confidence} · P{r.priority}</div></div>
+            <div><div className="font-medium"><Pill tone="muted">{t(`yt.action.${r.actionType}` as MessageKey)}</Pill> {r.title}{r.video?.youtubeVideoId && <> · <a className="text-xs text-sky-400 underline" href={`https://youtu.be/${r.video.youtubeVideoId}`} target="_blank" rel="noreferrer">{t('yt.openVideo')} ↗</a></>}</div><div className="text-xs text-slate-400">{r.why}</div><div className="text-xs text-slate-500">{t('yt.confidence')}: {r.confidence} · P{r.priority}</div></div>
             {can('youtube.content.edit') && <div className="flex gap-1">{['ADD_TO_PLAYLIST', 'CREATE_PLAYLIST'].includes(r.actionType) && can('youtube.playlists.manage') && <Button disabled={busy === `apply:${r.id}`} onClick={() => applyRec(r.id)}>{t('yt.applyRec')}</Button>}<Button variant="ghost" onClick={() => rec(r.id, 'ACCEPTED')}>{t('yt.recAccept')}</Button><Button variant="ghost" onClick={() => rec(r.id, 'DONE')}>{t('yt.recDone')}</Button><Button variant="ghost" onClick={() => rec(r.id, 'IGNORED')}>{t('yt.recIgnore')}</Button></div>}
           </div>))}</div>}
       </Card>
     </div>
+  );
+}
+
+function AnalysisPanel({ a }: { a: YtAnalysis }) {
+  const r = a.result;
+  return (
+    <details className="mt-3 rounded-lg border border-slate-800 p-2" open>
+      <summary className="cursor-pointer text-sm font-medium">{t('yt.analysisTitle')} · {fmt(a.createdAt)}{a.model ? ` · ${a.model}` : ''}</summary>
+      <div className="mt-2 space-y-2 text-sm">
+        <p>{r.summary}</p>
+        {!!r.observations?.length && <div><div className="text-xs font-semibold text-slate-400">{t('yt.observed')}</div><ul className="list-disc pl-5">{r.observations.map((o, i) => <li key={i}>{o.text}</li>)}</ul></div>}
+        {!!r.inferences?.length && <div><div className="text-xs font-semibold text-slate-400">{t('yt.inferred')}</div><ul className="list-disc pl-5">{r.inferences.map((o, i) => <li key={i}>{o.text} <span className="text-xs text-slate-500">({o.confidence})</span></li>)}</ul></div>}
+        {!!r.commentInsights?.length && <div><div className="text-xs font-semibold text-slate-400">{t('yt.commentInsights')}</div><ul className="list-disc pl-5">{r.commentInsights.map((o, i) => <li key={i}>{o}</li>)}</ul></div>}
+        {!!r.dataLimitations?.length && <div className="text-xs text-amber-500">⚠ {r.dataLimitations.join(' · ')}</div>}
+      </div>
+    </details>
   );
 }

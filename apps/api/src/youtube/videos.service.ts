@@ -73,7 +73,7 @@ export class YtVideosService {
 
   /** ค่ากลางของช่อง (§97) แยกตาม format */
   async baselines(channelId: string, videoType?: string) {
-    const vids = await this.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', ...(videoType && { videoType }) }, select: { id: true, videoType: true, publishedAt: true } });
+    const vids = await this.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', ...(videoType && { videoType }) }, select: { id: true, title: true, videoType: true, publishedAt: true } });
     const ws = await this.withStats(vids);
     const nn = (xs: (number | null)[]) => xs.filter((x): x is number => x !== null);
     return { n: ws.length, viewsMedian: median(nn(ws.map(w => w.stats.views))), avdMedian: median(nn(ws.map(w => w.stats.avgViewDuration))), subConvMedian: median(nn(ws.map(w => w.stats.subscriberConversion))), pctMedian: median(nn(ws.map(w => w.stats.avgViewPct))), rows: ws };
@@ -103,14 +103,16 @@ export class YtVideosService {
     for (const c of out.slice(0, 5)) {
       const v = b.rows.find(r => r.id === c.videoId)!;
       const existing = await this.prisma.youTubeRecommendation.findFirst({ where: { channelId, videoId: c.videoId, actionType: 'REVIVE_VIDEO', status: 'OPEN' } });
-      if (!existing) await this.prisma.youTubeRecommendation.create({ data: { channelId, videoId: c.videoId, actionType: 'REVIVE_VIDEO', title: `ฟื้นวิดีโอ: ${(v as { title?: string }).title ?? c.videoId}`, why: c.reasons.join(' · '), evidence: { revivalScore: c.score, version: REVIVAL_SCORE_VERSION, reasons: c.reasons } as Prisma.InputJsonValue, confidence: c.score >= 70 ? 'HIGH' : 'MEDIUM', priority: c.score, source: 'revival-rules' } });
+      if (!existing) await this.prisma.youTubeRecommendation.create({ data: { channelId, videoId: c.videoId, actionType: 'REVIVE_VIDEO', title: `ฟื้นวิดีโอ: ${v.title ?? 'ไม่มีชื่อ'}`, why: c.reasons.join(' · '), evidence: { revivalScore: c.score, version: REVIVAL_SCORE_VERSION, reasons: c.reasons } as Prisma.InputJsonValue, confidence: c.score >= 70 ? 'HIGH' : 'MEDIUM', priority: c.score, source: 'revival-rules' } });
     }
     await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_REVIVAL_SCAN', resourceType: 'youtubeChannel', resourceId: channelId, after: { candidates: out.length }, requestId });
     return { candidates: ser(out.slice(0, 10).map(c => ({ ...c, video: b.rows.find(r => r.id === c.videoId) }))), version: REVIVAL_SCORE_VERSION };
   }
 
-  listRecommendations(workspaceId: string, channelId?: string, status = 'OPEN') {
-    return this.prisma.youTubeRecommendation.findMany({ where: { channel: channelInWorkspace(workspaceId), ...(channelId && { channelId }), ...(status !== 'ALL' && { status }) }, orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }], take: 100, include: { video: { select: { id: true, title: true, thumbnailUrl: true, youtubeVideoId: true } } } });
+  async listRecommendations(workspaceId: string, channelId?: string, status = 'OPEN') {
+    const rows = await this.prisma.youTubeRecommendation.findMany({ where: { channel: channelInWorkspace(workspaceId), ...(channelId && { channelId }), ...(status !== 'ALL' && { status }) }, orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }], take: 100, include: { video: { select: { id: true, title: true, thumbnailUrl: true, youtubeVideoId: true } } } });
+    // ข้อเสนอฟื้นวิดีโอรุ่นแรกเก็บรหัสภายในแทนชื่อคลิป — แสดงชื่อจริงแทน
+    return rows.map(r => (r.video && r.title === `ฟื้นวิดีโอ: ${r.video.id}` ? { ...r, title: `ฟื้นวิดีโอ: ${r.video.title ?? 'ไม่มีชื่อ'}` } : r));
   }
   async setRecommendationStatus(workspaceId: string, userId: string, id: string, status: string, outcome: Record<string, unknown> | undefined, requestId: string) {
     const r = await this.prisma.youTubeRecommendation.findFirst({ where: { id, channel: channelInWorkspace(workspaceId) }, select: { id: true, status: true } });
@@ -146,14 +148,26 @@ export class YtVideosService {
     const ch = await this.prisma.youTubeChannel.findFirst({ where: { id: channelId, ...channelInWorkspace(workspaceId) }, select: { id: true, title: true, subscriberCount: true, analyticsStatus: true, accessMode: true, brand: { select: { name: true, industry: true, targetAudience: true, toneOfVoice: true, primaryCTA: true, client: { select: { name: true } }, knowledge: { where: { active: true }, select: { type: true, title: true, content: true } } } } } });
     if (!ch) throw new NotFoundException('ไม่พบช่อง');
     const since = new Date(Date.now() - days * 86_400_000);
-    const vids = await this.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', publishedAt: { gte: since } }, orderBy: { publishedAt: 'desc' }, take: 60, select: { id: true, youtubeVideoId: true, title: true, videoType: true, publishedAt: true, durationSeconds: true, contentPillar: true, pillarManual: true, commentCount: true } });
-    if (vids.length < 3) throw new UnprocessableEntityException(`มีวิดีโอในช่วง ${days} วันเพียง ${vids.length} — ต้องซิงก์ประวัติเพิ่ม (stage=history) หรือขยายช่วง`);
+    const vidSelect = { id: true, youtubeVideoId: true, title: true, videoType: true, publishedAt: true, durationSeconds: true, contentPillar: true, pillarManual: true, commentCount: true } as const;
+    let vids = await this.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', publishedAt: { gte: since } }, orderBy: { publishedAt: 'desc' }, take: 60, select: vidSelect });
+    // ช่องที่ลงคลิปไม่บ่อย: ช่วงที่ขอมีวิดีโอน้อยเกินไป → ใช้วิดีโอล่าสุดของช่องแทน (สูงสุด 60) และบอกช่วงจริงใน dataLimitations
+    let windowNote: string | null = null;
+    if (vids.length < 8) {
+      const recent = await this.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', publishedAt: { not: null } }, orderBy: { publishedAt: 'desc' }, take: 60, select: vidSelect });
+      if (recent.length > vids.length) {
+        const oldest = recent[recent.length - 1]!.publishedAt!.toISOString().slice(0, 10);
+        windowNote = `ช่วง ${days} วันมีวิดีโอเพียง ${vids.length} รายการ จึงใช้วิดีโอล่าสุด ${recent.length} รายการ (ตั้งแต่ ${oldest}) แทน — ตัวเลขของคลิปเก่าสะสมมานานกว่า เทียบกับคลิปใหม่ตรงๆ ไม่ได้`;
+        vids = recent;
+      }
+    }
+    if (vids.length < 3) throw new UnprocessableEntityException(`ช่องนี้มีวิดีโอในระบบเพียง ${vids.length} รายการ — ต้องมีอย่างน้อย 3 รายการ ลองกด "ดึงประวัติทั้งช่อง" แล้วรอซิงก์เสร็จก่อน`);
     const ws = await this.withStats(vids);
     const analyticsAvailable = ws.some(w => w.stats.avgViewDuration !== null);
     const clusters = await this.prisma.commentCluster.findMany({ where: { channelId }, orderBy: { count: 'desc' }, take: 10, select: { label: true, kind: true, count: true } });
     const askCount = await this.prisma.youTubeComment.count({ where: { channelId, classification: { in: ['QUESTION', 'CONTENT_REQUEST'] } } });
     const all = await this.baselines(channelId);
     const limitations = [
+      ...(windowNote ? [windowNote] : []),
       ...(!analyticsAvailable ? ['ไม่มีข้อมูล Analytics (watch time / AVD / subscribersGained) — ช่องเชื่อมแบบอ่านสาธารณะหรือยังไม่ได้ซิงก์ analytics: วิเคราะห์ได้เฉพาะ views/likes/comments สาธารณะ'] : []),
       'ไม่มี CTR/impressions ผ่าน Analytics API ทั่วไป — packaging diagnosis เป็นสมมติฐานจาก views เทียบค่ากลาง',
       ...(vids.length < 8 ? [`ตัวอย่างวิดีโอ ${vids.length} รายการ — ความมั่นใจต่ำ (§130)`] : []),
@@ -167,7 +181,7 @@ export class YtVideosService {
   "recommendations": [{ "actionType": "CREATE_FOLLOWUP"|"CREATE_SHORT"|"CREATE_FACEBOOK_POST"|"OPTIMIZE_TITLE"|"OPTIMIZE_THUMBNAIL"|"UPDATE_DESCRIPTION"|"ADD_TO_PLAYLIST"|"CREATE_PLAYLIST"|"CREATE_SERIES"|"REVIVE_VIDEO", "videoId": string|null, "title": string, "why": string, "evidence": string[], "confidence": "LOW"|"MEDIUM"|"HIGH", "priority": number }] }`;
     const out = await this.ai.structured({ workspaceId, userId, taskType: 'youtube.channel.analyze', role: 'analysis', requestId, promptVersion: YT_ANALYSIS_PROMPT_VERSION, resourceType: 'youtubeChannel', resourceId: channelId }, {
       system: 'คุณคือ YouTube Analyst แยกให้ชัดระหว่าง OBSERVED (ตัวเลขที่ให้), INFERENCE (การตีความพร้อมความมั่นใจ), RECOMMENDATION (สิ่งที่ทำได้จริง มีหลักฐาน) ห้ามแต่งตัวเลข ห้ามอ้าง CTR/รายได้/impressions ที่ไม่มี ค่า null = ไม่มีข้อมูล จำแนก content pillar ให้วิดีโอที่ยังไม่มี (ห้ามเปลี่ยนของที่ pillarManual=true) ตอบภาษาไทย',
-      prompt: `ช่อง "${ch.title}" ผู้ติดตาม ${ch.subscriberCount ?? 'ไม่ทราบ'} · ลูกค้า ${ch.brand.client.name} / แบรนด์ ${ch.brand.name} (${ch.brand.industry ?? '-'}) กลุ่มเป้าหมาย ${ch.brand.targetAudience ?? '-'} CTA ${ch.brand.primaryCTA ?? '-'}\nข้อมูลแบรนด์: ${ch.brand.knowledge.map(k => `[${k.type}] ${k.title}: ${k.content.slice(0, 200)}`).join(' | ') || '-'}\nค่ากลางช่องทั้งหมด: views ${all.viewsMedian ?? 'n/a'} · AVD ${all.avdMedian ?? 'n/a'} วินาที · subConv ${all.subConvMedian === null ? 'n/a' : (all.subConvMedian * 100).toFixed(2) + '%'}\nข้อจำกัดข้อมูล (ต้องรายงานใน dataLimitations):\n${limitations.map(l => '- ' + l).join('\n')}\nคลัสเตอร์คอมเมนต์: ${clusters.map(c => `${c.label} (${c.kind}, ${c.count})`).join('; ') || 'ยังไม่มี'} · คอมเมนต์ที่เป็นคำถาม/คำขอ ${askCount}\nวิดีโอ ${rows.length} รายการใน ${days} วัน (subConv เป็น %):\n${JSON.stringify(rows)}`,
+      prompt: `ช่อง "${ch.title}" ผู้ติดตาม ${ch.subscriberCount ?? 'ไม่ทราบ'} · ลูกค้า ${ch.brand.client.name} / แบรนด์ ${ch.brand.name} (${ch.brand.industry ?? '-'}) กลุ่มเป้าหมาย ${ch.brand.targetAudience ?? '-'} CTA ${ch.brand.primaryCTA ?? '-'}\nข้อมูลแบรนด์: ${ch.brand.knowledge.map(k => `[${k.type}] ${k.title}: ${k.content.slice(0, 200)}`).join(' | ') || '-'}\nค่ากลางช่องทั้งหมด: views ${all.viewsMedian ?? 'n/a'} · AVD ${all.avdMedian ?? 'n/a'} วินาที · subConv ${all.subConvMedian === null ? 'n/a' : (all.subConvMedian * 100).toFixed(2) + '%'}\nข้อจำกัดข้อมูล (ต้องรายงานใน dataLimitations):\n${limitations.map(l => '- ' + l).join('\n')}\nคลัสเตอร์คอมเมนต์: ${clusters.map(c => `${c.label} (${c.kind}, ${c.count})`).join('; ') || 'ยังไม่มี'} · คอมเมนต์ที่เป็นคำถาม/คำขอ ${askCount}\nวิดีโอ ${rows.length} รายการ${windowNote ? ' (วิดีโอล่าสุดของช่อง)' : ` ใน ${days} วัน`} (subConv เป็น %):\n${JSON.stringify(rows)}`,
       schemaDescription: schema, validate: v => { const o = v as Record<string, unknown>; if (typeof o.summary !== 'string' || !Array.isArray(o.recommendations)) throw new Error('summary/recommendations หาย'); return o as { summary: string; contentPillars?: { pillar: string; videoIds: string[]; confidence: number }[]; recommendations: { actionType: string; videoId: string | null; title: string; why: string; evidence: string[]; confidence: string; priority: number }[]; dataLimitations?: string[] }; }, maxTokens: 8000,
     });
     const r = out.result.data;
@@ -180,7 +194,7 @@ export class YtVideosService {
       if (!exists) { await this.prisma.youTubeRecommendation.create({ data: { channelId, videoId: vid, actionType: rec.actionType, title: rec.title.slice(0, 200), why: rec.why.slice(0, 2000), evidence: rec.evidence as Prisma.InputJsonValue, confidence: rec.confidence, priority: Math.max(0, Math.min(100, Math.round(rec.priority ?? 50))), source: 'analyst', promptVersion: YT_ANALYSIS_PROMPT_VERSION } }); created++; }
     }
     await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_CHANNEL_ANALYZED', resourceType: 'youtubeChannel', resourceId: channelId, after: { analysisId: saved.id, days, recommendations: created, costUsd: out.costUsd, model: out.model }, requestId });
-    return ser({ id: saved.id, createdAt: saved.createdAt, days, provider: out.provider, model: out.model, costUsd: out.costUsd, videosAnalyzed: rows.length, analyticsAvailable, result: r, recommendationsCreated: created });
+    return ser({ id: saved.id, createdAt: saved.createdAt, days, windowNote, provider: out.provider, model: out.model, costUsd: out.costUsd, videosAnalyzed: rows.length, analyticsAvailable, result: r, recommendationsCreated: created });
   }
   latestAnalyses(workspaceId: string, channelId: string) { return this.prisma.youTubeChannelAnalysis.findMany({ where: { channelId, channel: channelInWorkspace(workspaceId) }, orderBy: { createdAt: 'desc' }, take: 5 }); }
   /** ใช้ทดสอบ mapVideo ผ่าน service (ไม่ใช้ใน route) */
