@@ -1,6 +1,7 @@
 /**
  * Integration — content lifecycle (§28), approval (§29), human edit revisions (§55), schedule (§47), publish + idempotency (§48), kill switch (§92), agents (mock AI)
  */
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
 import { Queue } from 'bullmq';
@@ -155,10 +156,16 @@ run('content lifecycle + publish (integration)', () => {
     const ok1 = await a.http('POST', `/workspaces/${wsA}/content/${c1}/publish`, {}); expect(ok1.json.outcome.status).toBe('PUBLISHED');
     expect(graph.state.published.length).toBe(before + 1);
     // 2) ไฟล์รูปหาย → ความผิดพลาดในเครื่อง ยังไม่ถึง Facebook → บอกชัด ไม่ล็อก
-    const c2 = await approved(`รูปหาย ${stamp}`, ['/nonexistent/fbpm-missing-card.png']);
+    const c2 = await approved(`รูปหาย ${stamp}`, [join(process.env.MEDIA_DIR ?? './data/media', 'fbpm-missing-card.png')]);
     const f2 = await a.http('POST', `/workspaces/${wsA}/content/${c2}/publish`, {});
     expect(f2.json.outcome.status).toBe('FAILED'); expect(f2.json.content.lastError).toContain('อ่านไฟล์รูปไม่ได้'); expect(f2.json.content.lastError).not.toContain('RECONCILIATION_REQUIRED');
     expect((await op(c2)).status).toBe('FAILED');
+    // 2b) path นอกโฟลเดอร์สื่อ (เช่นไฟล์ระบบ) → ไม่อ่าน ไม่ส่งขึ้น Facebook
+    const outsideBefore = graph.state.requests.length;
+    const c2b = await approved(`ไฟล์นอกโฟลเดอร์ ${stamp}`, ['/etc/hostname']);
+    const f2b = await a.http('POST', `/workspaces/${wsA}/content/${c2b}/publish`, {});
+    expect(f2b.json.content.lastError).toContain('นอกโฟลเดอร์สื่อ');
+    expect(graph.state.requests.slice(outsideBefore).filter(r => r.includes('photos'))).toEqual([]);
     // 3) ไม่รู้ผล (5xx / code 1) → ล็อก ห้ามส่งซ้ำ จนกว่าคนจะตรวจที่ Facebook แล้วยืนยันว่าไม่มี
     const c3 = await approved(`ไม่รู้ผล ${stamp}`);
     graph.state.feedError = { status: 500, code: 1, message: 'An unknown error occurred' };

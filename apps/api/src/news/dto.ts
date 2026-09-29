@@ -1,4 +1,4 @@
-import { PROMPT_DEPTHS, PROMPT_IMAGES, PROMPT_KINDS, PROMPT_LENGTHS } from './chatgpt-prompt';
+import { PROMPT_DEPTHS, PROMPT_FORMATS, PROMPT_IMAGES, PROMPT_KINDS, PROMPT_LENGTHS } from './chatgpt-prompt';
 import { z } from 'zod';
 import { THEME_NAMES } from '../media/card-templates';
 import { modelOverrideSchema } from '../ai/dto';
@@ -63,7 +63,7 @@ const themeEnum = z.enum(THEME_NAMES as [string, ...string[]]);
 const filesMap = z.record(z.string().trim().min(1).max(300), z.string().trim().min(1).max(40)).refine(m => Object.keys(m).length <= 60, 'ไฟล์แนบเกิน 60 ไฟล์');
 /** รูปรายหัวข้อ: ลำดับโพสต์ (0,1,2…) → id ไฟล์ที่อัปโหลด — แทนรูปในแพ็กเกจของโพสต์นั้น */
 const postImagesMap = z.record(z.string().regex(/^\d{1,2}$/), z.string().trim().min(1).max(40)).refine(m => Object.keys(m).length <= 20, 'รูปรายหัวข้อเกิน 20 รายการ');
-export const importCheckSchema = z.object({ text: z.string().min(2).max(1_500_000), pageId: z.string().trim().min(1).optional(), files: filesMap.optional(), postImages: postImagesMap.optional() });
+export const importCheckSchema = z.object({ text: z.string().min(2).max(1_500_000), pageId: z.string().trim().min(1).optional(), files: filesMap.optional(), postImages: postImagesMap.optional(), postVideos: postImagesMap.optional() });
 export type ImportCheckDto = z.infer<typeof importCheckSchema>;
 /** cardMode: auto = การ์ดพาดหัว + รูป (เดิม) · photo = มีรูปแล้วโพสต์รูปนั้นเลย ไม่ทำการ์ด (รูปจาก ChatGPT ที่ออกแบบมาแล้ว) */
 export const importSchema = importCheckSchema.extend({ theme: themeEnum.optional(), imageFallback: z.enum(IMAGE_SOURCES).optional(), draft: z.boolean().default(true), fileName: z.string().trim().max(200).optional(), cardMode: z.enum(['auto', 'photo']).optional(), include: z.array(z.number().int().min(0).max(19)).min(1).max(20).optional() });
@@ -157,6 +157,7 @@ export const chatPromptSchema = z.object({
   emoji: z.boolean().default(true),
   images: z.enum(PROMPT_IMAGES).default('chatgpt'),
   depth: z.enum(PROMPT_DEPTHS).default('deep'),
+  format: z.enum(PROMPT_FORMATS).default('post'),
   recencyDays: z.number().int().min(1).max(365).optional(),
   extra: z.string().trim().max(1000).optional(),
   /** คีย์เวิร์ดของเพจที่ผู้ใช้เลือกไว้ (ไม่ใส่ = ใช้ที่ระบบรวบรวมให้ทั้งหมด) */

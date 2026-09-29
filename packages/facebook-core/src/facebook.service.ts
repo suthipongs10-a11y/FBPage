@@ -39,7 +39,14 @@ const POST_EDGES = ['published_posts', 'feed', 'posts'];
 
 export class FacebookService {
   readonly graph: GraphClient;
-  constructor(opts: GraphClientOptions = {}) { this.graph = new GraphClient(opts); }
+  private readonly uploadOrigins: string[];
+  private readonly fetchImpl: typeof fetch;
+  constructor(opts: GraphClientOptions = {}) {
+    this.graph = new GraphClient(opts);
+    this.fetchImpl = opts.fetchImpl ?? fetch;
+    // token ของเพจส่งไปได้เฉพาะเครื่องอัปโหลดของ Meta (หรือ mock ใน test) — กัน upload_url ที่ไม่คาดคิดดึง token ออกไป
+    this.uploadOrigins = opts.baseUrl ? [new URL(opts.baseUrl).origin] : ['https://rupload.facebook.com'];
+  }
 
   /** ตรวจ user token: ใครเป็นเจ้าของ มีสิทธิ์อะไร หมดอายุเมื่อไหร่ */
   async inspectUserToken(userToken: string): Promise<TokenInfo> {
@@ -116,6 +123,25 @@ export class FacebookService {
     Object.assign(params, scheduleParams(input.scheduledAt));
     const r = await this.graph.call<{ id: string }>(`${pageId}/feed`, { token: pageToken, method: 'POST', params });
     return { externalId: r.id, permalink: `https://www.facebook.com/${r.id}`, scheduled: !!input.scheduledAt };
+  }
+
+  /**
+   * Reels ของเพจ (Graph video_reels) 3 ขั้น: start → อัปโหลดไฟล์ไป upload_url → finish (PUBLISHED)
+   * ล้มก่อน finish = ยังไม่มีอะไรขึ้นเพจ (คลิปค้างเป็น unpublished) · ผลจริงของ finish ที่ไม่แน่นอนให้ publisher จัดการ (กันโพสต์ซ้ำ)
+   */
+  async createReel(pageId: string, pageToken: string, input: { video: Buffer; description: string }): Promise<PublishResult> {
+    const start = await this.graph.call<{ video_id: string; upload_url?: string }>(`${pageId}/video_reels`, { token: pageToken, method: 'POST', params: { upload_phase: 'start' } });
+    if (!start.video_id) throw new FacebookApiError('Facebook ไม่ส่ง video_id กลับมา', null, null, 502);
+    const uploadUrl = start.upload_url ?? `https://rupload.facebook.com/video-upload/${this.graph.version}/${start.video_id}`;
+    if (!this.uploadOrigins.includes(new URL(uploadUrl).origin)) throw new FacebookApiError(`ปลายทางอัปโหลดไม่ใช่ของ Meta: ${new URL(uploadUrl).host}`, null, null, 400);
+    let res: Response;
+    try {
+      res = await this.fetchImpl(uploadUrl, { method: 'POST', headers: { Authorization: `OAuth ${pageToken}`, offset: '0', file_size: String(input.video.byteLength), 'content-type': 'application/octet-stream' }, body: input.video });
+    } catch (e) { throw new FacebookApiError(`อัปโหลดคลิปไม่สำเร็จ: ${(e as Error).message}`, 100, null, 400); }   // ยังไม่ finish = ยังไม่ขึ้นเพจ (ถือว่าล้มแน่นอน)
+    const up = await res.json().catch(() => ({})) as { success?: boolean; error?: { message?: string; code?: number } };
+    if (!res.ok || up.success === false || up.error) throw new FacebookApiError(`อัปโหลดคลิปไม่สำเร็จ: ${up.error?.message ?? `HTTP ${res.status}`}`, up.error?.code ?? 100, null, 400);
+    await this.graph.call<{ success: boolean }>(`${pageId}/video_reels`, { token: pageToken, method: 'POST', params: { upload_phase: 'finish', video_id: start.video_id, video_state: 'PUBLISHED', description: input.description } });
+    return { externalId: start.video_id, permalink: `https://www.facebook.com/reel/${start.video_id}`, scheduled: false };
   }
 
   /** รูปหลายใบ: อัปโหลด published=false แล้วแนบด้วย attached_media (วิธีที่ทดสอบกับเพจจริงแล้ว) */

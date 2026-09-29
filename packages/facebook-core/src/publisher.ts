@@ -3,6 +3,8 @@
  * ใช้ทั้งจาก API ("โพสต์ตอนนี้") และ worker (งานตั้งเวลา) — ตรวจ kill switch ทุกครั้งก่อนยิงจริง
  */
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import type { Prisma, PrismaClient } from '@fbpm/database';
 import type { PhotoPostInput } from './facebook.service';
 import { FacebookApiError } from './graph-client';
@@ -33,7 +35,7 @@ export async function publishBlockReason(prisma: PrismaClient, contentId: string
 export async function publishContent(d: SyncDeps, contentId: string, _opts: { requestId: string; scheduledPublish?: boolean } = { requestId: 'n/a' }): Promise<PublishOutcome> {
   const blocked = await publishBlockReason(d.prisma, contentId);
   if (blocked) return { status: 'SKIPPED', reason: blocked };
-  const c0 = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, updatedAt: true, pageId: true, caption: true, hashtags: true, mediaPaths: true, status: true, retryCount: true, publishedPostId: true, externalPostId: true, scheduledAt: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
+  const c0 = await d.prisma.contentItem.findUniqueOrThrow({ where: { id: contentId }, select: { id: true, updatedAt: true, pageId: true, caption: true, hashtags: true, mediaPaths: true, contentType: true, status: true, retryCount: true, publishedPostId: true, externalPostId: true, scheduledAt: true, page: { select: { brand: { select: { client: { select: { workspaceId: true } } } } } } } });
   if (!c0.pageId || !c0.page) return { status: 'SKIPPED', reason: 'ไม่ได้ผูกกับเพจ Facebook' };
   const c = { ...c0, pageId: c0.pageId, page: c0.page };
   const workspaceId = c.page.brand.client.workspaceId;
@@ -44,7 +46,7 @@ export async function publishContent(d: SyncDeps, contentId: string, _opts: { re
 
   // §48: เคยสร้างโพสต์ไปแล้ว → ไม่ยิงซ้ำ แค่ปิดสถานะให้ตรง
   const existingOp = await d.prisma.externalOperation.findUnique({ where: { idempotencyKey } });
-  if (existingOp?.externalId) return finalize(d, c.id, c.pageId, existingOp.externalId, message, true);
+  if (existingOp?.externalId) return finalize(d, c.id, c.pageId, existingOp.externalId, message, true, c.contentType === 'reel' ? 'reel' : undefined);
   // Legacy PENDING and interrupted claims are ambiguous. Never guess ownership
   // from matching captions and never issue a second write without reconciliation.
   // FAILED = รู้แน่ว่า Facebook ไม่ได้สร้างโพสต์ (ปฏิเสธชัดเจน หรือผู้ใช้ตรวจแล้วยืนยันว่าไม่มี) → ส่งใหม่ได้
@@ -62,9 +64,20 @@ export async function publishContent(d: SyncDeps, contentId: string, _opts: { re
   });
   if (!op) return { status: 'SKIPPED', reason: 'มีคำขอเผยแพร่อยู่แล้ว หรือเนื้อหาถูกแก้ไข' };
   let r: { externalId: string };
+  const reel = c.contentType === 'reel';
   try {
-    const photos: PhotoPostInput['photos'] = c.mediaPaths.map(p => (/^https?:\/\//.test(p) ? { url: p } : p));
-    r = photos.length ? await d.fb.createPhotoPost(facebookPageId, token, { message, photos }) : await d.fb.createPost(facebookPageId, token, { message });
+    // ไฟล์ในเครื่องต้องอยู่ในโฟลเดอร์สื่อของระบบเท่านั้น — กันการอ้าง path อื่นของเซิร์ฟเวอร์แล้วส่งไฟล์นั้นขึ้น Facebook
+    const local = c.mediaPaths.filter(p => !/^https?:\/\//.test(p));
+    const outside = local.find(p => !insideMediaDir(p));
+    if (outside) throw new Error(`ไฟล์สื่ออยู่นอกโฟลเดอร์สื่อของระบบ: ${outside.split(/[\\/]/).pop()}`);
+    if (reel) {
+      const video = local.find(p => /\.(mp4|mov)$/i.test(p));
+      if (!video) throw new Error('Reels ต้องแนบไฟล์คลิป (.mp4/.mov) ก่อนโพสต์');
+      r = await d.fb.createReel(facebookPageId, token, { video: await readFile(video), description: message });
+    } else {
+      const photos: PhotoPostInput['photos'] = c.mediaPaths.map(p => (/^https?:\/\//.test(p) ? { url: p } : p));
+      r = photos.length ? await d.fb.createPhotoPost(facebookPageId, token, { message, photos }) : await d.fb.createPost(facebookPageId, token, { message });
+    }
   } catch (e) {
     const f = classifyPublishError(e);
     const err = f.message;
@@ -77,7 +90,7 @@ export async function publishContent(d: SyncDeps, contentId: string, _opts: { re
   }
   // โพสต์เกิดขึ้นแล้ว — ถ้าบันทึกฐานข้อมูลล้มตรงนี้ op จะค้าง IN_FLIGHT = ต้องตรวจก่อนส่งซ้ำ (ไม่มีทางโพสต์ซ้ำ)
   await d.prisma.externalOperation.update({ where: { id: op.id }, data: { externalId: r.externalId, status: 'SUCCEEDED', error: null } });
-  return finalize(d, c.id, c.pageId, r.externalId, message, false);
+  return finalize(d, c.id, c.pageId, r.externalId, message, false, reel ? 'reel' : undefined);
 }
 
 /**
@@ -96,13 +109,20 @@ export function classifyPublishError(e: unknown): { definite: boolean; message: 
   return { definite: true, message: `เตรียมโพสต์ไม่สำเร็จ: ${(e as Error)?.message ?? String(e)}`.slice(0, 500) };
 }
 
-async function finalize(d: SyncDeps, contentId: string, pageId: string, externalId: string, message: string, duplicateRecovered: boolean): Promise<PublishOutcome> {
-  const permalink = `https://www.facebook.com/${externalId}`;
+async function finalize(d: SyncDeps, contentId: string, pageId: string, externalId: string, message: string, duplicateRecovered: boolean, mediaType = 'status'): Promise<PublishOutcome> {
+  const permalink = mediaType === 'reel' ? `https://www.facebook.com/reel/${externalId}` : `https://www.facebook.com/${externalId}`;
   const post = await d.prisma.facebookPost.upsert({
     where: { pageId_facebookPostId: { pageId, facebookPostId: externalId } },
-    create: { pageId, facebookPostId: externalId, message, permalink, publishedAt: new Date(), source: 'app', mediaType: 'status' },
+    create: { pageId, facebookPostId: externalId, message, permalink, publishedAt: new Date(), source: 'app', mediaType },
     update: { source: 'app' }, select: { id: true },
   });
   await d.prisma.contentItem.update({ where: { id: contentId }, data: { status: 'PUBLISHED', publishedPostId: post.id, externalPostId: externalId, publishedAt: new Date(), lastError: null } as Prisma.ContentItemUncheckedUpdateInput });
   return { status: 'PUBLISHED', externalId, permalink, postId: post.id, duplicateRecovered };
+}
+
+/** path อยู่ใต้ MEDIA_DIR (ค่าเดียวกับ API/worker) */
+export function insideMediaDir(p: string, mediaDir = process.env.MEDIA_DIR ?? './data/media'): boolean {
+  const root = resolve(mediaDir);
+  const full = resolve(p);
+  return full === root || full.startsWith(root + sep);
 }

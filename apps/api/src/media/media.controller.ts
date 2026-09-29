@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { ZodPipe } from '../common/zod.pipe';
 import { CurrentUser, RequestId, Tenant, type AuthUser, type TenantContext } from '../common/request-context';
 import { AuthGuard } from '../auth/auth.guard';
@@ -8,7 +8,7 @@ import { TenantGuard } from '../workspaces/tenant.guard';
 import { RequirePermission } from '../workspaces/permissions';
 import { MediaService } from './media.service';
 import { MediaGenService } from './media-gen.service';
-import { aiCardSchema, aiImageSchema, aiMediaConfigSchema, renderCardSchema, type AiCardDto, type AiImageDto, type AiMediaConfigDto, type RenderCardDto } from './dto';
+import { attachVideoSchema, aiCardSchema, aiImageSchema, aiMediaConfigSchema, renderCardSchema, type AiCardDto, type AiImageDto, type AiMediaConfigDto, type RenderCardDto } from './dto';
 
 @ApiTags('media')
 @Controller('workspaces/:workspaceId')
@@ -22,8 +22,19 @@ export class MediaController {
   @Get('media') @RequirePermission('content.read')
   list(@Tenant() t: TenantContext, @Query('contentId') contentId?: string) { return this.media.list(t.workspaceId, contentId || undefined); }
 
+  /** อัปโหลดคลิป Reels (body = ไฟล์ดิบ, content-type video/mp4 หรือ video/quicktime) — สตรีมลงดิสก์ */
+  @Post('media/videos') @RequirePermission('content.create')
+  uploadVideo(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Query('name') name: string | undefined, @Req() req: Request) {
+    return this.media.uploadVideo(t.workspaceId, u.id, (name ?? 'clip.mp4').slice(0, 200), req, Number(req.headers['content-length'] ?? 0));
+  }
+
+  @Post('content/:contentId/video') @HttpCode(200) @RequirePermission('content.edit')
+  attachVideo(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('contentId') contentId: string, @Body(new ZodPipe(attachVideoSchema)) b: { assetId: string }, @RequestId() rid: string) { return this.media.attachVideo(t.workspaceId, u.id, contentId, b.assetId, rid); }
+
   @Get('media/:id/file') @RequirePermission('content.read')
   async file(@Tenant() t: TenantContext, @Param('id') id: string, @Res() res: Response) {
+    const v = await this.media.filePath(t.workspaceId, id);
+    if (v.mimeType.startsWith('video/')) { res.setHeader('cache-control', 'private, max-age=3600'); return res.sendFile(v.path, { headers: { 'content-type': v.mimeType } }); }
     const f = await this.media.file(t.workspaceId, id);
     res.setHeader('content-type', f.mimeType); res.setHeader('cache-control', 'private, max-age=3600'); res.end(f.buffer);
   }

@@ -10,6 +10,8 @@ export const PROMPT_LENGTHS = ['short', 'medium', 'long'] as const;
 export const PROMPT_IMAGES = ['chatgpt', 'stock', 'own'] as const;
 /** standard = สรุปจากแหล่งที่ค้นเจอ · deep = ค้นหลายแหล่งไทย+ต่างประเทศ ตรวจไขว้ แล้วเพิ่มบทวิเคราะห์/มุมใหม่ของเพจ */
 export const PROMPT_DEPTHS = ['deep', 'standard'] as const;
+/** post = โพสต์รูป/ข้อความ · reel = คลิป Reels ที่เจ้าของเพจแนบเอง (ChatGPT เขียนแคปชันสั้น + ไอเดีย/สคริปต์คลิป) */
+export const PROMPT_FORMATS = ['post', 'reel'] as const;
 
 export interface PromptBrand {
   name: string; description?: string | null; industry?: string | null; targetAudience?: string | null; toneOfVoice?: string | null;
@@ -22,7 +24,7 @@ export interface PromptPage {
 }
 export interface PromptOptions {
   pageName: string | null; count: number; topic?: string; kind: (typeof PROMPT_KINDS)[number]; length: (typeof PROMPT_LENGTHS)[number];
-  emoji: boolean; images: (typeof PROMPT_IMAGES)[number]; recencyDays?: number; extra?: string; depth?: (typeof PROMPT_DEPTHS)[number];
+  emoji: boolean; images: (typeof PROMPT_IMAGES)[number]; recencyDays?: number; extra?: string; depth?: (typeof PROMPT_DEPTHS)[number]; format?: (typeof PROMPT_FORMATS)[number];
   page?: PromptPage | null; brandInfo?: boolean;
 }
 
@@ -47,13 +49,16 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
   ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `- ${k}: ${String(v).trim().slice(0, 500)}`) : [];
   const keywords = (pg?.keywords ?? []).filter(Boolean).slice(0, 15);
   const deep = (o.depth ?? 'deep') === 'deep';
+  const reel = o.format === 'reel';
   const example = {
     format: PACKAGE_FORMAT,
     posts: [{
       type: o.kind === 'news' ? 'news' : 'original',
       ...(o.pageName && { page: o.pageName }),
       title: 'ชื่อหัวข้อสั้น ๆ',
-      caption: deep
+      caption: reel
+        ? (o.emoji ? '🎬 hook บรรทัดแรกที่ทำให้หยุดดูคลิป\n\nประเด็นสำคัญ 1–2 บรรทัด (ข้อมูลเด่นจากที่ค้นคว้า)\n\n💬 คำถามชวนคอมเมนต์ หรือ CTA' : 'hook บรรทัดแรกที่ทำให้หยุดดูคลิป\n\nประเด็นสำคัญ 1–2 บรรทัด (ข้อมูลเด่นจากที่ค้นคว้า)\n\nคำถามชวนคอมเมนต์ หรือ CTA')
+        : deep
         ? (o.emoji
           ? '🔥 ประโยคเปิดที่ทำให้อยากอ่านต่อ\n\nสรุปประเด็นหลักสั้น ๆ 1–3 บรรทัด\n\n🌏 ข้อมูลเสริมจากแหล่งอื่น (เช่น งานวิจัย/ต่างประเทศ/ตัวเลขเปรียบเทียบ)\n\n💡 มุมมองของเพจ: ทำไมเรื่องนี้สำคัญกับคนไทย/ลูกค้าของเรา\n\n✅ สิ่งที่ทำได้เลย 1\n✅ สิ่งที่ทำได้เลย 2\n\n💬 คำถามชวนคอมเมนต์ หรือ CTA'
           : 'ประโยคเปิดที่ทำให้อยากอ่านต่อ\n\nสรุปประเด็นหลักสั้น ๆ 1–3 บรรทัด\n\nข้อมูลเสริมจากแหล่งอื่น (เช่น งานวิจัย/ต่างประเทศ/ตัวเลขเปรียบเทียบ)\n\nมุมมองของเพจ: ทำไมเรื่องนี้สำคัญกับคนไทย/ลูกค้าของเรา\n\n1) สิ่งที่ทำได้เลย\n2) สิ่งที่ทำได้เลย\n\nคำถามชวนคอมเมนต์ หรือ CTA')
@@ -65,10 +70,12 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
       sources: deep
         ? [{ name: 'แหล่งไทย', url: 'https://ลิงก์บทความภาษาไทยที่ใช้จริง' }, { name: 'แหล่งต่างประเทศ', url: 'https://ลิงก์บทความต่างประเทศที่ใช้จริง' }, { name: 'แหล่งข้อมูลเสริม (งานวิจัย/หน่วยงาน/ผู้เชี่ยวชาญ)', url: 'https://ลิงก์งานวิจัยหรือหน่วยงานที่ใช้จริง' }]
         : [{ name: 'ชื่อเว็บ', url: 'https://ลิงก์บทความที่ใช้จริง' }],
-      card: { kicker: 'หมวด', headline: 'พาดหัวสั้น ≤ 60 ตัวอักษร', sub: 'สรุปหนึ่งประโยค' },
+      ...(!reel && { card: { kicker: 'หมวด', headline: 'พาดหัวสั้น ≤ 60 ตัวอักษร', sub: 'สรุปหนึ่งประโยค' } }),
       images: [],
-      ...(o.images === 'stock' && { photoQuery: 'english keywords for a free stock photo' }),
-      imagePrompt: 'คำบรรยายภาพประกอบของหัวข้อนี้ (ภาษาอังกฤษ)',
+      ...(!reel && o.images === 'stock' && { photoQuery: 'english keywords for a free stock photo' }),
+      ...(reel
+        ? { videoIdea: 'คลิปแนวตั้ง 9:16 ยาว 20–45 วิ\n0–3 วิ: ช็อตเปิด + ข้อความบนจอ "..."\n3–15 วิ: ...\nบทพูด/เสียงบรรยาย: ...\nปิดท้าย: CTA บนจอ' }
+        : { imagePrompt: 'คำบรรยายภาพประกอบของหัวข้อนี้ (ภาษาอังกฤษ)' }),
       category: 'หมวดหมู่',
       risk: 'LOW', riskReasons: [], needsCheck: [],
     }],
@@ -84,7 +91,7 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
       : ['ไม่ต้องสร้างรูป เจ้าของเพจจะอัปโหลดรูปเอง — ใส่ imagePrompt อธิบายภาพที่เหมาะกับหัวข้อไว้เป็นไอเดีย'];
 
   return [
-    `คุณคือทีมคอนเทนต์ของเพจ Facebook${o.pageName ? ` "${o.pageName}"` : ''}`,
+    `คุณคือทีมคอนเทนต์ของเพจ Facebook${o.pageName ? ` "${o.pageName}"` : ''}${reel ? ' — งานนี้ทำโพสต์ Reels (คลิปแนวตั้ง) ที่เจ้าของเพจจะถ่าย/แนบคลิปเอง' : ''}`,
     pageInfo.length ? ['ข้อมูลเพจ:', ...pageInfo].join('\n') : '',
     keywords.length ? `คีย์เวิร์ดของเพจ: ${keywords.join(', ')}` : '',
     info.length ? [pageInfo.length ? 'ข้อมูลแบรนด์ (ภาพรวม):' : 'ข้อมูลแบรนด์:', ...info].join('\n') : '',
@@ -92,7 +99,8 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
     'งานของคุณ:',
     `1) ค้นหาข้อมูลจากเว็บ (เปิดใช้การค้นหาเว็บ) ${o.topic?.trim() ? `ในเรื่อง: ${o.topic.trim()}` : keywords.length ? 'ในเรื่องที่เกี่ยวกับคีย์เวิร์ดของเพจด้านบน' : 'ในเรื่องที่เหมาะกับเพจและกลุ่มเป้าหมายด้านบน'}${o.recencyDays ? ` — เน้นข้อมูลภายใน ${o.recencyDays} วันล่าสุด` : ''}`,
     `2) คัดมา ${n} หัวข้อที่ไม่ซ้ำกัน ประเภท: ${KIND[o.kind]}`,
-    deep ? '3) ค้นคว้าแต่ละหัวข้อให้ลึกตาม "วิธีค้นคว้า" ด้านล่าง แล้วเรียบเรียงเป็นโพสต์ Facebook ภาษาไทย หัวข้อละ 1 โพสต์' : '3) สรุปและเขียนเป็นโพสต์ Facebook ภาษาไทย หัวข้อละ 1 โพสต์',
+    reel ? `3) ${deep ? 'ค้นคว้าแต่ละหัวข้อให้ลึกตาม "วิธีค้นคว้า" ด้านล่าง แล้ว' : ''}ทำหัวข้อละ 1 Reels: แคปชันสั้น + videoIdea (ไอเดีย/สคริปต์คลิปที่ใช้ข้อมูลที่ค้นคว้ามา)`
+      : deep ? '3) ค้นคว้าแต่ละหัวข้อให้ลึกตาม "วิธีค้นคว้า" ด้านล่าง แล้วเรียบเรียงเป็นโพสต์ Facebook ภาษาไทย หัวข้อละ 1 โพสต์' : '3) สรุปและเขียนเป็นโพสต์ Facebook ภาษาไทย หัวข้อละ 1 โพสต์',
     ...(keywords.length ? ['- ทุกหัวข้อต้องเกี่ยวกับเพจนี้จริง ใช้คีย์เวิร์ดของเพจเป็นแนวทางค้นหา และเลือกคำที่เหมาะเป็น hashtags'] : []),
     ...(deep ? [
       '',
@@ -103,7 +111,7 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
       '- ข้อมูลต่างประเทศให้แปลและปรับให้เข้ากับบริบทไทย (หน่วยเงิน/ฤดูกาล/กฎหมาย/วัฒนธรรม) ไม่แปลตรงตัว',
       '- หามุมใหม่ที่เพจอื่นยังไม่ค่อยเล่า: ตัวเลขเปรียบเทียบ ผลวิจัยใหม่ วิธีที่ต่างประเทศทำ ความเชื่อผิด ๆ ที่พบบ่อย เคล็ดลับที่ใช้ได้จริง',
       '',
-      'เนื้อหาแต่ละโพสต์ต้องมีครบ 4 ส่วน (เรียงตามความเหมาะสม):',
+      reel ? 'ข้อมูล 4 ส่วนนี้ให้ใส่ในสคริปต์คลิป (videoIdea) — แคปชันเอาเฉพาะประเด็นเด่น:' : 'เนื้อหาแต่ละโพสต์ต้องมีครบ 4 ส่วน (เรียงตามความเหมาะสม):',
       '1) สรุปประเด็นหลักให้เข้าใจใน 3 บรรทัด',
       '2) ข้อมูลเสริมจากแหล่งอื่นที่ทำให้เรื่องนี้ครบขึ้น (อย่างน้อย 1 อย่างมาจากต่างประเทศหรืองานวิจัย)',
       '3) มุมมอง/บทวิเคราะห์ของเพจ: ทำไมเรื่องนี้สำคัญกับกลุ่มผู้ติดตามของเรา มีผลอย่างไร ควรระวังอะไร — เขียนให้ชัดว่าเป็นความเห็นของเพจ ไม่ใช่ข้อเท็จจริง',
@@ -113,7 +121,7 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
     ] : []),
     '',
     'รูปแบบข้อความโพสต์ (caption):',
-    `- ความยาว${LENGTH[o.length]}`,
+    reel ? '- ความยาวสั้น 150–400 ตัวอักษร (คนดูคลิปเป็นหลัก แคปชันเสริมคลิป) · บรรทัดแรกต้องเป็น hook ที่ทำให้หยุดดู' : `- ความยาว${LENGTH[o.length]}`,
     o.emoji ? '- บรรทัดแรกเป็น hook + อีโมจิ 1–2 ตัว · ใช้อีโมจินำหน้าแต่ละข้อ (เช่น ✅ 📌 💡 👉) · ไม่เกินย่อหน้าละ 1–2 ตัว' : '- ไม่ใช้อีโมจิ ใช้เลขข้อ 1) 2) 3) แทน',
     '- เว้นบรรทัดว่างระหว่างย่อหน้า ย่อหน้าละ 1–3 บรรทัด อ่านง่ายบนมือถือ',
     `- ปิดท้ายด้วยคำถามชวนคอมเมนต์${brand.primaryCTA ? ` หรือ CTA: "${brand.primaryCTA}"` : ''}`,
@@ -129,9 +137,17 @@ export function buildChatGptPrompt(brand: PromptBrand, o: PromptOptions): string
       ? '- sources ใส่ลิงก์จริงทุกแหล่งที่ใช้ (https) 3–5 แหล่งต่อโพสต์ ทั้งไทยและต่างประเทศ — เรียงแหล่งหลักไว้แรก · โพสต์ข่าวไม่มีที่มาจะถูกปฏิเสธ'
       : '- sources ใส่ลิงก์บทความจริงที่คุณเปิดอ่าน (https) อย่างน้อย 1 แหล่งต่อโพสต์ — โพสต์ข่าวไม่มีที่มาจะถูกปฏิเสธ',
     '',
-    'รูปภาพ:',
-    '- ใน JSON ให้ images เป็น [] เสมอ (เจ้าของเพจจะแนบรูปของแต่ละหัวข้อในระบบเอง)',
-    ...imageRules.map(r => `- ${r}`),
+    ...(reel ? [
+      'คลิป (videoIdea):',
+      '- ใน JSON ให้ images เป็น [] และไม่ต้องสร้างรูป — เจ้าของเพจจะถ่าย/แนบคลิปของแต่ละหัวข้อในระบบเอง',
+      '- videoIdea: คลิปแนวตั้ง 9:16 ยาว 15–60 วินาที (Reels รับ 3–90 วิ) แบ่งเป็นช่วงเวลา: ช็อต/ภาพที่ต้องถ่าย · ข้อความบนจอ · บทพูดหรือเสียงบรรยาย · CTA ตอนจบ',
+      '- 3 วินาทีแรกต้องมี hook ทั้งภาพและข้อความบนจอ · ถ่ายได้จริงด้วยมือถือ ไม่ต้องใช้อุปกรณ์พิเศษ',
+      '- ห้ามใช้เพลง/ภาพ/คลิปที่มีลิขสิทธิ์ของผู้อื่น',
+    ] : [
+      'รูปภาพ:',
+      '- ใน JSON ให้ images เป็น [] เสมอ (เจ้าของเพจจะแนบรูปของแต่ละหัวข้อในระบบเอง)',
+      ...imageRules.map(r => `- ${r}`),
+    ]),
     ...(o.extra?.trim() ? ['', `คำสั่งเพิ่มเติม: ${o.extra.trim()}`] : []),
     '',
     `ส่งผลลัพธ์เป็นโค้ดบล็อก \`\`\`json เดียว ตามรูปแบบนี้ (posts ${n} รายการ เรียงตามลำดับหัวข้อ):`,

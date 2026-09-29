@@ -12,6 +12,7 @@ const KINDS = ['original', 'news', 'mixed'] as const;
 const LENGTHS = ['short', 'medium', 'long'] as const;
 const IMAGES = ['chatgpt', 'stock', 'own'] as const;
 const DEPTHS = ['deep', 'standard'] as const;
+const FORMATS = ['post', 'reel'] as const;
 const FALLBACKS = ['stock', 'ai', 'none'] as const;
 const GAPS = [24, 48, 12, 6, 3] as const;
 const tone = (s: string) => (s === 'PASS' ? 'ok' : s === 'FAIL' ? 'bad' : 'warn') as 'ok' | 'bad' | 'warn';
@@ -20,11 +21,11 @@ const toLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
 const tomorrowAt = (h: number) => { const d = new Date(Date.now() + 86_400_000); d.setHours(h, 0, 0, 0); return toLocal(d); };
 
 /** risky = AI ติดธงเนื้อหาเสี่ยง → ไม่อนุมัติให้เองจนกว่าจะติ๊ก "อ่านแล้ว" (riskAck) */
-type Row = { include: boolean; when: string; risky: boolean; riskAck?: boolean; image?: { id: string; name: string; preview: string }; result?: string; ok?: boolean };
+type Row = { include: boolean; when: string; risky: boolean; riskAck?: boolean; image?: { id: string; name: string; preview: string }; video?: { id: string; name: string; preview: string; durationSec: number | null; warnings: string[] }; result?: string; ok?: boolean };
 
 export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDone }: { base: string; brandId: string; pages: PageRow[]; canWrite: boolean; canSchedule: boolean; onDone: () => void }) {
-  const [f, setF] = useState({ pageId: pages.length === 1 ? pages[0]!.id : '', count: 5, topic: '', kind: 'original' as (typeof KINDS)[number], length: 'medium' as (typeof LENGTHS)[number], emoji: true, images: 'chatgpt' as (typeof IMAGES)[number], depth: 'deep' as (typeof DEPTHS)[number], recencyDays: 0, extra: '' });
-  const [prompt, setPrompt] = useState('');
+  const [f, setF] = useState({ pageId: pages.length === 1 ? pages[0]!.id : '', count: 5, topic: '', kind: 'original' as (typeof KINDS)[number], length: 'medium' as (typeof LENGTHS)[number], emoji: true, images: 'chatgpt' as (typeof IMAGES)[number], depth: 'deep' as (typeof DEPTHS)[number], format: 'post' as (typeof FORMATS)[number], recencyDays: 0, extra: '' });
+  const [prompt, setPrompt] = useState(''); const [mode, setMode] = useState<(typeof FORMATS)[number]>('post');
   const [kw, setKw] = useState<{ list: string[]; on: string[]; hasProfile: boolean } | null>(null);
   useEffect(() => {
     setKw(null); if (!f.pageId) return;
@@ -44,7 +45,7 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
   const url = `${base}/brands/${brandId}/news/import`;
 
   const makePrompt = () => run('prompt', async () => {
-    const r = await api<{ prompt: string }>(`${url}/chat-prompt`, { method: 'POST', body: { ...(f.pageId && { pageId: f.pageId }), count: f.count, topic: f.topic || undefined, kind: f.kind, length: f.length, emoji: f.emoji, images: f.images, depth: f.depth, ...(f.recencyDays && { recencyDays: f.recencyDays }), extra: f.extra || undefined, ...(f.pageId && kw && { keywords: kw.on }) } });
+    const r = await api<{ prompt: string }>(`${url}/chat-prompt`, { method: 'POST', body: { ...(f.pageId && { pageId: f.pageId }), count: f.count, topic: f.topic || undefined, kind: f.kind, length: f.length, emoji: f.emoji, images: f.images, depth: f.depth, format: f.format, ...(f.recencyDays && { recencyDays: f.recencyDays }), extra: f.extra || undefined, ...(f.pageId && kw && { keywords: kw.on }) } });
     setPrompt(r.prompt);
     try { await navigator.clipboard.writeText(r.prompt); return t('gpt.copied'); } catch { return t('gpt.copyManual'); }
   });
@@ -56,7 +57,9 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
     const rep = await api<ImportReport>(`${url}/check`, { method: 'POST', body: { text, ...(f.pageId && { pageId: f.pageId }) } });
     setReport(rep);
     // ไม่เติมเวลาให้เอง — ผู้ใช้เลือกทีละหัวข้อ หรือกด "กระจายเวลา" เอง (หัวข้อที่ไม่มีเวลา = ร่างรออนุมัติ)
-    setRows(rep.posts.map(p => ({ include: p.status !== 'FAIL', when: '', risky: p.checks.some(c => c.code === 'RISK_HIGH') })));
+    setMode(f.format);
+    // Reels: ติ๊กได้เมื่อแนบคลิปแล้วเท่านั้น
+    setRows(rep.posts.map(p => ({ include: p.status !== 'FAIL' && f.format !== 'reel', when: '', risky: p.checks.some(c => c.code === 'RISK_HIGH') })));
     if (!rep.parseError) return `${t('gpt.found')} ${rep.posts.length} ${t('gpt.topics')}`;
   });
   const setRow = (i: number, patch: Partial<Row>) => setRows(rs => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -66,9 +69,15 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
     const preview = URL.createObjectURL(file); previews.current.push(preview);
     setRow(i, { image: { id: up.id, name: file.name, preview } });
   });
+  const pickVideo = (i: number, file: File | undefined) => file && run(`vid:${i}`, async () => {
+    const up = await apiUpload<{ id: string; durationSec: number | null; warnings: string[] }>(`${base}/media/videos?name=${encodeURIComponent(file.name)}`, file);
+    const old = rows[i]?.video; if (old) URL.revokeObjectURL(old.preview);
+    const preview = URL.createObjectURL(file); previews.current.push(preview);
+    setRow(i, { video: { id: up.id, name: file.name, preview, durationSec: up.durationSec, warnings: up.warnings }, include: report?.posts[i]?.status !== 'FAIL' });
+  });
   const copy = (s: string) => run('copy', async () => { await navigator.clipboard.writeText(s); return t('gpt.copied'); });
 
-  const chosen = useMemo(() => rows.map((r, i) => ({ r, i })).filter(x => x.r.include && report?.posts[x.i]?.status !== 'FAIL'), [rows, report]);
+  const chosen = useMemo(() => rows.map((r, i) => ({ r, i })).filter(x => x.r.include && report?.posts[x.i]?.status !== 'FAIL' && (mode !== 'reel' || !!x.r.video)), [rows, report, mode]);
   const willSchedule = (r: Row) => canSchedule && !!r.when && (!r.risky || !!r.riskAck);
   const toSchedule = chosen.filter(x => willSchedule(x.r));
   const submit = () => {
@@ -79,7 +88,9 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
   };
   const doSubmit = () => run('import', async () => {
     const postImages = Object.fromEntries(chosen.filter(x => x.r.image).map(x => [String(x.i), x.r.image!.id]));
-    const imp = await api<ContentImportRow>(url, { method: 'POST', body: { text, ...(f.pageId && { pageId: f.pageId }), postImages, include: chosen.map(x => x.i), cardMode: photoOnly ? 'photo' : 'auto', imageFallback: fallback } });
+    const postVideos = Object.fromEntries(chosen.filter(x => x.r.video).map(x => [String(x.i), x.r.video!.id]));
+    const media = mode === 'reel' ? { postVideos, imageFallback: 'none' } : { postImages, cardMode: photoOnly ? 'photo' : 'auto', imageFallback: fallback };
+    const imp = await api<ContentImportRow>(url, { method: 'POST', body: { text, ...(f.pageId && { pageId: f.pageId }), include: chosen.map(x => x.i), ...media } });
     let scheduled = 0; const next = [...rows];
     for (const [j, p] of imp.report.posts.entries()) {
       const { i, r } = chosen[j]!;
@@ -115,8 +126,9 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
           </div>
         )}
         <div className="grid gap-2 md:grid-cols-4">
+          <Field label={t('gpt.format')}><Select value={f.format} onChange={e => setF({ ...f, format: e.target.value as typeof f.format })}>{FORMATS.map(k => <option key={k} value={k}>{L(`gpt.format.${k}`)}</option>)}</Select></Field>
           <Field label={t('gpt.depth')}><Select value={f.depth} onChange={e => setF({ ...f, depth: e.target.value as typeof f.depth })}>{DEPTHS.map(k => <option key={k} value={k}>{L(`gpt.depth.${k}`)}</option>)}</Select></Field>
-          <Field label={t('gpt.images')}><Select value={f.images} onChange={e => setF({ ...f, images: e.target.value as typeof f.images })}>{IMAGES.map(k => <option key={k} value={k}>{L(`gpt.images.${k}`)}</option>)}</Select></Field>
+          {f.format !== 'reel' && <Field label={t('gpt.images')}><Select value={f.images} onChange={e => setF({ ...f, images: e.target.value as typeof f.images })}>{IMAGES.map(k => <option key={k} value={k}>{L(`gpt.images.${k}`)}</option>)}</Select></Field>}
           <Field label={t('gpt.recency')}><Select value={f.recencyDays} onChange={e => setF({ ...f, recencyDays: Number(e.target.value) })}>{[0, 7, 30, 90].map(d => <option key={d} value={d}>{d ? `${d} ${t('gpt.days')}` : t('gpt.anyTime')}</option>)}</Select></Field>
           <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={f.emoji} onChange={e => setF({ ...f, emoji: e.target.checked })} /> {t('gpt.emoji')}</label>
         </div>
@@ -152,19 +164,32 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
             return (
               <li key={p.index} className={`rounded-lg border p-3 text-sm ${r.ok === true ? 'border-emerald-800' : r.ok === false ? 'border-rose-800' : 'border-slate-800'}`}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input type="checkbox" aria-label={`${t('gpt.includeTopic')} ${i + 1}`} checked={r.include} disabled={p.status === 'FAIL' || r.ok !== undefined} onChange={e => setRow(i, { include: e.target.checked })} />
+                  <input type="checkbox" aria-label={`${t('gpt.includeTopic')} ${i + 1}`} checked={r.include} disabled={p.status === 'FAIL' || r.ok !== undefined || (mode === 'reel' && !r.video)} onChange={e => setRow(i, { include: e.target.checked })} />
                   <Pill tone={tone(p.status)}>{t(`imp.status.${p.status}` as MessageKey)}</Pill>
                   <span className="font-medium">{i + 1}. {p.title}</span>
+                  {mode === 'reel' && !r.video && r.ok === undefined && p.status !== 'FAIL' && <span className="text-xs text-amber-500">{t('gpt.needVideo')}</span>}
                 </div>
                 {p.checks.filter(c => c.level !== 'info').map((c, k) => <div key={k} className={`text-xs ${c.level === 'error' ? 'text-rose-400' : 'text-amber-500'}`}>{c.level === 'error' ? '✖' : '⚠'} {c.message}</div>)}
                 {post?.angle && <p className="mt-1 text-xs text-sky-500">💡 {t('content.angle')}: {post.angle}</p>}
                 {post && <details className="mt-1"><summary className="cursor-pointer text-xs text-sky-400">{t('gpt.preview')}</summary><p className="mt-1 whitespace-pre-wrap rounded bg-slate-950 p-2 text-sm">{post.caption}{post.hashtags.length ? `\n\n${post.hashtags.map(h => `#${h}`).join(' ')}` : ''}</p></details>}
                 <div className="mt-2 grid gap-2 md:grid-cols-[auto_1fr_auto] md:items-center">
+                  {mode === 'reel' ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {r.video ? <video src={r.video.preview} muted playsInline controls className="h-28 w-16 rounded bg-black object-cover" /> : <div className="flex h-28 w-16 items-center justify-center rounded border border-dashed border-slate-700 text-center text-[10px] text-slate-500">{t('gpt.noVideo')}</div>}
+                    <div className="space-y-1">
+                      <label className={`inline-block cursor-pointer rounded-md border border-slate-700 px-2 py-1 text-xs ${r.ok !== undefined || !canWrite ? 'pointer-events-none opacity-50' : 'hover:border-sky-500'}`}>{busy === `vid:${i}` ? t('gpt.uploading') : r.video ? t('gpt.changeVideo') : `🎬 ${t('gpt.uploadVideo')}`}<input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={e => pickVideo(i, e.target.files?.[0])} /></label>
+                      {r.video && <p className="text-xs text-slate-400">{r.video.name}{r.video.durationSec !== null ? ` · ${r.video.durationSec} ${t('gpt.seconds')}` : ''}</p>}
+                      {r.video?.warnings.map((w, k) => <p key={k} className="text-xs text-amber-500">⚠ {w}</p>)}
+                      {post?.videoIdea && <details className="text-xs"><summary className="cursor-pointer text-sky-500">🎥 {t('gpt.videoIdea')}</summary><p className="mt-1 whitespace-pre-wrap rounded bg-slate-950 p-2">{post.videoIdea}</p><button type="button" className="text-sky-500 hover:underline" onClick={() => copy(post.videoIdea!)}>📋 {t('gpt.copyVideoIdea')}</button></details>}
+                    </div>
+                  </div>
+                  ) : (
                   <div className="flex items-center gap-2">
                     {r.image ? <img src={r.image.preview} alt="" className="h-16 w-16 rounded object-cover" /> : <div className="flex h-16 w-16 items-center justify-center rounded border border-dashed border-slate-700 text-[10px] text-slate-500">{t('gpt.noImage')}</div>}
                     <label className={`cursor-pointer rounded-md border border-slate-700 px-2 py-1 text-xs ${r.ok !== undefined || !canWrite ? 'pointer-events-none opacity-50' : 'hover:border-sky-500'}`}>{busy === `img:${i}` ? '…' : r.image ? t('gpt.changeImage') : `🖼️ ${t('gpt.uploadImage')}`}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => pickImage(i, e.target.files?.[0])} /></label>
                     {post?.imagePrompt && <button type="button" className="text-xs text-sky-500 hover:underline" onClick={() => copy(post.imagePrompt!)}>📋 {t('gpt.copyImagePrompt')}</button>}
                   </div>
+                  )}
                   <div />
                   {canSchedule && <Input type="datetime-local" aria-label={`${t('gpt.time')} ${i + 1}`} value={r.when} disabled={!r.include || r.ok !== undefined} onChange={e => setRow(i, { when: e.target.value })} />}
                 </div>
@@ -173,10 +198,11 @@ export function ChatGptBatch({ base, brandId, pages, canWrite, canSchedule, onDo
               </li>
             );
           })}</ul>
-          <div className="flex flex-wrap items-center gap-4 text-sm">
+          {mode !== 'reel' && <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-2"><input type="checkbox" checked={photoOnly} onChange={e => setPhotoOnly(e.target.checked)} /> {t('gpt.photoOnly')}</label>
             <label className="flex items-center gap-2">{t('gpt.fallback')} <Select className="w-auto" value={fallback} onChange={e => setFallback(e.target.value as typeof fallback)}>{FALLBACKS.map(x => <option key={x} value={x}>{t(`news.img.${x}` as MessageKey)}</option>)}</Select></label>
-          </div>
+          </div>}
+          {mode === 'reel' && <p className="text-xs text-slate-400">{t('gpt.reelHint')}</p>}
           {canWrite && <Button disabled={!!busy || chosen.length === 0} onClick={submit}>{busy === 'import' ? '…' : canSchedule ? `${t('gpt.importSchedule')} · ${t('gpt.imported')} ${chosen.length} · ${t('gpt.scheduled')} ${toSchedule.length}` : `${t('gpt.importOnly')} (${chosen.length})`}</Button>}
           <p className="text-xs text-slate-400">{canSchedule ? t('gpt.step3Help') : t('gpt.noSchedulePermission')}</p>
         </section>

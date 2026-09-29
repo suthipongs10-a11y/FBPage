@@ -31,3 +31,4 @@ export const aiMediaConfigSchema = z.object({
   monthlyImageLimit: z.number().int().min(0).max(100_000).nullable().optional(),
 });
 export type AiMediaConfigDto = z.infer<typeof aiMediaConfigSchema>;
+export const attachVideoSchema = z.object({ assetId: z.string().trim().min(1).max(40) }).strict();

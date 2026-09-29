@@ -1,7 +1,7 @@
 'use client';
 import { tt } from '@/lib/tiktok';
 import { useState, type FormEvent } from 'react';
-import { api, type ContentItem, type ContentRevisionRow, type MediaAsset, type MediaCapabilities, type PublishOutcome } from '@/lib/api';
+import { api, apiUpload, type ContentItem, type ContentRevisionRow, type MediaAsset, type MediaCapabilities, type PublishOutcome } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import Link from 'next/link';
@@ -59,7 +59,7 @@ function FacebookCard({ item, onChange }: { item: ContentItem & { page: NonNulla
     <div className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <button onClick={() => setOpen(v => !v)} className="text-left">
-          <div className="flex flex-wrap items-center gap-2"><Pill tone={statusTone(s)}>{t(`cs.${s}` as MessageKey)}</Pill><span className="font-medium">{item.title || (item.caption ?? '').slice(0, 60) || '(ไม่มีหัวข้อ)'}</span>{item.aiProvider && <Pill>{t('content.byAi')} {item.aiModel}</Pill>}{item.editedByHuman && <Pill>{t('content.byHuman')}</Pill>}{item.aiNotes?.needsHumanInput && <Pill tone="warn">NEEDS_HUMAN_INPUT</Pill>}</div>
+          <div className="flex flex-wrap items-center gap-2"><Pill tone={statusTone(s)}>{t(`cs.${s}` as MessageKey)}</Pill>{item.contentType === 'reel' && <Pill tone="ok">🎬 Reels</Pill>}<span className="font-medium">{item.title || (item.caption ?? '').slice(0, 60) || '(ไม่มีหัวข้อ)'}</span>{item.aiProvider && <Pill>{t('content.byAi')} {item.aiModel}</Pill>}{item.editedByHuman && <Pill>{t('content.byHuman')}</Pill>}{item.aiNotes?.needsHumanInput && <Pill tone="warn">NEEDS_HUMAN_INPUT</Pill>}</div>
           <div className="mt-1 text-xs text-slate-500">{item.page.name} · {item.page.brand.client.name} · {item.contentPillar ?? '—'} · {item.contentType}{item.scheduledAt && ` · ⏰ ${fmt(item.scheduledAt, item.scheduledTz)} (${item.scheduledTz})`}{item.publishedAt && ` · ✔ ${fmt(item.publishedAt)}`}</div>
         </button>
         <div className="flex flex-wrap gap-1">
@@ -118,7 +118,8 @@ function FacebookCard({ item, onChange }: { item: ContentItem & { page: NonNulla
               {assets && (
                 <div className="space-y-2">
                   {caps && !caps.chromium && <p className="text-xs text-amber-300">{t('media.noChromium')}</p>}
-                  {assets.length > 0 && <div className="flex flex-wrap gap-2">{assets.map(a => <div key={a.id} className="relative"><img src={`/api/workspaces/${ws.id}/media/${a.id}/file`} alt="" className="h-28 w-28 rounded-lg object-cover" /><button onClick={() => removeAsset(a.id)} className="absolute right-1 top-1 rounded bg-slate-900/80 px-1 text-[10px] text-rose-300">{t('common.delete')}</button></div>)}</div>}
+                  {['PLANNED', 'IDEA', 'DRAFT', 'NEEDS_REVISION', 'READY_FOR_APPROVAL'].includes(s) && <label className={`inline-block cursor-pointer rounded-md border border-slate-700 px-2 py-1 text-xs hover:border-sky-500 ${busy === 'video' ? 'pointer-events-none opacity-50' : ''}`}>{busy === 'video' ? t('gpt.uploading') : `🎬 ${t('content.attachReel')}`}<input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void run('video', async () => { const up = await apiUpload<{ id: string; warnings: string[] }>(`/workspaces/${ws.id}/media/videos?name=${encodeURIComponent(file.name)}`, file); await api(`${base}/video`, { method: 'POST', body: { assetId: up.id } }); await loadMedia(); setNotice(up.warnings.length ? `${t('content.reelAttached')} · ⚠ ${up.warnings.join(' · ')}` : t('content.reelAttached')); }); }} /></label>}
+                  {assets.length > 0 && <div className="flex flex-wrap gap-2">{assets.map(a => <div key={a.id} className="relative">{a.mimeType.startsWith('video/') ? <video src={`/api/workspaces/${ws.id}/media/${a.id}/file`} controls playsInline preload="metadata" className="h-48 w-28 rounded-lg bg-black object-cover" /> : <img src={`/api/workspaces/${ws.id}/media/${a.id}/file`} alt="" className="h-28 w-28 rounded-lg object-cover" />}<button onClick={() => removeAsset(a.id)} className="absolute right-1 top-1 rounded bg-slate-900/80 px-1 text-[10px] text-rose-300">{t('common.delete')}</button></div>)}</div>}
                   <div className="grid gap-2 sm:grid-cols-4">
                     <Field label={t('media.template')}><Select value={card.template} onChange={e => setCard(v => ({ ...v, template: e.target.value }))}>{(caps?.templates ?? ['quote', 'tips', 'hero', 'stat']).map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>
                     <Field label={t('media.theme')}><Select value={card.theme} onChange={e => setCard(v => ({ ...v, theme: e.target.value }))}>{(caps?.themes ?? ['default']).map(x => <option key={x} value={x}>{x}</option>)}</Select></Field>

@@ -23,7 +23,7 @@ import { MediaGenService } from '../media/media-gen.service';
 import { decryptSecret, encryptSecret } from '../common/crypto';
 import { checkRateLimit } from '../common/rate-limit.guard';
 import { NewsService } from './news.service';
-import { PACKAGE_EXAMPLE, PACKAGE_FORMAT, aiInstructions, checkPackage, pickPosts, statusOf, withPostImages, type Check, type ImageRef, type NormalizedPost, type PackageReport, type PostReport } from './import-format';
+import { PACKAGE_EXAMPLE, PACKAGE_FORMAT, aiInstructions, checkPackage, pickPosts, statusOf, withPostImages, withPostVideos, type Check, type ImageRef, type NormalizedPost, type PackageReport, type PostReport } from './import-format';
 import type { ChatPromptDto, ImportCheckDto, ImportDto, InboxDto } from './dto';
 import { buildChatGptPrompt, type PromptPage } from './chatgpt-prompt';
 
@@ -207,7 +207,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
   async check(workspaceId: string, brandId: string, dto: ImportCheckDto) {
     await this.brand(workspaceId, brandId);
     const inbox = await this.prisma.contentInbox.findUnique({ where: { brandId }, select: { pageId: true } });
-    return this.enrich(workspaceId, brandId, checkPackage(withPostImages(dto.text, dto.postImages), this.checkOpts), { defaultPageId: dto.pageId ?? inbox?.pageId ?? null, files: { uploads: dto.files ?? {} } });
+    return this.enrich(workspaceId, brandId, checkPackage(withPostVideos(withPostImages(dto.text, dto.postImages), dto.postVideos), this.checkOpts), { defaultPageId: dto.pageId ?? inbox?.pageId ?? null, files: { uploads: dto.files ?? {} } });
   }
 
   /** ตรวจกับ DB: เพจ, ซ้ำกับของเดิม/ในแพ็กเกจเดียวกัน, ไฟล์แนบมีจริง */
@@ -218,6 +218,8 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     const uploadIds = [...new Set(rep.posts.flatMap(p => p.post?.images ?? []).map(i => i.kind === 'upload' ? i.id : i.kind === 'file' ? o.files.uploads[i.name] : undefined).filter((x): x is string => !!x))];
     const uploads = new Set((uploadIds.length ? await this.prisma.mediaAsset.findMany({ where: { id: { in: uploadIds }, workspaceId, kind: 'upload' }, select: { id: true } }) : []).map(a => a.id));
     const driveNames = new Set((o.files.drive?.files ?? []).map(f => f.name));
+    const videoIds = [...new Set(rep.posts.map(p => p.post?.video).filter((x): x is string => !!x))];
+    const videos = new Set((videoIds.length ? await this.prisma.mediaAsset.findMany({ where: { id: { in: videoIds }, workspaceId, kind: 'video' }, select: { id: true } }) : []).map(a => a.id));
     const out: StoredPost[] = [];
     for (const r of rep.posts) {
       const s: StoredPost = { ...r, checks: [...r.checks] };
@@ -234,6 +236,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
         const dup = await this.prisma.newsItem.findFirst({ where: { brandId, OR: [{ urlHash, contentId: { not: null } }, { titleHash, contentId: { not: null }, fetchedAt: { gte: since } }] }, select: { id: true } });
         if (dup || seenUrl.has(urlHash) || seenTitle.has(titleHash)) add({ level: 'error', code: 'DUPLICATE', message: 'ซ้ำกับโพสต์ที่มีอยู่แล้ว (ที่มาหรือหัวข้อเดียวกันภายใน 14 วัน)' });
         seenUrl.add(urlHash); seenTitle.add(titleHash);
+        if (p.video && !videos.has(p.video)) add({ level: 'error', code: 'VIDEO_MISSING', message: 'ไม่พบคลิปที่อัปโหลด — อัปโหลดคลิปของหัวข้อนี้ใหม่' });
         for (const img of p.images) {
           if (img.kind === 'upload' && !uploads.has(img.id)) add({ level: 'error', code: 'UPLOAD_MISSING', message: `ไม่พบไฟล์อัปโหลด ${img.id}` });
           if (img.kind === 'file' && !(o.files.uploads[img.name] && uploads.has(o.files.uploads[img.name]!)) && !driveNames.has(img.name)) add({ level: 'error', code: 'FILE_MISSING', message: `อ้างรูป "${img.name}" แต่ไม่ได้แนบไฟล์นี้มาด้วย` });
@@ -257,7 +260,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
   // ---------- นำเข้า ----------
   async importPaste(workspaceId: string, userId: string, brandId: string, dto: ImportDto, requestId: string) {
     await this.brand(workspaceId, brandId);
-    return this.importPackage({ workspaceId, userId, brandId, channel: 'paste', input: pickPosts(withPostImages(dto.text, dto.postImages), dto.include), fileName: dto.fileName ?? null, pageId: dto.pageId, theme: dto.theme, imageFallback: dto.imageFallback, cardMode: dto.cardMode, draft: dto.draft, files: { uploads: dto.files ?? {} }, requestId });
+    return this.importPackage({ workspaceId, userId, brandId, channel: 'paste', input: pickPosts(withPostVideos(withPostImages(dto.text, dto.postImages), dto.postVideos), dto.include), fileName: dto.fileName ?? null, pageId: dto.pageId, theme: dto.theme, imageFallback: dto.imageFallback, cardMode: dto.cardMode, draft: dto.draft, files: { uploads: dto.files ?? {} }, requestId });
   }
 
   /** ปลายทางสาธารณะ POST /inbox/content — ยืนยันตัวด้วยคีย์ของแบรนด์ (Bearer) */
@@ -332,6 +335,16 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     const notes = { import: { importId: row.id, index, channel: row.channel, fileName: row.fileName }, news: url ? { url, source } : undefined, risk: p.risk, riskReasons: p.riskReasons, needsCheck: p.needsCheck, suggestedAt: p.scheduleAt, ...(p.angle && { angle: p.angle }) };
     const content = await this.content.create(workspaceId, userId, { pageId: page.id, contentType: 'post', title: p.title.slice(0, 120), caption, hashtags: p.hashtags, mediaBrief: `การ์ด: ${p.card.headline}`, mediaPaths: [], objective: 'engagement', contentPillar: p.category?.slice(0, 60) ?? (p.type === 'news' ? 'ข่าว' : 'นำเข้า') }, requestId, { provider: 'import', model: row.channel, promptVersion: IMPORT_PROMPT, notes });
 
+    // Reels: คลิปที่อัปโหลดไว้ → โพสต์เป็นคลิป ไม่ทำการ์ด/รูป/ภาพคลังฟรี
+    if (p.video) {
+      const v = await this.prisma.mediaAsset.findFirst({ where: { id: p.video, workspaceId, kind: 'video' }, select: { id: true, path: true } });
+      if (!v) throw new Error('ไม่พบคลิปที่อัปโหลด');
+      await this.prisma.mediaAsset.update({ where: { id: v.id }, data: { contentId: content.id } });
+      await this.prisma.contentItem.update({ where: { id: content.id }, data: { contentType: 'reel', mediaPaths: [v.path], mediaBrief: p.videoIdea ? `ไอเดียคลิป: ${p.videoIdea}`.slice(0, 2000) : content.mediaBrief, ...(caption !== content.caption && { caption }) } });
+      await this.content.submit(workspaceId, userId, content.id, requestId);
+      return this.linkNewsItem(workspaceId, userId, row, index, p, content.id, url, urlHash, titleHash, source, { pageId: page.id, reel: true }, requestId);
+    }
+
     // รูป: ลิงก์ (ดาวน์โหลดกัน SSRF) / ไฟล์อัปโหลด / ไฟล์ในโฟลเดอร์ Drive
     const imageErrors: string[] = []; const photos: { path: string; bytes: Buffer; mime: string; credit?: string }[] = [];
     for (const img of p.images) {
@@ -355,14 +368,19 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     else if (caption !== content.caption) await this.prisma.contentItem.update({ where: { id: content.id }, data: { caption } });
     await this.content.submit(workspaceId, userId, content.id, requestId);
 
-    // ผูกกับกล่องข่าว (ข่าวเดิมจาก RSS ที่ยังไม่เขียน → ใช้แถวเดิม) ให้ขึ้นแท็บ "เขียนแล้ว" และใช้กันซ้ำ
+    const linked = await this.linkNewsItem(workspaceId, userId, row, index, p, content.id, url, urlHash, titleHash, source, { pageId: page.id, images: photos.length, imageErrors: imageErrors.length, cardError: !!cardError }, requestId);
+    return { ...linked, ...(imageErrors.length && { imageErrors }), cardError };
+  }
+
+  /** ผูกกับกล่องข่าว (ข่าวเดิมจาก RSS ที่ยังไม่เขียน → ใช้แถวเดิม) ให้ขึ้นแท็บ "เขียนแล้ว" และใช้กันซ้ำ + audit */
+  private async linkNewsItem(workspaceId: string, userId: string, row: { id: string; brandId: string; channel: string; fileName: string | null }, index: number, p: NormalizedPost, contentId: string, url: string, urlHash: string, titleHash: string, source: string | null, extra: Record<string, unknown>, requestId: string): Promise<PostResult> {
     const angle = { headlineTh: p.card.headline, why: `นำเข้าจาก ${CHANNEL_LABEL[row.channel] ?? row.channel}${row.fileName ? ` · ${row.fileName}` : ''}`, category: p.category ?? (p.type === 'news' ? 'ข่าว' : 'โพสต์ของเพจ'), risk: p.risk, riskReasons: p.riskReasons, imported: true };
     const existing = await this.prisma.newsItem.findUnique({ where: { brandId_urlHash: { brandId: row.brandId, urlHash } }, select: { id: true } });
     const item = existing
-      ? await this.prisma.newsItem.update({ where: { id: existing.id }, data: { status: 'DRAFTED', contentId: content.id, angle }, select: { id: true } })
-      : await this.prisma.newsItem.create({ data: { workspaceId, brandId: row.brandId, url, urlHash, titleHash, title: p.title.slice(0, 300), snippet: p.caption.slice(0, 300), sourceName: source ?? 'นำเข้า', status: 'DRAFTED', score: null, angle, contentId: content.id }, select: { id: true } });
-    await this.audit.log({ workspaceId, userId, action: 'content_import.draft', resourceType: 'contentItem', resourceId: content.id, after: { importId: row.id, index, pageId: page.id, images: photos.length, imageErrors: imageErrors.length, cardError: !!cardError, risk: p.risk, needsCheck: p.needsCheck.length }, requestId });
-    return { contentId: content.id, newsItemId: item.id, ...(imageErrors.length && { imageErrors }), cardError };
+      ? await this.prisma.newsItem.update({ where: { id: existing.id }, data: { status: 'DRAFTED', contentId: contentId, angle }, select: { id: true } })
+      : await this.prisma.newsItem.create({ data: { workspaceId, brandId: row.brandId, url, urlHash, titleHash, title: p.title.slice(0, 300), snippet: p.caption.slice(0, 300), sourceName: source ?? 'นำเข้า', status: 'DRAFTED', score: null, angle, contentId: contentId }, select: { id: true } });
+    await this.audit.log({ workspaceId, userId, action: 'content_import.draft', resourceType: 'contentItem', resourceId: contentId, after: { importId: row.id, index, ...extra, risk: p.risk, needsCheck: p.needsCheck.length }, requestId });
+    return { contentId, newsItemId: item.id };
   }
 
   private async loadImage(workspaceId: string, userId: string, contentId: string, img: ImageRef, fs: FileSource): Promise<{ path: string; bytes: Buffer; mime: string; credit?: string }> {

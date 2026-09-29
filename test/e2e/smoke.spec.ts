@@ -5,6 +5,7 @@
  */
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { startMockGraph } from '../../packages/facebook-core/dist/mock-graph.js';
+import { fakeMp4 } from '../../packages/facebook-core/dist/video.js';
 import { startMockYouTube } from '../../packages/youtube-core/dist/mock-youtube.js';
 import { startMockAi } from '../../packages/ai-core/dist/mock-ai.js';
 import { MOCK_WP_APP_PASSWORD, MOCK_WP_USER, startMockWeb } from '../../packages/web-core/dist/mock-web.js';
@@ -156,6 +157,37 @@ test('ChatGPT batch: build prompt → paste result → per-topic image + times �
   const [a, b] = mine.sort((x, y) => x.scheduledAt.localeCompare(y.scheduledAt));
   expect(new Date(b!.scheduledAt).getTime() - new Date(a!.scheduledAt).getTime()).toBe(24 * 3_600_000);   // วันละ 1 โพสต์
   expect(graph.state.published.length).toBe(before);   // ยังไม่โพสต์จนถึงเวลา
+});
+
+test('ChatGPT batch in Reels mode: prompt with clip script → attach a clip per topic → import and schedule as a Reel', async ({ page }) => {
+  await login(page);
+  await page.goto('/news');
+  await page.getByLabel('รูปแบบโพสต์').selectOption('reel');
+  await page.getByLabel('จำนวนหัวข้อ').fill('2');
+  await page.getByRole('button', { name: /สร้างคำสั่ง \+ คัดลอก/ }).click();
+  await page.getByText('ดูคำสั่งที่สร้าง').click();
+  await expect(page.locator('textarea[readonly]')).toHaveValue(/Reels[\s\S]*videoIdea/);
+  const reel = (title: string) => ({ type: 'original', title, caption: `🎬 ${title}\n\nทำตามได้ใน 30 วินาที\n\n💬 ลองแล้วบอกกันนะ`, hashtags: ['reels'], images: [], videoIdea: '0–3 วิ: ช็อตเปิดพร้อมข้อความบนจอ' });
+  await page.getByPlaceholder(/วางคำตอบของ ChatGPT/).fill('```json\n' + JSON.stringify({ format: 'fbpm-content-v1', posts: [reel(`คลิปทำความสะอาด ${stamp}`), reel(`คลิปจัดบ้าน ${stamp}`)] }) + '\n```');
+  await page.getByRole('button', { name: 'ตรวจและแยกหัวข้อ' }).click();
+  await expect(page.getByText('พบ 2 หัวข้อ')).toBeVisible();
+  // ยังไม่มีคลิป = นำเข้าไม่ได้
+  await expect(page.getByText('แนบคลิปก่อนถึงจะนำเข้าได้')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /นำเข้า 0 · ตั้งเวลาแล้ว 0/ })).toBeDisabled();
+  const first = page.locator('li', { hasText: `1. คลิปทำความสะอาด ${stamp}` });
+  await first.locator('input[type=file]').setInputFiles({ name: 'clip-1.mp4', mimeType: 'video/mp4', buffer: fakeMp4({ durationSec: 25, padBytes: 2048 }) });
+  await expect(first.getByText(/clip-1\.mp4 · 25 วินาที/)).toBeVisible();
+  await expect(first.locator('video')).toBeVisible();
+  await first.getByText('ไอเดีย/สคริปต์คลิป').click(); await expect(first.getByText('0–3 วิ: ช็อตเปิดพร้อมข้อความบนจอ')).toBeVisible();
+  await page.getByRole('button', { name: 'กระจายเวลาให้ทุกหัวข้อ' }).click();
+  const before = graph.state.reels.length;
+  page.once('dialog', d => void d.accept());
+  await page.getByRole('button', { name: /นำเข้า 1 · ตั้งเวลาแล้ว 1/ }).click();
+  await expect(page.getByText(/นำเข้า 1\/1 · ตั้งเวลาแล้ว 1/)).toBeVisible({ timeout: 30_000 });
+  const items = await api(page.request, 'GET', `/workspaces/${ws}/content?status=SCHEDULED`) as { title: string; contentType: string; mediaPaths: string[] }[];
+  const mine = items.find(i => i.title === `คลิปทำความสะอาด ${stamp}`)!;
+  expect(mine.contentType).toBe('reel'); expect(mine.mediaPaths[0]).toMatch(/\.mp4$/);
+  expect(graph.state.reels.length).toBe(before);   // ยังไม่โพสต์จนถึงเวลา
 });
 
 test('YouTube: connect via pasted refresh token (mock Google), channel and videos appear, analytics charts render', async ({ page }) => {

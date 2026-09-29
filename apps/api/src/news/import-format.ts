@@ -39,6 +39,10 @@ const postIn = z.object({
   dedupeKey: z.string().trim().min(3).max(300).optional(),
   /** มุมที่โพสต์นี้เพิ่มจากแหล่งต้นทาง (คำสั่ง ChatGPT แบบเจาะลึก) — ให้คนตรวจดูคุณภาพ ไม่ลงในโพสต์ */
   angle: z.string().trim().max(400).optional(),
+  /** คลิป Reels ที่อัปโหลดไว้ ("upload:<id>" จาก POST media/videos) — มีแล้วโพสต์เป็น Reels ไม่ทำการ์ด/รูป */
+  video: z.string().trim().regex(/^upload:[\w-]{1,40}$/, 'video ต้องเป็น upload:<id> ของคลิปที่อัปโหลดในระบบ').optional(),
+  /** ไอเดียคลิป (ฉาก/ช็อต/ข้อความบนจอ) ให้เจ้าของเพจใช้ถ่ายทำ — ไม่ลงในโพสต์ */
+  videoIdea: z.string().trim().max(2000).optional(),
 });
 export type PostIn = z.infer<typeof postIn>;
 
@@ -49,7 +53,7 @@ export interface NormalizedPost {
   type: 'news' | 'original'; page?: string; title: string; caption: string; hashtags: string[];
   sources: { name: string; url: string }[]; card: { kicker?: string; headline: string; sub?: string };
   images: ImageRef[]; imageCredit?: string; photoQuery?: string; imagePrompt?: string; category?: string;
-  scheduleAt: string | null; risk: 'LOW' | 'HIGH'; riskReasons: string[]; needsCheck: string[]; dedupeKey?: string; angle?: string;
+  scheduleAt: string | null; risk: 'LOW' | 'HIGH'; riskReasons: string[]; needsCheck: string[]; dedupeKey?: string; angle?: string; video?: string; videoIdea?: string;
 }
 export interface PostReport { index: number; status: 'PASS' | 'WARN' | 'FAIL'; title: string; checks: Check[]; post: NormalizedPost | null }
 export interface PackageReport { format: string | null; parseError: string | null; posts: PostReport[] }
@@ -98,6 +102,14 @@ function imageRef(v: z.infer<typeof imageIn>, credit: string | undefined, allowH
  * แพ็กเกจอ่านไม่ได้ → คืนค่าเดิมให้ checkPackage รายงานข้อผิดพลาดเอง
  */
 export function withPostImages(input: unknown, images: Record<string, string> | undefined): unknown {
+  return setPerPost(input, images, (p, id) => { p.images = [`upload:${id}`]; });
+}
+/** ผูกคลิป Reels ที่อัปโหลดรายหัวข้อ (index → id จาก POST media/videos) */
+export function withPostVideos(input: unknown, videos: Record<string, string> | undefined): unknown {
+  return setPerPost(input, videos, (p, id) => { p.video = `upload:${id}`; p.images = []; });
+}
+function setPerPost(input: unknown, map: Record<string, string> | undefined, apply: (p: Record<string, unknown>, id: string) => void): unknown {
+  const images = map;
   if (!images || !Object.keys(images).length) return input;
   let doc: unknown;
   try { doc = JSON.parse(JSON.stringify(typeof input === 'string' ? extractJson(input) : input)); } catch { return input; }
@@ -105,7 +117,7 @@ export function withPostImages(input: unknown, images: Record<string, string> | 
   try { posts = postsOf(doc).posts; } catch { return input; }
   for (const [k, id] of Object.entries(images)) {
     const p = posts[Number(k)];
-    if (p && typeof p === 'object' && /^\d+$/.test(k)) (p as Record<string, unknown>).images = [`upload:${id}`];
+    if (p && typeof p === 'object' && /^\d+$/.test(k)) apply(p as Record<string, unknown>, id);
   }
   return doc;
 }
@@ -182,7 +194,7 @@ export function checkPost(raw: unknown, index: number, o: CheckOptions = {}): Po
     type: p.type, ...(p.page && { page: p.page }), title: (p.title || headline).slice(0, 200), caption, hashtags: hashtags.slice(0, 5), sources,
     card: { ...(p.card?.kicker && { kicker: p.card.kicker.slice(0, 24) }), headline: headline.slice(0, 90), ...(p.card?.sub && { sub: p.card.sub.slice(0, 140) }) },
     images, ...(p.imageCredit && { imageCredit: p.imageCredit }), ...(p.photoQuery && { photoQuery: p.photoQuery }), ...(p.imagePrompt && { imagePrompt: p.imagePrompt }), ...(p.category && { category: p.category }),
-    scheduleAt, risk: p.risk ?? 'LOW', riskReasons: p.riskReasons, needsCheck, ...(p.dedupeKey && { dedupeKey: p.dedupeKey }), ...(p.angle && { angle: p.angle }),
+    scheduleAt, risk: p.risk ?? 'LOW', riskReasons: p.riskReasons, needsCheck, ...(p.dedupeKey && { dedupeKey: p.dedupeKey }), ...(p.angle && { angle: p.angle }), ...(p.video && { video: p.video.slice('upload:'.length) }), ...(p.videoIdea && { videoIdea: p.videoIdea }),
   };
   return { index, status: statusOf(checks), title: post.title, checks, post };
 }

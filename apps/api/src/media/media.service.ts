@@ -2,10 +2,14 @@
  * Media Service (§63) — สร้างการ์ดภาพจากเทมเพลตด้วย Chromium (ไม่ผูกกับผู้ให้บริการสร้างภาพรายใด), เก็บไฟล์ใน MEDIA_DIR, บันทึก MediaAsset
  * ไฟล์ที่ได้ใช้เป็น mediaPaths ของคอนเทนต์ → publisher อัปโหลดให้ Facebook เอง
  */
-import { existsSync, mkdirSync, statSync } from 'node:fs';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { createWriteStream, existsSync, mkdirSync, statSync } from 'node:fs';
+import { randomBytes, createHash } from 'node:crypto';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { inspectVideo, reelProblems, sniffVideo } from '@fbpm/facebook-core';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@fbpm/database';
 import { contentInWorkspace } from '@fbpm/database';
 import { PRISMA } from '../database/prisma.service';
@@ -71,6 +75,58 @@ export class MediaService {
 
   async list(workspaceId: string, contentId?: string) {
     return this.prisma.mediaAsset.findMany({ where: { workspaceId, ...(contentId && { contentId }) }, orderBy: { createdAt: 'desc' }, take: 100, select: ASSET_SELECT });
+  }
+
+  /**
+   * คลิป Reels: สตรีมลงดิสก์ (ไม่เก็บทั้งไฟล์ในหน่วยความจำ) → ตรวจหัวไฟล์ MP4/MOV + ความยาว 3–90 วิ → MediaAsset kind "video"
+   * ไฟล์ที่ไม่ผ่านถูกลบทันที · path อยู่ใต้ MEDIA_DIR/<workspace> เสมอ (publisher ยอมอ่านเฉพาะในโฟลเดอร์นี้)
+   */
+  async uploadVideo(workspaceId: string, userId: string, name: string, body: NodeJS.ReadableStream, declaredBytes: number) {
+    const max = this.env.REELS_MAX_MB * 1048576;
+    if (declaredBytes > max) throw new BadRequestException(`คลิปใหญ่เกิน ${this.env.REELS_MAX_MB} MB`);
+    const dir = resolve(this.env.MEDIA_DIR, workspaceId); mkdirSync(dir, { recursive: true });
+    const tmp = join(dir, `video-${Date.now()}-${randomBytes(4).toString('hex')}.part`);
+    const hash = createHash('sha256'); let total = 0; let head = Buffer.alloc(0);
+    const guard = new Transform({ transform(chunk: Buffer, _e, cb) {
+      total += chunk.byteLength;
+      if (total > max) return cb(new BadRequestException(`คลิปใหญ่เกิน ${Math.round(max / 1048576)} MB`));
+      if (head.length < 12) head = Buffer.concat([head, chunk]).subarray(0, 12);
+      hash.update(chunk); cb(null, chunk);
+    } });
+    try { await pipeline(body, guard, createWriteStream(tmp)); }
+    catch (e) { await rm(tmp, { force: true }); throw e instanceof BadRequestException ? e : new BadRequestException('อัปโหลดคลิปไม่สำเร็จ ลองใหม่อีกครั้ง'); }
+    const kind = sniffVideo(head);
+    if (!kind || total === 0) { await rm(tmp, { force: true }); throw new BadRequestException('ไฟล์นี้ไม่ใช่คลิป MP4/MOV'); }
+    const info = await inspectVideo(tmp).catch(() => null);
+    const problems = info ? reelProblems(info) : { errors: [], warnings: ['อ่านข้อมูลคลิปไม่ได้ — ตรวจว่าเป็นแนวตั้งและยาว 3–90 วินาที'] };
+    if (problems.errors.length) { await rm(tmp, { force: true }); throw new UnprocessableEntityException(problems.errors.join(' · ')); }
+    const path = tmp.replace(/\.part$/, kind === 'mov' ? '.mov' : '.mp4');
+    await rename(tmp, path);
+    const a = await this.prisma.mediaAsset.create({ data: { workspaceId, kind: 'video', path, mimeType: kind === 'mov' ? 'video/quicktime' : 'video/mp4', bytes: total, width: info?.width ?? null, height: info?.height ?? null, sha256: hash.digest('hex'), meta: { name: name.slice(0, 200), durationSec: info?.durationSec ?? null, warnings: problems.warnings } as Prisma.InputJsonValue, createdById: userId }, select: { id: true } });
+    return { id: a.id, name, path, bytes: total, durationSec: info?.durationSec ?? null, width: info?.width ?? null, height: info?.height ?? null, warnings: problems.warnings };
+  }
+
+  /** แนบคลิปที่อัปโหลดแล้วเข้ากับคอนเทนต์ → เป็น Reels (แทนรูปเดิม) — ทำได้ก่อนอนุมัติเท่านั้น (อนุมัติแล้วต้อง "กลับไปแก้" ก่อน) */
+  async attachVideo(workspaceId: string, userId: string, contentId: string, assetId: string, requestId: string) {
+    const c = await this.prisma.contentItem.findFirst({ where: { id: contentId, ...contentInWorkspace(workspaceId) }, select: { id: true, status: true, platform: true, pageId: true } });
+    if (!c) throw new NotFoundException('ไม่พบคอนเทนต์');
+    if (!c.pageId) throw new UnprocessableEntityException('แนบคลิป Reels ได้เฉพาะคอนเทนต์ของเพจ Facebook');
+    if (!['PLANNED', 'IDEA', 'DRAFT', 'NEEDS_REVISION', 'READY_FOR_APPROVAL'].includes(c.status)) throw new UnprocessableEntityException('คอนเทนต์นี้อนุมัติ/ตั้งเวลาแล้ว — กด "กลับไปแก้" ก่อนเปลี่ยนคลิป');
+    const a = await this.prisma.mediaAsset.findFirst({ where: { id: assetId, workspaceId, kind: 'video' }, select: { id: true, path: true } });
+    if (!a) throw new NotFoundException('ไม่พบคลิป');
+    await this.prisma.$transaction([
+      this.prisma.mediaAsset.update({ where: { id: a.id }, data: { contentId } }),
+      this.prisma.contentItem.update({ where: { id: contentId }, data: { contentType: 'reel', mediaPaths: [a.path] } }),
+    ]);
+    await this.audit.log({ workspaceId, userId, action: 'content.video.attach', resourceType: 'contentItem', resourceId: contentId, after: { assetId: a.id }, requestId });
+    return { ok: true };
+  }
+
+  /** path ของไฟล์สำหรับส่งแบบสตรีม (คลิป — รองรับ Range ให้ <video> เลื่อนดูได้) */
+  async filePath(workspaceId: string, id: string): Promise<{ path: string; mimeType: string }> {
+    const a = await this.prisma.mediaAsset.findFirst({ where: { id, workspaceId }, select: { path: true, mimeType: true } });
+    if (!a || !existsSync(a.path)) throw new NotFoundException('ไม่พบไฟล์');
+    return { path: resolve(a.path), mimeType: a.mimeType };
   }
 
   async file(workspaceId: string, id: string): Promise<{ buffer: Buffer; mimeType: string }> {

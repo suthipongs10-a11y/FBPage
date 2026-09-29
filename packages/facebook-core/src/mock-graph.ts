@@ -22,6 +22,9 @@ export interface MockState {
   denyMessaging: boolean;
   /** จำลองการโพสต์ล้ม: http 400 + code = Facebook ปฏิเสธชัดเจน · http 500/0 = ไม่รู้ผล */
   feedError: { status: number; code: number; message: string } | null;
+  /** Reels: คลิปที่อัปโหลด (start → rupload → finish) · reelError = ขั้นที่ให้ล้ม */
+  reels: { pageId: string; videoId: string; bytes: number; description: string | null; published: boolean }[];
+  reelError: { phase: 'start' | 'upload' | 'finish'; status: number; code: number; message: string } | null;
   rateLimitNext: number;                     // จำนวนคำขอถัดไปที่จะตอบ code 4
   published: { pageId: string; body: Record<string, string> }[];
   requests: string[];
@@ -47,14 +50,15 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
         { id: 'c3', message: 'รับสมัครงานออนไลน์ รายได้ดี ทักมา', created_time: new Date(Date.now() - 1000_000).toISOString(), from: { id: 'u_c', name: 'spam' } },
       ],
       '111_2': [],
-    }, replies: [], likes: [], privateReplies: [], denyMessaging: false, feedError: null,
+    }, replies: [], likes: [], privateReplies: [], denyMessaging: false, feedError: null, reels: [], reelError: null,
   };
   const err = (res: import('node:http').ServerResponse, code: number, message: string, status = 400, type = 'OAuthException') => {
     res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message, code, type } }));
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
-    let body = ''; for await (const c of req) body += c;
+    const chunks: Buffer[] = []; for await (const c of req) chunks.push(Buffer.from(c)); const raw = Buffer.concat(chunks);
+    const body = raw.toString('utf8');
     const params = new URLSearchParams(url.search);
     if (body && !req.headers['content-type']?.includes('multipart')) for (const [k, v] of new URLSearchParams(body)) params.set(k, v);
     let token = params.get('access_token') ?? '';
@@ -64,6 +68,17 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
     if (state.rateLimitNext > 0) { state.rateLimitNext--; return err(res, 4, 'Application request limit reached', 400); }
     const ok = (data: unknown) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); };
     const pageByToken = Object.entries(state.pageTokens).find(([, t]) => t === token)?.[0];
+
+    // Reels ขั้นอัปโหลดไฟล์ (rupload): token มาใน header Authorization: OAuth <page token>
+    const vu = path.match(/^\/?video-upload\/v[\d.]+\/(\w+)$/);
+    if (vu && req.method === 'POST') {
+      const owner = Object.entries(state.pageTokens).find(([, t]) => `OAuth ${t}` === req.headers.authorization)?.[0];
+      const reel = state.reels.find(r => r.videoId === vu[1]);
+      if (!owner || !reel || reel.pageId !== owner) return err(res, 190, 'Invalid OAuth access token', 401);
+      if (state.reelError?.phase === 'upload') return err(res, state.reelError.code, state.reelError.message, state.reelError.status);
+      if (Number(req.headers.file_size) !== raw.length) return err(res, 100, 'file_size mismatch', 400);
+      reel.bytes = raw.length; return ok({ success: true });
+    }
 
     if (path === 'oauth/access_token') {
       if (params.get('code') === 'GOOD') return ok({ access_token: 'SHORT_OK', token_type: 'bearer', expires_in: 5000 });
@@ -115,6 +130,14 @@ export async function startMockGraph(port = 0): Promise<{ server: Server; url: s
         if (state.privateReplies.some(r => r.commentId === recipient.comment_id)) return err(res, 10, '(#10) This comment has already been replied to privately (only once)', 400, 'OAuthException');
         state.privateReplies.push({ pageId, commentId: recipient.comment_id, text: message.text ?? '' });
         return ok({ recipient_id: `psid_${recipient.comment_id}`, message_id: `m_${state.privateReplies.length}` });
+      }
+      if (edge === 'video_reels' && req.method === 'POST') {
+        const phase = params.get('upload_phase');
+        if (state.reelError?.phase === phase) return err(res, state.reelError.code, state.reelError.message, state.reelError.status);
+        if (phase === 'start') { const videoId = `rv_${state.reels.length + 1}`; state.reels.push({ pageId, videoId, bytes: 0, description: null, published: false }); return ok({ video_id: videoId, upload_url: `http://${req.headers.host}/video-upload/v26.0/${videoId}` }); }
+        const reel = state.reels.find(r => r.videoId === params.get('video_id') && r.pageId === pageId);
+        if (phase === 'finish' && reel) { if (!reel.bytes) return err(res, 100, 'Video not uploaded', 400); reel.published = params.get('video_state') === 'PUBLISHED'; reel.description = params.get('description'); return ok({ success: true }); }
+        return err(res, 100, 'Invalid upload_phase', 400);
       }
       if (edge === 'photos') { state.published.push({ pageId, body: Object.fromEntries(params) }); return ok({ id: `ph_${state.published.length}` }); }
     }

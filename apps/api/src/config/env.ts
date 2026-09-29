@@ -74,6 +74,8 @@ export const envSchema = z.object({
   SMTP_ALLOW_INSECURE: z.string().optional().transform(v => v === 'true' || v === '1'),
   /** Media service (§63): โฟลเดอร์เก็บไฟล์ + Chromium สำหรับเรนเดอร์การ์ดภาพ */
   MEDIA_DIR: z.string().min(1).default('./data/media'),
+  /** ขนาดคลิป Reels สูงสุดที่รับอัปโหลด (MB) — nginx ต้องตั้ง client_max_body_size ของเส้นทางอัปโหลดคลิปให้ไม่น้อยกว่านี้ */
+  REELS_MAX_MB: z.coerce.number().int().min(10).max(1024).default(300),
   CHROME_BIN: z.string().trim().optional().transform(v => v || undefined),
 });
 

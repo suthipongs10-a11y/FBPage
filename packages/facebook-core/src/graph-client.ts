@@ -52,6 +52,7 @@ export interface GraphRequest {
 }
 
 export class GraphClient {
+  readonly version: string;
   readonly base: string;
   private readonly fetchImpl: typeof fetch;
   private readonly maxRetries: number;
@@ -59,6 +60,7 @@ export class GraphClient {
 
   constructor(opts: GraphClientOptions = {}) {
     const version = opts.version ?? process.env.META_GRAPH_API_VERSION ?? 'v26.0';
+    this.version = version;
     this.base = (opts.baseUrl ?? 'https://graph.facebook.com').replace(/\/+$/, '') + '/' + version;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.maxRetries = opts.maxRetries ?? 2;
