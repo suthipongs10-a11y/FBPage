@@ -23,8 +23,9 @@ import { MediaGenService } from '../media/media-gen.service';
 import { decryptSecret, encryptSecret } from '../common/crypto';
 import { checkRateLimit } from '../common/rate-limit.guard';
 import { NewsService } from './news.service';
-import { PACKAGE_EXAMPLE, PACKAGE_FORMAT, aiInstructions, checkPackage, statusOf, type Check, type ImageRef, type NormalizedPost, type PackageReport, type PostReport } from './import-format';
-import type { ImportCheckDto, ImportDto, InboxDto } from './dto';
+import { PACKAGE_EXAMPLE, PACKAGE_FORMAT, aiInstructions, checkPackage, pickPosts, statusOf, withPostImages, type Check, type ImageRef, type NormalizedPost, type PackageReport, type PostReport } from './import-format';
+import type { ChatPromptDto, ImportCheckDto, ImportDto, InboxDto } from './dto';
+import { buildChatGptPrompt } from './chatgpt-prompt';
 
 export const IMPORT_PROMPT = 'content-import-v1';
 const TITLE_DEDUPE_DAYS = 14;
@@ -90,6 +91,16 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     await this.brand(workspaceId, brandId);
     const pages = await this.brandPages(workspaceId, brandId);
     return { format: PACKAGE_FORMAT, example: PACKAGE_EXAMPLE, instructions: aiInstructions(pages.map(p => p.name)) };
+  }
+
+  /** คำสั่งสำหรับ ChatGPT ตามที่ผู้ใช้กำหนด (จำนวนหัวข้อ เรื่อง ความยาว อีโมจิ รูป) + ข้อมูลแบรนด์ — ผลกลับมาเป็นแพ็กเกจ fbpm-content-v1 */
+  async chatPrompt(workspaceId: string, brandId: string, dto: ChatPromptDto) {
+    const brand = await this.prisma.brand.findFirst({ where: { id: brandId, ...brandInWorkspace(workspaceId) }, select: { name: true, description: true, industry: true, targetAudience: true, toneOfVoice: true, serviceArea: true, primaryCTA: true, website: true } });
+    if (!brand) throw new NotFoundException('ไม่พบแบรนด์');
+    const pages = await this.brandPages(workspaceId, brandId);
+    const page = dto.pageId ? pages.find(p => p.id === dto.pageId) : pages.length === 1 ? pages[0] : undefined;
+    if (dto.pageId && !page) throw new NotFoundException('ไม่พบเพจในแบรนด์นี้');
+    return { prompt: buildChatGptPrompt(brand, { ...dto, pageName: page?.name ?? null }), pageId: page?.id ?? null };
   }
 
   // ---------- ตั้งค่ากล่องรับ ----------
@@ -166,7 +177,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
   async check(workspaceId: string, brandId: string, dto: ImportCheckDto) {
     await this.brand(workspaceId, brandId);
     const inbox = await this.prisma.contentInbox.findUnique({ where: { brandId }, select: { pageId: true } });
-    return this.enrich(workspaceId, brandId, checkPackage(dto.text, this.checkOpts), { defaultPageId: dto.pageId ?? inbox?.pageId ?? null, files: { uploads: dto.files ?? {} } });
+    return this.enrich(workspaceId, brandId, checkPackage(withPostImages(dto.text, dto.postImages), this.checkOpts), { defaultPageId: dto.pageId ?? inbox?.pageId ?? null, files: { uploads: dto.files ?? {} } });
   }
 
   /** ตรวจกับ DB: เพจ, ซ้ำกับของเดิม/ในแพ็กเกจเดียวกัน, ไฟล์แนบมีจริง */
@@ -216,7 +227,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
   // ---------- นำเข้า ----------
   async importPaste(workspaceId: string, userId: string, brandId: string, dto: ImportDto, requestId: string) {
     await this.brand(workspaceId, brandId);
-    return this.importPackage({ workspaceId, userId, brandId, channel: 'paste', input: dto.text, fileName: dto.fileName ?? null, pageId: dto.pageId, theme: dto.theme, imageFallback: dto.imageFallback, draft: dto.draft, files: { uploads: dto.files ?? {} }, requestId });
+    return this.importPackage({ workspaceId, userId, brandId, channel: 'paste', input: pickPosts(withPostImages(dto.text, dto.postImages), dto.include), fileName: dto.fileName ?? null, pageId: dto.pageId, theme: dto.theme, imageFallback: dto.imageFallback, cardMode: dto.cardMode, draft: dto.draft, files: { uploads: dto.files ?? {} }, requestId });
   }
 
   /** ปลายทางสาธารณะ POST /inbox/content — ยืนยันตัวด้วยคีย์ของแบรนด์ (Bearer) */
@@ -237,11 +248,11 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     return this.importPackage({ ...a, channel: 'research', draft: true, files: { uploads: {} } });
   }
 
-  private async importPackage(a: { workspaceId: string; userId: string; brandId: string; channel: Channel; input: unknown; fileName: string | null; externalId?: string; pageId?: string; theme?: string; imageFallback?: string; draft: boolean; files: FileSource; requestId: string }) {
+  private async importPackage(a: { workspaceId: string; userId: string; brandId: string; channel: Channel; input: unknown; fileName: string | null; externalId?: string; pageId?: string; theme?: string; imageFallback?: string; cardMode?: 'auto' | 'photo'; draft: boolean; files: FileSource; requestId: string }) {
     const inbox = await this.prisma.contentInbox.findUnique({ where: { brandId: a.brandId }, select: { pageId: true, theme: true, imageFallback: true } });
     const defaultPageId = a.pageId ?? inbox?.pageId ?? null;
     const rep = await this.enrich(a.workspaceId, a.brandId, checkPackage(a.input, this.checkOpts), { defaultPageId, files: a.files });
-    const row = await this.prisma.contentImport.create({ data: { workspaceId: a.workspaceId, brandId: a.brandId, channel: a.channel, externalId: a.externalId ?? null, fileName: a.fileName, status: rep.parseError ? 'FAILED' : 'CHECKED', postCount: rep.posts.length, report: rep as unknown as Prisma.InputJsonValue, payload: { theme: a.theme ?? inbox?.theme ?? 'dark', imageFallback: a.imageFallback ?? inbox?.imageFallback ?? 'stock', defaultPageId, uploads: a.files.uploads } as Prisma.InputJsonValue, createdById: a.userId }, select: { id: true } });
+    const row = await this.prisma.contentImport.create({ data: { workspaceId: a.workspaceId, brandId: a.brandId, channel: a.channel, externalId: a.externalId ?? null, fileName: a.fileName, status: rep.parseError ? 'FAILED' : 'CHECKED', postCount: rep.posts.length, report: rep as unknown as Prisma.InputJsonValue, payload: { theme: a.theme ?? inbox?.theme ?? 'dark', imageFallback: a.imageFallback ?? inbox?.imageFallback ?? 'stock', cardMode: a.cardMode ?? 'auto', defaultPageId, uploads: a.files.uploads } as Prisma.InputJsonValue, createdById: a.userId }, select: { id: true } });
     await this.audit.log({ workspaceId: a.workspaceId, userId: a.userId, action: 'content_import.receive', resourceType: 'contentImport', resourceId: row.id, after: { channel: a.channel, fileName: a.fileName, posts: rep.posts.length, fail: rep.posts.filter(p => p.status === 'FAIL').length, parseError: !!rep.parseError }, requestId: a.requestId });
     if (a.draft && !rep.parseError) return this.draftImport(a.workspaceId, a.userId, row.id, a.requestId, a.files);
     return this.prisma.contentImport.findUniqueOrThrow({ where: { id: row.id }, select: IMPORT_SELECT });
@@ -252,7 +263,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     const row = await this.prisma.contentImport.findFirst({ where: { id: importId, workspaceId }, select: { id: true, brandId: true, channel: true, fileName: true, status: true, report: true, payload: true } });
     if (!row) throw new NotFoundException('ไม่พบรายการนำเข้า');
     if (row.status === 'DISMISSED') throw new UnprocessableEntityException('รายการนี้ถูกซ่อนแล้ว');
-    const payload = (row.payload ?? {}) as { theme?: string; imageFallback?: string; defaultPageId?: string | null; uploads?: Record<string, string> };
+    const payload = (row.payload ?? {}) as { theme?: string; imageFallback?: string; cardMode?: 'auto' | 'photo'; defaultPageId?: string | null; uploads?: Record<string, string> };
     const fs: FileSource = files ?? { uploads: payload.uploads ?? {} };
     // นำเข้าจาก Drive แล้วกดสร้างร่างทีหลัง → อ่านรายการไฟล์ในโฟลเดอร์ใหม่ (รูปที่อ้างด้วยชื่อไฟล์)
     if (!files && row.channel === 'gdrive') {
@@ -270,7 +281,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     }
     for (const p of posts) {
       if (p.result?.contentId || p.status === 'FAIL' || !p.post || !p.pageId) continue;
-      try { p.result = await this.draftPost(workspaceId, userId, row, p.index, p.post, p.pageId, payload.theme ?? 'dark', payload.imageFallback ?? 'stock', fs, requestId); }
+      try { p.result = await this.draftPost(workspaceId, userId, row, p.index, p.post, p.pageId, payload.theme ?? 'dark', payload.imageFallback ?? 'stock', fs, requestId, payload.cardMode ?? 'auto'); }
       catch (e) { p.result = { error: errMsg(e) }; }
     }
     const drafted = posts.filter(p => p.result?.contentId).length;
@@ -278,7 +289,7 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.contentImport.update({ where: { id: row.id }, data: { status, draftCount: drafted, report: { ...rep, posts } as unknown as Prisma.InputJsonValue }, select: IMPORT_SELECT });
   }
 
-  private async draftPost(workspaceId: string, userId: string, row: { id: string; brandId: string; channel: string; fileName: string | null }, index: number, p: NormalizedPost, pageId: string, theme: string, fallback: string, fs: FileSource, requestId: string): Promise<PostResult> {
+  private async draftPost(workspaceId: string, userId: string, row: { id: string; brandId: string; channel: string; fileName: string | null }, index: number, p: NormalizedPost, pageId: string, theme: string, fallback: string, fs: FileSource, requestId: string, cardMode: 'auto' | 'photo' = 'auto'): Promise<PostResult> {
     const page = await this.prisma.facebookPage.findFirstOrThrow({ where: { id: pageId }, select: { id: true, name: true } });
     const { url, urlHash, titleHash } = this.hashes(p);
     const source = p.sources[0]?.name ?? null;
@@ -306,7 +317,8 @@ export class ContentImportService implements OnModuleInit, OnModuleDestroy {
       catch (e) { imageErrors.push(`ภาพ AI: ${errMsg(e)}`); }
     }
     let cardError: string | null = null;
-    try { await this.media.renderCard(workspaceId, userId, content.id, { template: 'news', data: { theme: theme as never, kicker: p.card.kicker ?? p.category ?? (p.type === 'news' ? 'ข่าว' : page.name.slice(0, 24)), title: p.card.headline, sub: p.card.sub, footer: source ? `ที่มา: ${source}` : undefined, brand: page.name.slice(0, 60), photo, photoLabel }, attach: true }, requestId, { provider: 'import', model: row.channel }); }
+    // cardMode photo + มีรูปของหัวข้อแล้ว = โพสต์รูปนั้นเลย ไม่ทำการ์ดพาดหัวซ้อน
+    if (!(cardMode === 'photo' && photos.length)) try { await this.media.renderCard(workspaceId, userId, content.id, { template: 'news', data: { theme: theme as never, kicker: p.card.kicker ?? p.category ?? (p.type === 'news' ? 'ข่าว' : page.name.slice(0, 24)), title: p.card.headline, sub: p.card.sub, footer: source ? `ที่มา: ${source}` : undefined, brand: page.name.slice(0, 60), photo, photoLabel }, attach: true }, requestId, { provider: 'import', model: row.channel }); }
     catch (e) { cardError = errMsg(e); }
     // การ์ดขึ้นก่อน ตามด้วยรูปเต็มใบ (โพสต์หลายรูป)
     if (photos.length) await this.prisma.contentItem.update({ where: { id: content.id }, data: { mediaPaths: { push: photos.map(x => x.path) }, contentType: 'photo', caption } });

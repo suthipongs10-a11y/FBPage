@@ -124,6 +124,44 @@ run('content import (integration)', () => {
     expect(c3.caption).toContain('ภาพประกอบ: Somsri Camera / Pexels');
   });
 
+  it('ChatGPT: สร้างคำสั่งตามที่กำหนด → วางผล + รูปรายหัวข้อ (โพสต์รูปเลย ไม่ทำการ์ด) → อนุมัติ+ตั้งเวลาทีละหัวข้อ', async () => {
+    const path = `/workspaces/${wsA}/brands/${brandA}/news/import`;
+    const pr = await a.http('POST', `${path}/chat-prompt`, { pageId: pageA, count: 3, topic: 'ทำความสะอาดบ้านหน้าฝน', kind: 'original', length: 'short', emoji: true, images: 'chatgpt' });
+    expect(pr.status).toBe(200);
+    const pageName = (await prisma.facebookPage.findUniqueOrThrow({ where: { id: pageA } })).name;
+    for (const s of ['คัดมา 3 หัวข้อ', 'ทำความสะอาดบ้านหน้าฝน', 'fbpm-content-v1', `"${pageName}"`, 'รูปที่ X']) expect(pr.json.prompt).toContain(s);
+    expect((await a.http('POST', `${path}/chat-prompt`, { count: 0 })).status).toBe(400);
+    expect((await a.http('POST', `${path}/chat-prompt`, { count: 3, apiKey: 'x' })).status).toBe(400);
+    expect((await b.http('POST', `/workspaces/${wsB}/brands/${brandA}/news/import/chat-prompt`, { count: 3 })).status).toBe(404);
+
+    const up = await a.http('POST', `/workspaces/${wsA}/news/import/files?name=chatgpt-1.png`, PNG, { 'content-type': 'image/png' });
+    expect(up.status).toBe(201);
+    const orig = (title: string) => ({ type: 'original', title, caption: `🌧️ ${title} เคล็ดลับง่าย ๆ ที่ทำได้เองที่บ้าน\n\n✅ เปิดหน้าต่างระบายอากาศ\n✅ ซักผ้าปูที่นอนด้วยน้ำร้อน\n\n💬 บ้านไหนเจอปัญหานี้บ้าง?`, hashtags: ['หน้าฝน'], images: [] });
+    const text = '```json\n' + JSON.stringify({ format: 'fbpm-content-v1', posts: [orig(`หัวข้อแรก ${stamp}`), orig(`หัวข้อสอง ${stamp}`)] }) + '\n```';
+    const chk = await a.http('POST', `${path}/check`, { text, pageId: pageA, postImages: { 0: up.json.id } });
+    expect(chk.json.posts.map((p: { status: string }) => p.status)).toEqual(['PASS', 'PASS']);
+    expect((await a.http('POST', `${path}/check`, { text, pageId: pageA, postImages: { 1: 'not-my-upload' } })).json.posts[1].checks.map((c: { code: string }) => c.code)).toContain('UPLOAD_MISSING');
+    // รูปของ workspace อื่นใช้ไม่ได้
+    expect((await b.http('POST', `/workspaces/${wsB}/brands/${brandA}/news/import`, { text, postImages: { 0: up.json.id } })).status).toBe(404);
+
+    const imp = await a.http('POST', path, { text, pageId: pageA, postImages: { 0: up.json.id }, cardMode: 'photo', imageFallback: 'none' });
+    expect(imp.status, imp.text).toBe(200); expect(imp.json.draftCount).toBe(2);
+    const [id0, id1] = imp.json.report.posts.map((p: { result: { contentId: string } }) => p.result.contentId) as [string, string];
+    const asset = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: up.json.id } });
+    const c0 = await prisma.contentItem.findUniqueOrThrow({ where: { id: id0 } });
+    expect(c0.mediaPaths).toEqual([asset.path]); expect(c0.contentType).toBe('photo'); expect(c0.status).toBe('READY_FOR_APPROVAL');
+    expect(asset.contentId).toBe(id0);
+    expect(await prisma.mediaAsset.count({ where: { contentId: id0, kind: 'card' } })).toBe(0);
+    if (chrome) expect((await prisma.contentItem.findUniqueOrThrow({ where: { id: id1 } })).mediaPaths).toHaveLength(1);   // ไม่มีรูป → การ์ดพาดหัวแทน
+
+    const d = new Date(Date.now() + 2 * 86_400_000); const day = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    const s0 = await a.http('POST', `/workspaces/${wsA}/content/${id0}/approve-schedule`, { scheduledLocal: `${day}T09:00`, timezone: 'Asia/Bangkok' });
+    const s1 = await a.http('POST', `/workspaces/${wsA}/content/${id1}/approve-schedule`, { scheduledLocal: `${day}T18:00`, timezone: 'Asia/Bangkok' });
+    expect([s0.status, s1.status], s0.text + s1.text).toEqual([200, 200]);
+    expect([s0.json.status, s1.json.status]).toEqual(['SCHEDULED', 'SCHEDULED']);
+    expect(new Date(s1.json.scheduledAt).getTime() - new Date(s0.json.scheduledAt).getTime()).toBe(9 * 3_600_000);
+  });
+
   it('URL รับไฟล์: คีย์แสดงครั้งเดียว เก็บเป็น hash · ไม่มีคีย์ = 401 · ข้อความ text/plain ได้ · ยกเลิกคีย์แล้วใช้ไม่ได้', async () => {
     const k = await a.http('POST', `/workspaces/${wsA}/brands/${brandA}/news/inbox/key`);
     expect(k.status).toBe(200); expect(k.json.key).toMatch(/^fbin_/);

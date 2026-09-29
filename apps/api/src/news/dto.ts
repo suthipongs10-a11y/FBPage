@@ -1,3 +1,4 @@
+import { PROMPT_IMAGES, PROMPT_KINDS, PROMPT_LENGTHS } from './chatgpt-prompt';
 import { z } from 'zod';
 import { THEME_NAMES } from '../media/card-templates';
 import { modelOverrideSchema } from '../ai/dto';
@@ -60,9 +61,12 @@ export type SuggestSourcesDto = z.infer<typeof suggestSourcesSchema>;
 const themeEnum = z.enum(THEME_NAMES as [string, ...string[]]);
 /** ชื่อไฟล์รูปในแพ็กเกจ → id ของไฟล์ที่อัปโหลดไว้ (POST news/import/files) */
 const filesMap = z.record(z.string().trim().min(1).max(300), z.string().trim().min(1).max(40)).refine(m => Object.keys(m).length <= 60, 'ไฟล์แนบเกิน 60 ไฟล์');
-export const importCheckSchema = z.object({ text: z.string().min(2).max(1_500_000), pageId: z.string().trim().min(1).optional(), files: filesMap.optional() });
+/** รูปรายหัวข้อ: ลำดับโพสต์ (0,1,2…) → id ไฟล์ที่อัปโหลด — แทนรูปในแพ็กเกจของโพสต์นั้น */
+const postImagesMap = z.record(z.string().regex(/^\d{1,2}$/), z.string().trim().min(1).max(40)).refine(m => Object.keys(m).length <= 20, 'รูปรายหัวข้อเกิน 20 รายการ');
+export const importCheckSchema = z.object({ text: z.string().min(2).max(1_500_000), pageId: z.string().trim().min(1).optional(), files: filesMap.optional(), postImages: postImagesMap.optional() });
 export type ImportCheckDto = z.infer<typeof importCheckSchema>;
-export const importSchema = importCheckSchema.extend({ theme: themeEnum.optional(), imageFallback: z.enum(IMAGE_SOURCES).optional(), draft: z.boolean().default(true), fileName: z.string().trim().max(200).optional() });
+/** cardMode: auto = การ์ดพาดหัว + รูป (เดิม) · photo = มีรูปแล้วโพสต์รูปนั้นเลย ไม่ทำการ์ด (รูปจาก ChatGPT ที่ออกแบบมาแล้ว) */
+export const importSchema = importCheckSchema.extend({ theme: themeEnum.optional(), imageFallback: z.enum(IMAGE_SOURCES).optional(), draft: z.boolean().default(true), fileName: z.string().trim().max(200).optional(), cardMode: z.enum(['auto', 'photo']).optional(), include: z.array(z.number().int().min(0).max(19)).min(1).max(20).optional() });
 export type ImportDto = z.infer<typeof importSchema>;
 export const uploadQuerySchema = z.object({ name: z.string().trim().min(1).max(300) });
 export const inboxSchema = z.object({
@@ -142,3 +146,17 @@ export const scoutWriteSchema = z.object({
   writerOverride: modelOverrideSchema.optional(),
 }).default({ count: 1, factCheck: true });
 export type ScoutWriteDto = z.infer<typeof scoutWriteSchema>;
+
+/** ตัวสร้างคำสั่งสำหรับ ChatGPT — docs/CONTENT_IMPORT.md "สร้างคำสั่งให้ ChatGPT" */
+export const chatPromptSchema = z.object({
+  pageId: z.string().trim().min(1).optional(),
+  count: z.number().int().min(1).max(20),
+  topic: z.string().trim().max(1000).optional(),
+  kind: z.enum(PROMPT_KINDS).default('original'),
+  length: z.enum(PROMPT_LENGTHS).default('medium'),
+  emoji: z.boolean().default(true),
+  images: z.enum(PROMPT_IMAGES).default('chatgpt'),
+  recencyDays: z.number().int().min(1).max(365).optional(),
+  extra: z.string().trim().max(1000).optional(),
+}).strict();
+export type ChatPromptDto = z.infer<typeof chatPromptSchema>;

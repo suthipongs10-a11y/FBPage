@@ -4,15 +4,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, apiUpload, type ContentImportRow, type ContentInboxView, type ImportPostReport, type ImportReport, type PageRow } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { Button, Card, Empty, ErrorBox, Field, Input, Pill, Select } from '@/components/ui';
+import { useWorkspace } from '@/components/workspace-context';
+import { ChatGptBatch } from '@/components/chatgpt-batch';
 
-const TABS = ['paste', 'api', 'drive', 'history'] as const;
+const TABS = ['gpt', 'paste', 'api', 'drive', 'history'] as const;
 const FALLBACKS = ['stock', 'ai', 'none'] as const;
 const THEMES = ['dark', 'warm', 'ocean', 'gold', 'forest', 'default'];
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const tone = (s: string) => (s === 'PASS' || s === 'DRAFTED' ? 'ok' : s === 'FAIL' || s === 'FAILED' ? 'bad' : 'warn') as 'ok' | 'bad' | 'warn';
 
 export function ContentImport({ base, brandId, pages, canWrite, canConfigure, onDrafted }: { base: string; brandId: string; pages: PageRow[]; canWrite: boolean; canConfigure: boolean; onDrafted: () => void }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>('paste');
+  const { can } = useWorkspace();
+  const [tab, setTab] = useState<(typeof TABS)[number]>('gpt');
   const [tpl, setTpl] = useState<{ example: unknown; instructions: string } | null>(null);
   const [inbox, setInbox] = useState<ContentInboxView | null>(null);
   const [history, setHistory] = useState<ContentImportRow[] | null>(null);
@@ -60,6 +63,8 @@ export function ContentImport({ base, brandId, pages, canWrite, canConfigure, on
       {notice && <p className="mt-2 text-sm text-emerald-400">✔ {notice}</p>}
       <ErrorBox error={error} />
       <div className="mt-3 flex flex-wrap gap-2">{TABS.map(x => <Button key={x} variant={tab === x ? 'primary' : 'ghost'} onClick={() => setTab(x)}>{t(`imp.tab.${x}` as MessageKey)}{x === 'history' && history?.length ? ` (${history.length})` : ''}</Button>)}</div>
+
+      {tab === 'gpt' && <ChatGptBatch base={base} brandId={brandId} pages={pages} canWrite={canWrite} canSchedule={can('content.approve') && can('content.publish')} onDone={() => { onDrafted(); void load().catch(setError); }} />}
 
       {tab === 'paste' && (
         <div className="mt-3 space-y-2">

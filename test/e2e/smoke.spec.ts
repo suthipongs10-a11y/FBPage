@@ -114,6 +114,35 @@ test('content approval happens in the browser: draft → submit → approve', as
   const fresh = await api(page.request, 'GET', `/workspaces/${ws}/content/${contentId}`); expect(fresh.status).toBe('APPROVED');
 });
 
+test('ChatGPT batch: build prompt → paste result → per-topic image + times → import, approve and schedule (nothing posted yet)', async ({ page }) => {
+  await login(page);
+  await page.goto('/news');
+  await expect(page.getByText('① สร้างคำสั่งสำหรับ ChatGPT')).toBeVisible();
+  await page.getByLabel('จำนวนหัวข้อ').fill('2');
+  await page.getByLabel('เรื่องที่ให้ค้น').fill('ดูแลบ้านหน้าฝน');
+  await page.getByRole('button', { name: /สร้างคำสั่ง \+ คัดลอก/ }).click();
+  await page.getByText('ดูคำสั่งที่สร้าง').click();
+  await expect(page.locator('textarea[readonly]')).toHaveValue(/ดูแลบ้านหน้าฝน[\s\S]*คัดมา 2 หัวข้อ/);
+  const orig = (title: string) => ({ type: 'original', title, caption: `🌧️ ${title}\n\n✅ เปิดหน้าต่างระบายอากาศทุกเช้า\n✅ ซักผ้าปูด้วยน้ำร้อน\n\n💬 บ้านไหนเจอปัญหานี้บ้าง?`, hashtags: ['หน้าฝน'], images: [], imagePrompt: 'cozy clean bedroom on a rainy day' });
+  const answer = 'นี่คือผลลัพธ์ครับ\n```json\n' + JSON.stringify({ format: 'fbpm-content-v1', posts: [orig(`กันเชื้อราหน้าฝน ${stamp}`), orig(`ไรฝุ่นกับภูมิแพ้ ${stamp}`)] }) + '\n```';
+  await page.getByPlaceholder(/วางคำตอบของ ChatGPT/).fill(answer);
+  await page.getByRole('button', { name: 'ตรวจและแยกหัวข้อ' }).click();
+  await expect(page.getByText('พบ 2 หัวข้อ')).toBeVisible();
+  const first = page.locator('li', { hasText: `1. กันเชื้อราหน้าฝน ${stamp}` });
+  await first.locator('input[type=file]').setInputFiles({ name: 'topic-1.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
+  await expect(first.locator('img')).toBeVisible();
+  await expect(first.getByRole('button', { name: /คำสั่งสร้างรูป/ })).toBeVisible();
+  const before = graph.state.published.length;
+  await page.getByRole('button', { name: /นำเข้า \+ อนุมัติ \+ ตั้งเวลา \(2\)/ }).click();
+  await expect(page.getByText(/นำเข้า 2\/2 · ตั้งเวลาแล้ว 2/)).toBeVisible({ timeout: 30_000 });
+  const items = await api(page.request, 'GET', `/workspaces/${ws}/content?status=SCHEDULED`);
+  const mine = (items as { title: string; scheduledAt: string; mediaPaths: string[] }[]).filter(i => i.title.endsWith(String(stamp)));
+  expect(mine.map(i => i.title).sort()).toEqual([`กันเชื้อราหน้าฝน ${stamp}`, `ไรฝุ่นกับภูมิแพ้ ${stamp}`].sort());
+  const [a, b] = mine.sort((x, y) => x.scheduledAt.localeCompare(y.scheduledAt));
+  expect(new Date(b!.scheduledAt).getTime() - new Date(a!.scheduledAt).getTime()).toBe(24 * 3_600_000);   // วันละ 1 โพสต์
+  expect(graph.state.published.length).toBe(before);   // ยังไม่โพสต์จนถึงเวลา
+});
+
 test('YouTube: connect via pasted refresh token (mock Google), channel and videos appear, analytics charts render', async ({ page }) => {
   await login(page);
   const brand = (await api(page.request, 'GET', `/workspaces/${ws}/clients`))[0];

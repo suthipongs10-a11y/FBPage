@@ -91,6 +91,37 @@ function imageRef(v: z.infer<typeof imageIn>, credit: string | undefined, allowH
   return { bad: 'รายการรูปว่าง' };
 }
 
+/**
+ * ผูกรูปที่ผู้ใช้อัปโหลดรายหัวข้อ (index → id จาก POST news/import/files) เข้ากับโพสต์ในแพ็กเกจ แทนรูปเดิมของโพสต์นั้น
+ * แพ็กเกจอ่านไม่ได้ → คืนค่าเดิมให้ checkPackage รายงานข้อผิดพลาดเอง
+ */
+export function withPostImages(input: unknown, images: Record<string, string> | undefined): unknown {
+  if (!images || !Object.keys(images).length) return input;
+  let doc: unknown;
+  try { doc = JSON.parse(JSON.stringify(typeof input === 'string' ? extractJson(input) : input)); } catch { return input; }
+  let posts: unknown[];
+  try { posts = postsOf(doc).posts; } catch { return input; }
+  for (const [k, id] of Object.entries(images)) {
+    const p = posts[Number(k)];
+    if (p && typeof p === 'object' && /^\d+$/.test(k)) (p as Record<string, unknown>).images = [`upload:${id}`];
+  }
+  return doc;
+}
+
+/** เลือกเฉพาะโพสต์ลำดับที่ต้องการ (ผู้ใช้ติ๊กออกบางหัวข้อ) — เรียกหลัง withPostImages เพราะลำดับจะเลื่อน */
+export function pickPosts(input: unknown, include: number[] | undefined): unknown {
+  if (!include) return input;
+  let doc: unknown;
+  try { doc = JSON.parse(JSON.stringify(typeof input === 'string' ? extractJson(input) : input)); } catch { return input; }
+  let posts: unknown[];
+  try { posts = postsOf(doc).posts; } catch { return input; }
+  const keep = new Set(include);
+  const picked = posts.filter((_, i) => keep.has(i));
+  if (Array.isArray(doc)) return picked;
+  const o = doc as Record<string, unknown>;
+  return Array.isArray(o.posts) ? { ...o, posts: picked } : picked;
+}
+
 /** ตรวจโพสต์เดียว (ไม่ใช้ DB) */
 /** allowHttpImages: เฉพาะ test (mock เป็น http) — ใช้งานจริงรูปต้อง https */
 export interface CheckOptions { now?: Date; allowHttpImages?: boolean }

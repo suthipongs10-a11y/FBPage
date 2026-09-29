@@ -13,7 +13,7 @@ import { NewsAutomationService } from './automation.service';
 import { ContentImportService } from './import.service';
 import { ResearchService } from './research.service';
 import { PageScoutService } from './scout.service';
-import { scoutWriteSchema, type ScoutWriteDto, scoutCheckSchema, scoutIdeasSchema, scoutResearchSchema, type ScoutCheckDto, type ScoutIdeasDto, type ScoutResearchDto, researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
+import { chatPromptSchema, type ChatPromptDto, scoutWriteSchema, type ScoutWriteDto, scoutCheckSchema, scoutIdeasSchema, scoutResearchSchema, type ScoutCheckDto, type ScoutIdeasDto, type ScoutResearchDto, researchSchema, researchWriteSchema, type ResearchDto, type ResearchWriteDto, importCheckSchema, importSchema, inboxSchema, uploadQuerySchema, type ImportCheckDto, type ImportDto, type InboxDto, automationSchema, providerQuerySchema, suggestSourcesSchema, type SuggestSourcesDto, nextSlotSchema, type AutomationDto, createSourceSchema, draftSchema, listItemsSchema, searchProviderSchema, shortlistSchema, updateItemSchema, updateSourceSchema, type CreateSourceDto, type DraftDto, type ListItemsDto, type SearchProviderDto, type ShortlistDto, type UpdateSourceDto } from './dto';
 
 @ApiTags('news')
 @Controller('workspaces/:workspaceId')
@@ -66,6 +66,8 @@ export class NewsController {
   // ---- นำเข้าแพ็กเกจจาก AI ภายนอก (fbpm-content-v1) ----
   @Get('brands/:brandId/news/import/template') @RequirePermission('content.read')
   importTemplate(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.template(t.workspaceId, brandId); }
+  @Post('brands/:brandId/news/import/chat-prompt') @HttpCode(200) @RequirePermission('content.read')
+  chatPrompt(@Tenant() t: TenantContext, @Param('brandId') brandId: string, @Body(new ZodPipe(chatPromptSchema)) b: ChatPromptDto) { return this.imports.chatPrompt(t.workspaceId, brandId, b); }
   @Get('brands/:brandId/news/inbox') @RequirePermission('content.read')
   inbox(@Tenant() t: TenantContext, @Param('brandId') brandId: string) { return this.imports.getInbox(t.workspaceId, brandId); }
   @Put('brands/:brandId/news/inbox') @RequirePermission('ai.configure')
