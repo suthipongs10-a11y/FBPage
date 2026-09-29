@@ -1,6 +1,8 @@
 /** YT-3/YT-4/YT-7: Content Lab (§69), lifecycle (§26), agents (§30–39), approval + upload package (§56–62), repurposing (§75–76), BrandInsight (§72) */
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { createWriteStream, mkdirSync, statSync } from 'node:fs';
+import { createWriteStream, mkdirSync, statSync, statfsSync } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import { Transform } from 'node:stream';
 import { join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
@@ -18,7 +20,7 @@ import { localToUtc, isValidTimeZone } from '../content/tz';
 import { QUOTA, QuotaLedger, YT } from './youtube.provider';
 import { statsFromSnapshots } from './videos.service';
 import { rethrowYt } from './errors';
-import type { CreateYtContentDto, IdeasDto, RepurposeDto, ScriptDto, UpdateYtContentDto } from './dto';
+import type { CreateYtContentDto, IdeasDto, QuickUploadDto, RepurposeDto, ScriptDto, UpdateYtContentDto } from './dto';
 
 export const PV = { ideas: 'youtube-topic-opportunity-v1', titles: 'youtube-title-generator-v1', thumb: 'youtube-thumbnail-brief-v1', script: 'youtube-script-v1', seo: 'youtube-seo-v1', review: 'youtube-reviewer-v1', repurpose: 'content-repurpose-v1', insight: 'brand-insight-v1' };
 const SELECT = { id: true, platform: true, youtubeChannelId: true, status: true, ytStatus: true, contentType: true, title: true, caption: true, objective: true, contentPillar: true, scheduledLocal: true, scheduledTz: true, scheduledAt: true, retryCount: true, createdById: true, aiProvider: true, aiModel: true, promptVersion: true, editedByHuman: true, externalPostId: true, publishedAt: true, aiNotes: true, reviewResult: true, lastError: true, createdAt: true, updatedAt: true,
@@ -184,13 +186,23 @@ export class YtContentLabService {
 
   // ---------- Assets (§57) ----------
   /** รับไฟล์วิดีโอ/ภาพปกเป็น stream → MEDIA_DIR → MediaAsset (ตรวจก่อนเข้าคิว) */
-  async storeAsset(workspaceId: string, userId: string, id: string, kind: 'video' | 'thumbnail', fileName: string, mimeType: string, body: Readable, requestId: string) {
+  async storeAsset(workspaceId: string, userId: string, id: string, kind: 'video' | 'thumbnail', fileName: string, mimeType: string, body: Readable, requestId: string, declaredBytes?: number) {
     const c = await this.load(workspaceId, id);
+    if (['UPLOAD_PENDING', 'UPLOADING', 'PROCESSING', 'PUBLISHED', 'SCHEDULED', 'ANALYTICS_PENDING', 'ANALYZED'].includes(c.ytStatus ?? '')) throw new ConflictException(`เปลี่ยนไฟล์ตอนสถานะ ${c.ytStatus} ไม่ได้`);
     const okType = kind === 'video' ? /^video\//.test(mimeType) : /^image\/(jpeg|png|webp)$/.test(mimeType); if (!okType) throw new BadRequestException(`ชนิดไฟล์ ${mimeType} ไม่รองรับสำหรับ ${kind}`);
+    const max = kind === 'video' ? this.env.YOUTUBE_MAX_MB * 1024 * 1024 : 2 * 1024 * 1024;
+    if (declaredBytes && declaredBytes > max) throw new UnprocessableEntityException(kind === 'video' ? `คลิปใหญ่เกิน ${this.env.YOUTUBE_MAX_MB} MB (YOUTUBE_MAX_MB)` : 'ภาพปกต้องไม่เกิน 2MB');
     const dir = resolve(this.env.MEDIA_DIR, workspaceId, 'youtube'); mkdirSync(dir, { recursive: true });
+    // VPS ดิสก์น้อย: ไม่รับไฟล์ถ้าเขียนแล้วดิสก์จะเหลือน้อยกว่า 1GB
+    if (kind === 'video' && declaredBytes) { try { const fs = statfsSync(dir); const free = Number(fs.bavail) * Number(fs.bsize); if (free - declaredBytes < 1024 ** 3) throw new UnprocessableEntityException(`พื้นที่ดิสก์ไม่พอ — เหลือ ${(free / 1024 ** 3).toFixed(1)} GB แต่คลิปใหญ่ ${(declaredBytes / 1024 ** 3).toFixed(2)} GB (ต้องเหลืออย่างน้อย 1 GB หลังเขียนไฟล์)`); } catch (e) { if (e instanceof UnprocessableEntityException) throw e; } }
     const safe = fileName.replace(/[^\w.\-ก-๙]+/g, '_').slice(0, 80); const path = join(dir, `${kind}-${Date.now()}-${safe}`);
-    await pipeline(body, createWriteStream(path));
-    const bytes = statSync(path).size; if (!bytes) throw new BadRequestException('ไฟล์ว่าง'); if (kind === 'thumbnail' && bytes > 2 * 1024 * 1024) throw new BadRequestException('ภาพปกต้องไม่เกิน 2MB');
+    let seen = 0;
+    const guard = new Transform({ transform(chunk: Buffer, _enc, cb) { seen += chunk.length; if (seen > max) cb(new UnprocessableEntityException(kind === 'video' ? `คลิปใหญ่เกิน ${Math.round(max / 1024 / 1024)} MB` : 'ภาพปกต้องไม่เกิน 2MB')); else cb(null, chunk); } });
+    try { await pipeline(body, guard, createWriteStream(path)); } catch (e) { await unlink(path).catch(() => undefined); throw e instanceof UnprocessableEntityException ? e : new BadRequestException(`รับไฟล์ไม่สำเร็จ: ${(e as Error).message}`); }
+    const bytes = statSync(path).size; if (!bytes) { await unlink(path).catch(() => undefined); throw new BadRequestException('ไฟล์ว่าง'); }
+    // เปลี่ยนคลิป → ลบไฟล์เก่าที่ยังไม่ได้อัปขึ้น YouTube ทิ้ง (คืนพื้นที่)
+    const prevId = kind === 'video' ? c.youtubeMeta?.videoAssetId : c.youtubeMeta?.thumbnailAssetId;
+    if (prevId) { const prev = await this.prisma.mediaAsset.findUnique({ where: { id: prevId }, select: { path: true } }); if (prev?.path.startsWith(resolve(this.env.MEDIA_DIR))) await unlink(prev.path).catch(() => undefined); }
     const asset = await this.prisma.mediaAsset.create({ data: { workspaceId, contentId: id, kind, path, mimeType, bytes, meta: { fileName } as Prisma.InputJsonValue, createdById: userId }, select: { id: true, kind: true, mimeType: true, bytes: true, createdAt: true } });
     await this.prisma.youTubeContentMetadata.update({ where: { contentItemId: id }, data: kind === 'video' ? { videoAssetId: asset.id } : { thumbnailAssetId: asset.id } });
     if (kind === 'video' && ['IDEA', 'RESEARCH', 'OUTLINE', 'SCRIPT', 'PRODUCTION'].includes(c.ytStatus ?? '')) { for (const step of (['SCRIPT', 'PRODUCTION', 'VIDEO_READY'] as YtContentStatus[])) { const cur = (await this.prisma.contentItem.findUnique({ where: { id }, select: { ytStatus: true } }))!.ytStatus as YtContentStatus; if (canTransitionYt(cur, step) && cur !== 'VIDEO_READY') await this.transition(workspaceId, userId, id, step, requestId); } }
@@ -246,6 +258,32 @@ export class YtContentLabService {
   approve(ws: string, u: string, id: string, comment: string | undefined, rid: string) { return this.decide(ws, u, id, 'APPROVED', comment, rid); }
   reject(ws: string, u: string, id: string, comment: string | undefined, rid: string) { return this.decide(ws, u, id, 'REJECTED', comment, rid); }
   requestChanges(ws: string, u: string, id: string, comment: string | undefined, rid: string) { return this.decide(ws, u, id, 'CHANGES_REQUESTED', comment, rid); }
+
+  /** อัปขึ้น YouTube ทันที (เจ้าของกดเอง = อนุมัติ, บันทึก ApprovalRequest + audit) — ค่าเริ่มต้น private แล้วไปเปิดเองใน YouTube Studio */
+  async quickUpload(workspaceId: string, userId: string, id: string, dto: QuickUploadDto, requestId: string) {
+    const c = await this.load(workspaceId, id);
+    if (!c.youtubeMeta?.videoAssetId) throw new UnprocessableEntityException('ยังไม่ได้แนบไฟล์คลิป');
+    const from = (c.ytStatus ?? 'IDEA') as YtContentStatus;
+    if (['UPLOAD_PENDING', 'UPLOADING', 'PROCESSING', 'SCHEDULED', 'PUBLISHED', 'ANALYTICS_PENDING', 'ANALYZED', 'CANCELLED'].includes(from)) throw new ConflictException(`สถานะ ${from} อัปโหลดซ้ำไม่ได้`);
+    await this.prisma.youTubeContentMetadata.update({ where: { contentItemId: id }, data: { title: dto.title, description: dto.description ?? null, tags: dto.tags ?? [], madeForKids: dto.madeForKids, privacyStatus: dto.privacyStatus, scheduledPublishAt: null } });
+    await this.prisma.contentItem.update({ where: { id }, data: { title: c.title ?? dto.title } });
+    if (!['APPROVED', 'UPLOAD_FAILED', 'PROCESSING_FAILED'].includes(from)) {
+      for (const step of (['SCRIPT', 'PRODUCTION', 'VIDEO_READY', 'METADATA_READY', 'READY_FOR_APPROVAL', 'APPROVED'] as YtContentStatus[])) {
+        const cur = (await this.prisma.contentItem.findUnique({ where: { id }, select: { ytStatus: true } }))!.ytStatus as YtContentStatus;
+        if (cur === 'APPROVED') break;
+        if (!canTransitionYt(cur, step)) continue;
+        if (step === 'READY_FOR_APPROVAL') await this.transition(workspaceId, userId, id, step, requestId, { reviewResult: { result: 'SKIPPED', summary: 'อัปโหลดด่วนโดยเจ้าของช่อง', issues: [] } as Prisma.InputJsonValue });
+        else if (step === 'APPROVED') {
+          await this.prisma.approvalRequest.updateMany({ where: { contentId: id, status: 'PENDING' }, data: { status: 'EXPIRED' } });
+          await this.prisma.approvalRequest.create({ data: { workspaceId, resourceType: 'contentItem', resourceId: id, contentId: id, requestedById: userId, status: 'APPROVED', reviewedById: userId, reviewedAt: new Date(), reviewerComment: `อัปโหลดด่วน (${dto.privacyStatus})` } });
+          await this.transition(workspaceId, userId, id, step, requestId, {}, 'YOUTUBE_CONTENT_APPROVED');
+        } else await this.transition(workspaceId, userId, id, step, requestId);
+      }
+      const now = (await this.prisma.contentItem.findUnique({ where: { id }, select: { ytStatus: true } }))!.ytStatus;
+      if (now !== 'APPROVED') throw new ConflictException(`เปลี่ยนสถานะจาก ${from} เป็นพร้อมอัปโหลดไม่ได้`);
+    }
+    return this.requestUpload(workspaceId, userId, id, requestId, !!dto.inline);
+  }
 
   // ---------- Upload (§56–61, §104) ----------
   /** ขออัปโหลด: ต้อง APPROVED → UPLOAD_PENDING แล้วเข้าคิว (worker ทำ resumable) — inline=true รันทันที (ไฟล์เล็ก/ทดสอบ) */

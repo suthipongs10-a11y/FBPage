@@ -1,6 +1,6 @@
 /** Integration — YouTube module (AGENTS_YOUTUBE YT-1…YT-7) กับ mock YouTube / mock AI / mock Graph — ไม่แตะช่องจริง ไม่ใช้ key จริง */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
@@ -194,6 +194,43 @@ run('youtube module (integration)', () => {
     expect(idea.status, idea.text).toBe(200); expect(idea.json.platform).toBe('YOUTUBE'); expect(idea.json.ytStatus).toBe('IDEA');
     const ins = await a.http('GET', `/workspaces/${ws}/youtube/comments/insights?channelId=${channelId}&days=60`); expect(ins.status).toBe(200);
   });
+  it('threads waiting for the channel include viewer replies; AI drafts with thread context; replying to a reply tags the author in the same thread; bulk send', async () => {
+    const at = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString();
+    // c2: ช่องตอบแล้ว แต่ผู้ชมถามต่อใต้คำตอบ → ต้องตอบ reply นั้น · c5: ผู้ชมอีกคนมาเสริมใต้คำถาม (ช่องยังไม่ตอบ) → เป้าหมายคือความเห็นล่าสุด
+    yt.state.comments.v1!.push({ id: 'o1', videoId: 'v1', parentId: 'c2', author: '@kasetkaona', authorId: 'UC_TEST_CHANNEL', text: 'กำลังทำคลิปปุ๋ยสั่งตัดครับ', publishedAt: at(120), likeCount: 0 }, { id: 'x1', videoId: 'v1', parentId: 'c2', author: 'ชาวนา', text: 'แล้วใช้กับนาข้าวได้ไหมครับ', publishedAt: at(60), likeCount: 0 });
+    yt.state.comments.v4!.push({ id: 'x2', videoId: 'v4', parentId: 'c5', author: 'ลุงดำ', text: 'ผมก็อยากรู้ครับ ดินผมเปรี้ยวมาก', publishedAt: at(30), likeCount: 0 });
+    const s = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/comments/sync`, {}); expect(s.status, s.text).toBe(200);
+    const th = await a.http('GET', `/workspaces/${ws}/youtube/comments/threads?channelId=${channelId}`); expect(th.status).toBe(200);
+    type Th = { threadId: string; pendingCount: number; target: { id: string; youtubeCommentId: string; isReply: boolean; draftReply: string | null }; messages: { text: string; fromChannel: boolean }[] };
+    const byId = (id: string) => (th.json as Th[]).find(x => x.threadId === id);
+    expect(byId('c1')).toBeUndefined();   // ตอบไปแล้วในเทสก่อน
+    const t2 = byId('c2')!; expect(t2.target.youtubeCommentId).toBe('x1'); expect(t2.target.isReply).toBe(true); expect(t2.pendingCount).toBe(1); expect(t2.messages.some(m => m.fromChannel)).toBe(true);
+    const t5 = byId('c5')!; expect(t5.target.youtubeCommentId).toBe('x2'); expect(t5.pendingCount).toBe(2);
+    // AI ร่างเฉพาะเป้าหมายของเธรดที่ยังไม่มีร่าง พร้อมบริบทเธรด
+    ai.state.replies.push({ text: JSON.stringify({ comments: [
+      { id: t2.target.id, classification: 'FOLLOW_UP_QUESTION', sentiment: 'neutral', risk: false, summary: 'ถามต่อเรื่องนาข้าว', draftReply: 'ใช้กับนาข้าวได้ครับ ปรับสูตรตามค่าดิน', lead: null },
+      { id: t5.target.id, classification: 'QUESTION', sentiment: 'neutral', risk: false, summary: 'ดินเปรี้ยวมาก', draftReply: 'ลองวัด pH ก่อนครับ แล้วใส่ปูนตามค่า', lead: null },
+    ] }) });
+    const drafts = await a.http('POST', `/workspaces/${ws}/youtube/comments/classify`, { channelId, pendingOnly: true, limit: 25 });
+    expect(drafts.status, drafts.text).toBe(200); expect(drafts.json.classified).toBe(2);
+    const prompt = JSON.stringify(ai.state.requests.at(-1)?.messages); expect(prompt).toContain('[ช่อง] กำลังทำคลิปปุ๋ยสั่งตัดครับ');
+    // ตอบ reply → โพสต์ในเธรดเดิม (parentId = ความเห็นบนสุด) และแท็กผู้เขียน
+    const before = yt.state.replies.length;
+    const r = await a.http('POST', `/workspaces/${ws}/youtube/comments/${t2.target.id}/reply`, {});
+    expect(r.status, r.text).toBe(200); expect(yt.state.replies).toHaveLength(before + 1);
+    expect(yt.state.replies.at(-1)).toEqual({ parentId: 'c2', text: '@ชาวนา ใช้กับนาข้าวได้ครับ ปรับสูตรตามค่าดิน' });
+    // bulk ส่งร่างที่เหลือ
+    const bulk = await a.http('POST', `/workspaces/${ws}/youtube/comments/reply-bulk`, { ids: [t5.target.id] });
+    expect(bulk.status, bulk.text).toBe(200); expect(bulk.json.sent).toBe(1); expect(yt.state.replies.at(-1)!.parentId).toBe('c5');
+    const after = (await a.http('GET', `/workspaces/${ws}/youtube/comments/threads?channelId=${channelId}`)).json as Th[];
+    expect(after.some(x => x.threadId === 'c2' || x.threadId === 'c5')).toBe(false);   // ทั้งสองเธรดตอบครบแล้ว (รวม c5 ต้นเธรด)
+    // ซิงก์ซ้ำ: คำตอบของช่องกลับมาจาก YouTube → ยังไม่ขึ้นรอตอบ
+    await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/comments/sync`, {});
+    const again = (await a.http('GET', `/workspaces/${ws}/youtube/comments/threads?channelId=${channelId}`)).json as Th[];
+    expect(again.some(x => x.threadId === 'c2' || x.threadId === 'c5')).toBe(false);
+    // ปิดเรื่อง (ไม่ต้องตอบ) → หายจากคิว
+    const rest = again[0]; if (rest) { await a.http('PATCH', `/workspaces/${ws}/youtube/comments/${rest.target.id}`, { resolved: true }); expect(((await a.http('GET', `/workspaces/${ws}/youtube/comments/threads?channelId=${channelId}`)).json as Th[]).some(x => x.threadId === rest.threadId)).toBe(false); }
+  });
 
   // ---------- YT-4/YT-5 content lab → approval → upload ----------
   it('topic ideas → script → titles → SEO metadata → policy fields → submit → approve', async () => {
@@ -248,6 +285,32 @@ run('youtube module (integration)', () => {
     expect(chk.status, chk.text).toBe(200); expect(['PROCESSING', 'READY', 'SKIPPED']).toContain(chk.json.state); expect(['PROCESSING', 'PUBLISHED', 'SCHEDULED']).toContain(chk.json.content.ytStatus);   // inline ตรวจ processing ไปแล้ว → SKIPPED เมื่อเผยแพร่แล้ว
     const ops = await prisma.youTubeUploadOperation.findMany({ where: { contentItemId: contentId } }); expect(ops).toHaveLength(1); expect(Number(ops[0]!.bytesSent)).toBe(bytes.length);
     const vids = await a.http('GET', `/workspaces/${ws}/youtube/videos?channelId=${channelId}`); expect(vids.json.some((v: { source: string }) => v.source === 'app')).toBe(true);
+    // YouTube รับไฟล์แล้ว → ไฟล์ในเครื่องถูกลบ (ประหยัดดิสก์) แต่แถว MediaAsset ยังอยู่
+    const asset0 = await prisma.mediaAsset.findFirst({ where: { contentId, kind: 'video' }, orderBy: { createdAt: 'desc' } });
+    expect(existsSync(asset0!.path)).toBe(false); expect((asset0!.meta as { deletedAfterUpload?: string }).deletedAfterUpload).toBeTruthy();
+  });
+  it('quick upload: owner uploads a clip and sends it to YouTube as private in one click, then the local file is removed', async () => {
+    const c = await a.http('POST', `/workspaces/${ws}/youtube/content`, { channelId, title: 'คลิปอัปด่วน', format: 'LONG_FORM' }); expect(c.status, c.text).toBe(201);
+    const id = c.json.id as string;
+    const noVideo = await a.http('POST', `/workspaces/${ws}/youtube/content/${id}/quick-upload`, { title: 'x', madeForKids: false, inline: true }); expect(noVideo.status).toBe(422);
+    const kids = await a.http('POST', `/workspaces/${ws}/youtube/content/${id}/quick-upload`, { title: 'x' }); expect(kids.status).toBe(400);   // madeForKids ต้องให้คนเลือก
+    const tooBig = await fetch(`${base}/workspaces/${ws}/youtube/content/${id}/assets/thumbnail`, { method: 'POST', headers: { cookie: a.cookie, 'content-type': 'image/png', 'x-file-name': 'big.png' }, body: Buffer.alloc(3 * 1024 * 1024, 1) });
+    expect(tooBig.status).toBe(422);
+    const first = await fetch(`${base}/workspaces/${ws}/youtube/content/${id}/assets/video`, { method: 'POST', headers: { cookie: a.cookie, 'content-type': 'video/mp4', 'x-file-name': 'a.mp4' }, body: Buffer.alloc(1024, 1) });
+    const firstPath = (await prisma.mediaAsset.findFirstOrThrow({ where: { contentId: id, kind: 'video' } })).path; expect(first.status).toBe(201);
+    const bytes = Buffer.alloc(2 * 1024 * 1024, 9);
+    const up = await fetch(`${base}/workspaces/${ws}/youtube/content/${id}/assets/video`, { method: 'POST', headers: { cookie: a.cookie, 'content-type': 'video/mp4', 'x-file-name': 'b.mp4' }, body: bytes });
+    expect(up.status).toBe(201); expect(existsSync(firstPath)).toBe(false);   // เปลี่ยนคลิป → ไฟล์เก่าถูกลบ
+    const before = yt.state.uploads.length;
+    const r = await a.http('POST', `/workspaces/${ws}/youtube/content/${id}/quick-upload`, { title: 'รีวิวรถไฟฟ้า EV ใช้จริง 1 ปี', description: 'สรุปค่าใช้จ่ายจริง', tags: ['EV'], madeForKids: false, inline: true });
+    expect(r.status, r.text).toBe(200); expect(['UPLOADED', 'READY']).toContain(r.json.outcome.status);
+    expect(yt.state.uploads).toHaveLength(before + 1); const sent = yt.state.uploads.at(-1)!;
+    expect(sent.received).toBe(bytes.length); expect((sent.metadata as { snippet: { title: string }; status: { privacyStatus: string; selfDeclaredMadeForKids: boolean } }).status).toMatchObject({ privacyStatus: 'private', selfDeclaredMadeForKids: false });
+    const asset = await prisma.mediaAsset.findFirstOrThrow({ where: { contentId: id, kind: 'video' }, orderBy: { createdAt: 'desc' } });
+    expect(existsSync(asset.path)).toBe(false);
+    const appr = await prisma.approvalRequest.findFirst({ where: { contentId: id, status: 'APPROVED' } }); expect(appr?.reviewerComment).toMatch(/อัปโหลดด่วน/);
+    const audit = await prisma.auditLog.findMany({ where: { resourceId: id, action: { in: ['YOUTUBE_CONTENT_APPROVED', 'YOUTUBE_UPLOAD_COMPLETED'] } } }); expect(audit.length).toBe(2);
+    const again = await a.http('POST', `/workspaces/${ws}/youtube/content/${id}/quick-upload`, { title: 'x', madeForKids: false, inline: true }); expect(again.status).toBe(409);
   });
   it('repurposes a YouTube item into Facebook drafts with ContentRelation and shared calendar', async () => {
     ai.state.replies.push({ text: JSON.stringify({ posts: [{ kind: 'FAQ', headline: 'ยูเรียใส่กี่กิโล', caption: 'คำถามที่เจอบ่อย: ยูเรียใส่กี่กิโลต่อไร่? ดูคลิปเต็มได้ที่ YouTube', cta: 'ทักแชท', hashtags: ['ปุ๋ย'], mediaBrief: 'การ์ดตัวเลข', contentPillar: 'ปุ๋ย' }, { kind: 'TEASER', headline: 'คลิปใหม่', caption: 'คลิปใหม่มาแล้ว: คำนวณยูเรียให้พอดี', cta: 'ดูคลิป', hashtags: [], mediaBrief: 'ภาพปก', contentPillar: 'ปุ๋ย' }] }) });

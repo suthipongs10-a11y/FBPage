@@ -24,6 +24,6 @@ export function buildYtDeps(env: Env, prisma: PrismaClient, quota: QuotaLedger):
   const client = new YouTubeClient({ ...(mock && { dataBaseUrl: `${mock}/youtube/v3`, analyticsBaseUrl: `${mock}/analytics`, uploadBaseUrl: `${mock}/upload` }), quota });
   const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_REDIRECT_URI
     ? new GoogleAuth({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI, ...(mock && { authBaseUrl: `${mock}/auth`, tokenUrl: `${mock}/token`, tokenInfoUrl: `${mock}/tokeninfo`, revokeUrl: `${mock}/revoke` }) }) : null;
-  return { prisma, yt: new YouTubeService(client), analytics: new YouTubeAnalyticsService(client), google, authSecret: env.AUTH_SECRET, apiKey: env.YOUTUBE_API_KEY, uploadEnabled: env.YOUTUBE_UPLOAD_ENABLED, mediaDir: env.MEDIA_DIR };
+  return { prisma, yt: new YouTubeService(client), analytics: new YouTubeAnalyticsService(client), google, authSecret: env.AUTH_SECRET, apiKey: env.YOUTUBE_API_KEY, uploadEnabled: env.YOUTUBE_UPLOAD_ENABLED, mediaDir: env.MEDIA_DIR, keepVideoAfterUpload: env.YOUTUBE_KEEP_VIDEO_AFTER_UPLOAD };
 }
 export const ytProvider: Provider = { provide: YT, inject: [ENV, PRISMA, QUOTA], useFactory: buildYtDeps };

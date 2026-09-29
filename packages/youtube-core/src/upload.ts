@@ -1,6 +1,7 @@
 /** Upload (§56–61): resumable + idempotent ผ่าน YouTubeUploadOperation; ตรวจ kill switch/policy ทุกครั้งก่อนยิง */
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
+import { open, readFile, unlink } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type { Prisma } from '@fbpm/database';
 import { channelAuth, ChannelNotAccessible, type YtDeps } from './sync';
 import { VIDEO_CLASSIFIER_VERSION } from './metrics';
@@ -44,15 +45,18 @@ export async function runUpload(d: YtDeps, contentId: string, requestId: string)
     let session = op.resumableSessionUri; let sent = Number(op.bytesSent);
     if (session) { try { const q = await d.yt.client.queryResumable(session, total); if (q.done) return finalize(d, c.id, channelId, String(q.video.id), m, requestId, op.id); sent = q.received; } catch { session = null; sent = 0; } }
     if (!session) { session = await d.yt.client.initiateResumable(auth, metadata, total, asset.mimeType); sent = 0; await d.prisma.youTubeUploadOperation.update({ where: { id: op.id }, data: { resumableSessionUri: session, status: 'UPLOADING', bytesSent: 0 } }); }
-    const buf = await readFile(asset.path);   // ไฟล์ทดสอบ/ขนาดกลาง; ไฟล์ใหญ่ควรอ่านเป็น stream — createReadStream ใช้เมื่อ total > 512MB
-    void createReadStream;
+    // อ่านทีละ chunk จากดิสก์ — ไม่โหลดทั้งไฟล์เข้าหน่วยความจำ (คลิปยาวหลาย GB บน VPS แรมน้อย)
     let video: Record<string, unknown> | null = null;
-    while (sent < total) {
-      const chunk = buf.subarray(sent, Math.min(total, sent + CHUNK));
-      const r = await d.yt.client.putChunk(session, chunk, sent, total);
-      if (r.done) { video = r.video; sent = total; } else sent = r.received;
-      await d.prisma.youTubeUploadOperation.update({ where: { id: op.id }, data: { bytesSent: BigInt(sent) } });
-    }
+    const fh = await open(asset.path, 'r');
+    try {
+      while (sent < total) {
+        const len = Math.min(CHUNK, total - sent); const chunk = Buffer.alloc(len);
+        const { bytesRead } = await fh.read(chunk, 0, len, sent);
+        const r = await d.yt.client.putChunk(session, chunk.subarray(0, bytesRead), sent, total);
+        if (r.done) { video = r.video; sent = total; } else sent = r.received;
+        await d.prisma.youTubeUploadOperation.update({ where: { id: op.id }, data: { bytesSent: BigInt(sent) } });
+      }
+    } finally { await fh.close(); }
     if (!video) { const q = await d.yt.client.queryResumable(session, total); if (!q.done) throw new YouTubeApiError('อัปโหลดไม่ครบ', 'unknown', 0); video = q.video; }
     const ytId = String(video.id);
     await d.prisma.youTubeUploadOperation.update({ where: { id: op.id }, data: { youtubeVideoId: ytId, status: 'UPLOADED', error: null } });
@@ -73,9 +77,24 @@ async function finalize(d: YtDeps, contentId: string, channelId: string, ytId: s
   void requestId;
   const row = await d.prisma.youTubeVideo.upsert({ where: { channelId_youtubeVideoId: { channelId, youtubeVideoId: ytId } }, create: { channelId, youtubeVideoId: ytId, title: m.title ?? '', description: m.description, tags: m.tags, privacyStatus: m.scheduledPublishAt ? 'private' : m.privacyStatus, scheduledPublishAt: m.scheduledPublishAt, uploadStatus: 'uploaded', source: 'app', videoType: 'UNKNOWN', classifierVersion: VIDEO_CLASSIFIER_VERSION, publishedAt: m.scheduledPublishAt ? null : new Date() }, update: { uploadStatus: 'uploaded', source: 'app' }, select: { id: true } });
   const scheduled = !!m.scheduledPublishAt && m.scheduledPublishAt.getTime() > Date.now();
+  await releaseLocalVideo(d, contentId);
   await d.prisma.contentItem.update({ where: { id: contentId }, data: { ytStatus: 'PROCESSING', status: scheduled ? 'SCHEDULED' : 'PUBLISHING', externalPostId: ytId, lastError: null, youtubeMeta: { update: { youtubeVideoId: ytId } } } as Prisma.ContentItemUpdateInput });
   if (opId) await d.prisma.youTubeUploadOperation.update({ where: { id: opId }, data: { status: 'PROCESSING' } });
   return { status: 'UPLOADED', youtubeVideoId: ytId, videoRowId: row.id };
+}
+
+/** YouTube รับไฟล์ครบแล้ว (มี videoId) → ลบไฟล์ในเครื่องเพื่อคืนพื้นที่ดิสก์ — ลบเฉพาะไฟล์ใต้ MEDIA_DIR, เก็บแถว MediaAsset ไว้เป็นประวัติ */
+export async function releaseLocalVideo(d: YtDeps, contentId: string): Promise<boolean> {
+  if (d.keepVideoAfterUpload) return false;
+  const meta = await d.prisma.youTubeContentMetadata.findUnique({ where: { contentItemId: contentId }, select: { videoAssetId: true } });
+  if (!meta?.videoAssetId) return false;
+  const asset = await d.prisma.mediaAsset.findUnique({ where: { id: meta.videoAssetId }, select: { id: true, path: true, meta: true } });
+  if (!asset) return false;
+  const rel = relative(resolve(d.mediaDir ?? './data/media'), resolve(asset.path));
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return false;
+  try { await unlink(asset.path); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return false; }
+  await d.prisma.mediaAsset.update({ where: { id: asset.id }, data: { meta: { ...((asset.meta as Record<string, unknown> | null) ?? {}), deletedAfterUpload: new Date().toISOString() } as Prisma.InputJsonValue } });
+  return true;
 }
 
 /** ตรวจสถานะประมวลผล (§60) — READY เมื่อ uploadStatus=processed; ตั้งเวลา → SCHEDULED, ไม่ตั้ง → PUBLISHED */

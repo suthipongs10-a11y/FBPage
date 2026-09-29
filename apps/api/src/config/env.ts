@@ -46,6 +46,10 @@ export const envSchema = z.object({
   GOOGLE_OAUTH_REDIRECT_URI: z.string().trim().optional().transform(v => v || undefined),
   YOUTUBE_API_KEY: z.string().trim().optional().transform(v => v || undefined),
   YOUTUBE_UPLOAD_ENABLED: z.string().optional().transform(v => v === 'true' || v === '1'),
+  /** เก็บไฟล์วิดีโอไว้ในเครื่องหลังอัปขึ้น YouTube แล้ว (ค่าเริ่มต้นลบทิ้งเพื่อประหยัดดิสก์) */
+  YOUTUBE_KEEP_VIDEO_AFTER_UPLOAD: z.string().optional().transform(v => v === 'true' || v === '1'),
+  /** ขนาดไฟล์วิดีโอ YouTube สูงสุดที่รับ (MB) — nginx ต้องตั้ง client_max_body_size ให้ ≥ ค่านี้ */
+  YOUTUBE_MAX_MB: z.coerce.number().int().min(10).max(20480).default(2048),
   YOUTUBE_DEFAULT_SYNC_DAYS: z.coerce.number().int().min(7).max(3650).default(90),
   YOUTUBE_QUOTA_SOFT_LIMIT: z.coerce.number().int().min(100).default(10000),
   /** override ปลายทาง Google/YouTube สำหรับ mock ใน test */

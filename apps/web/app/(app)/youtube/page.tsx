@@ -5,6 +5,7 @@ import { AUTOMATION_LEVELS } from '@fbpm/shared';
 import { api, type YtAnalysis, type BrandLite, type Client, type ClientDetail, type YtChannel, type YtConnection, type YtHealth, type YtQuota, type YtRecommendation } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
+import { YtQuickUpload } from '@/components/yt-quick-upload';
 import { Button, Card, Empty, ErrorBox, Field, Input, Kpi, Loading, Pill, Select } from '@/components/ui';
 
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -101,6 +102,7 @@ export default function YoutubePage() {
             {analyses[c.id] && <AnalysisPanel a={analyses[c.id]!} />}
           </div>))}</div>}
       </Card>
+      {can('youtube.upload') && can('youtube.content.approve') && <YtQuickUpload wsId={ws.id} channels={channels} uploadEnabled={health.uploadEnabled} />}
       <Card title={`${t('yt.recommendations')} (${recs.length})`}>
         {recs.length === 0 ? <Empty /> : <div className="space-y-2 text-sm">{recs.map(r => (
           <div key={r.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-800 p-2">

@@ -1053,6 +1053,8 @@ model YouTubeComment {
   /// NONE | DRAFTED | APPROVED | SENT | FAILED | SKIPPED
   replyStatus       String    @default("NONE")
   replyExternalId   String?
+  /// true = ความเห็นของผู้ชมที่มาหลังการตอบ/จัดการครั้งล่าสุดของช่องในเธรดนั้น (คำนวณใหม่ทุกครั้งที่ซิงก์/ตอบ)
+  needsReply        Boolean   @default(false)
   repliedAt         DateTime?
   resolvedAt        DateTime?
   clusterId         String?
@@ -1068,6 +1070,7 @@ model YouTubeComment {
   @@unique([channelId, youtubeCommentId])
   @@index([channelId, publishedAt])
   @@index([videoId])
+  @@index([channelId, needsReply])
 }
 
 /// กลุ่มคำถาม/คำขอซ้ำ (§85) → ไอเดียวิดีโอ (§50)

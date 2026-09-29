@@ -214,6 +214,39 @@ test('YouTube: connect via pasted refresh token (mock Google), channel and video
   await expect(page.locator('svg[role="img"]').first()).toBeVisible();
 });
 
+test('YouTube: quick upload a clip as Private in one click, and answer a viewer reply from the "needs reply" queue', async ({ page }) => {
+  await login(page);
+  await page.goto('/youtube');
+  const card = page.locator('section, div').filter({ has: page.getByText('⬆️ อัปคลิปขึ้น YouTube (Private)') }).last();
+  await expect(card).toBeVisible();
+  await page.locator('input[type="file"][accept="video/*"]').setInputFiles({ name: 'ev-review.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(512 * 1024, 5) });
+  await expect(page.getByLabel('ชื่อคลิป (≤ 100 ตัวอักษร)')).toHaveValue('ev-review');
+  const go = page.getByRole('button', { name: '⬆️ อัปขึ้น YouTube' });
+  await page.getByLabel('ไม่ใช่', { exact: true }).check();   // ค่า "สำหรับเด็ก" คนเลือกเอง (หรือมาจากค่าเริ่มต้นของช่องที่คนตั้งไว้)
+  await go.click();
+  await expect(page.getByText('กำลังอัปขึ้น YouTube…')).toBeVisible({ timeout: 20_000 });
+  const items = await api(page.request, 'GET', `/workspaces/${ws}/youtube/content?channelId=${channelId}`);
+  const up = items.find((x: { youtubeMeta: { title: string } | null }) => x.youtubeMeta?.title === 'ev-review');
+  expect(up.ytStatus).toBe('UPLOAD_PENDING'); expect(up.youtubeMeta.privacyStatus).toBe('private'); expect(up.youtubeMeta.madeForKids).toBe(false);
+
+  // ผู้ชมถามต่อใต้คำตอบของช่อง → ขึ้นในคิว "รอตอบ" แล้วตอบจากหน้าเว็บ (แท็กผู้เขียน ตอบในเธรดเดิม)
+  const at = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+  yt.state.comments.v1!.push({ id: 'e2e-own', videoId: 'v1', parentId: 'c1', author: '@kasetkaona', authorId: 'UC_TEST_CHANNEL', text: 'ใส่ช่วงเย็นครับ', publishedAt: at(90), likeCount: 0 }, { id: 'e2e-x', videoId: 'v1', parentId: 'c1', author: 'สมศรี', text: 'แล้วหน้าฝนล่ะคะ', publishedAt: at(10), likeCount: 0 });
+  await page.goto('/youtube/comments');
+  await page.getByRole('button', { name: 'ซิงก์คอมเมนต์' }).click();
+  await expect(page.getByText('แล้วหน้าฝนล่ะคะ')).toBeVisible({ timeout: 20_000 });
+  const thread = page.locator('div.rounded-xl').filter({ hasText: 'แล้วหน้าฝนล่ะคะ' });
+  await expect(thread.getByText('ตอบใต้เธรด')).toBeVisible();
+  await expect(thread.getByText('ใส่ช่วงเย็นครับ')).toBeVisible();
+  await thread.getByPlaceholder('ข้อความตอบ (กด AI ร่าง หรือพิมพ์เอง)').fill('หน้าฝนเว้นช่วงฝนตกหนักครับ');
+  const before = yt.state.replies.length;
+  await thread.getByRole('button', { name: 'ส่งคำตอบ', exact: true }).click();
+  await expect(page.getByText('ส่งคำตอบแล้ว')).toBeVisible();
+  expect(yt.state.replies.length).toBe(before + 1);
+  expect(yt.state.replies.at(-1)).toEqual({ parentId: 'c1', text: '@สมศรี หน้าฝนเว้นช่วงฝนตกหนักครับ' });
+  await expect(page.getByText('แล้วหน้าฝนล่ะคะ')).toHaveCount(0);
+});
+
 test('Websites: add a site in the UI, see status/SEO issues, connect Search Console and see top queries', async ({ page }) => {
   await login(page);
   await page.goto('/web');

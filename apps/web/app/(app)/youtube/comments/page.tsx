@@ -4,6 +4,7 @@ import { YT_COMMENT_CLASSES } from '@fbpm/shared';
 import { api, type YtChannel, type YtCluster, type YtComment, type YtCommentInsights } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
+import { YtReplyQueue } from '@/components/yt-reply-queue';
 import { Button, Card, Empty, ErrorBox, Loading, Pill, Select, Textarea } from '@/components/ui';
 
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -13,7 +14,7 @@ export default function YtCommentsPage() {
   const { ws, can } = useWorkspace();
   const [channels, setChannels] = useState<YtChannel[] | null>(null); const [rows, setRows] = useState<YtComment[] | null>(null); const [clusters, setClusters] = useState<YtCluster[]>([]); const [ins, setIns] = useState<YtCommentInsights | null>(null);
   const [filter, setFilter] = useState({ channelId: '', classification: '', unresolved: '1' }); const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<'pending' | 'all'>('pending'); const [ver, setVer] = useState(0); const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
   const load = useCallback(async () => {
     try {
       const q = new URLSearchParams(); Object.entries(filter).forEach(([k, v]) => { if (v) q.set(k, v); });
@@ -23,7 +24,7 @@ export default function YtCommentsPage() {
     } catch (e) { setError(e); }
   }, [ws.id, filter]);
   useEffect(() => { void load(); }, [load]);
-  const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await load(); } catch (e) { setError(e); } finally { setBusy(''); } };
+  const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await load(); setVer(v => v + 1); } catch (e) { setError(e); } finally { setBusy(''); } };
   const targets = () => (filter.channelId ? [filter.channelId] : (channels ?? []).map(c => c.id));
   const sync = () => run('sync', async () => { let n = 0; for (const id of targets()) { const r = await api<{ imported: number; updated: number }>(`/workspaces/${ws.id}/youtube/channels/${id}/comments/sync`, { method: 'POST', body: {} }); n += r.imported + r.updated; } setNotice(`${t('comments.sync')}: ${n}`); });
   const classify = () => run('classify', async () => { const r = await api<{ classified: number; leads: number; autoReplied: number }>(`/workspaces/${ws.id}/youtube/comments/classify`, { method: 'POST', body: { ...(filter.channelId && { channelId: filter.channelId }), limit: 25 } }); setNotice(`${r.classified} จำแนก · ${r.leads} ลีด · ${r.autoReplied} ตอบอัตโนมัติ`); });
@@ -55,7 +56,13 @@ export default function YtCommentsPage() {
         </div>
       </div>
       {clusters.length > 0 && <Card title={t('yt.clusters')}><div className="grid gap-2 md:grid-cols-2">{clusters.map(cl => <div key={cl.id} className="flex items-start justify-between gap-2 rounded-lg border border-slate-800 p-2 text-sm"><div><div className="font-medium">{cl.label} <span className="text-xs text-slate-500">×{cl.count}</span> <Pill tone="muted">{cl.kind}</Pill></div>{cl.description && <div className="text-xs text-slate-400">{cl.description}</div>}</div>{can('youtube.content.create') && <Button variant="ghost" disabled={busy === `idea:${cl.id}`} onClick={() => idea(cl)}>{t('yt.makeIdea')}</Button>}</div>)}</div></Card>}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
+        <Button variant={tab === 'pending' ? 'primary' : 'ghost'} onClick={() => setTab('pending')}>💬 {t('ytr.tab')} ({ins.needsReply ?? 0})</Button>
+        <Button variant={tab === 'all' ? 'primary' : 'ghost'} onClick={() => setTab('all')}>{t('ytr.tabAll')}</Button>
+        {tab === 'pending' && <Select className="w-auto" value={filter.channelId} onChange={e => setFilter(v => ({ ...v, channelId: e.target.value }))}><option value="">{t('yt.channel')}: {t('content.all')}</option>{channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>}
+      </div>
+      {tab === 'pending' && <YtReplyQueue key={filter.channelId} wsId={ws.id} channelId={filter.channelId} canReply={reply && oauth} canAi={can('ai.use')} version={ver} onChanged={() => void load()} />}
+      {tab === 'all' && <><div className="flex flex-wrap gap-2">
         <Select className="w-auto" value={filter.channelId} onChange={e => setFilter(v => ({ ...v, channelId: e.target.value }))}><option value="">{t('yt.channel')}: {t('content.all')}</option>{channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>
         <Select className="w-auto" value={filter.classification} onChange={e => setFilter(v => ({ ...v, classification: e.target.value }))}><option value="">{t('comments.filterClass')}: {t('content.all')}</option>{YT_COMMENT_CLASSES.map(c => <option key={c} value={c}>{t(`ycc.${c}` as MessageKey)}</option>)}</Select>
         <Select className="w-auto" value={filter.unresolved} onChange={e => setFilter(v => ({ ...v, unresolved: e.target.value }))}><option value="1">{t('comments.unresolved')}</option><option value="">{t('content.all')}</option></Select>
@@ -70,7 +77,7 @@ export default function YtCommentsPage() {
           {c.aiSummary && <p className="mt-1 text-xs text-slate-400">AI: {c.aiSummary}</p>}
           {reply && oauth && c.classification !== 'SPAM' && c.replyStatus !== 'SENT' && <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]"><Textarea className="min-h-14" placeholder={t('comments.draft')} value={drafts[c.id] ?? c.draftReply ?? ''} onChange={e => setDrafts(v => ({ ...v, [c.id]: e.target.value }))} /><div className="flex flex-col gap-1"><Button disabled={busy === `send:${c.id}` || !(drafts[c.id] ?? c.draftReply)} onClick={() => send(c)}>{t('comments.send')}</Button><Button variant="ghost" disabled={busy === `draft:${c.id}`} onClick={() => saveDraft(c)}>{t('common.save')}</Button></div></div>}
           <div className="mt-1 flex gap-2 text-xs"><button className="text-slate-400 hover:underline" onClick={() => resolve(c)}>{c.resolvedAt ? t('comments.reopen' as MessageKey) : t('comments.resolve' as MessageKey)}</button></div>
-        </div>))}</div>}
+        </div>))}</div>}</>}
     </div>
   );
 }

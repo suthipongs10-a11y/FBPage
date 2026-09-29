@@ -15,13 +15,14 @@ export type UpdateVideoMetaDto = z.infer<typeof updateVideoMetaSchema>;
 export const setPillarSchema = z.object({ contentPillar: z.string().trim().min(1).max(80).nullable() });
 export const analyzeSchema = z.object({ days: z.coerce.number().int().min(7).max(365).default(90) }).optional();
 export const daysSchema = z.object({ channelId: z.string().optional(), days: z.coerce.number().int().min(1).max(365).default(28) });
-export const listYtCommentsSchema = z.object({ channelId: z.string().optional(), videoId: z.string().optional(), classification: z.enum(YT_COMMENT_CLASSES).optional(), unresolved: z.enum(['1', '0']).optional(), unclassified: z.enum(['1', '0']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
+export const listYtCommentsSchema = z.object({ channelId: z.string().optional(), videoId: z.string().optional(), classification: z.enum(YT_COMMENT_CLASSES).optional(), unresolved: z.enum(['1', '0']).optional(), unclassified: z.enum(['1', '0']).optional(), needsReply: z.enum(['1', '0']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
 export type ListYtCommentsDto = z.infer<typeof listYtCommentsSchema>;
-export const classifyYtSchema = z.object({ channelId: z.string().optional(), commentIds: z.array(z.string()).max(50).optional(), limit: z.coerce.number().int().min(1).max(50).default(25) }).optional();
+export const classifyYtSchema = z.object({ channelId: z.string().optional(), commentIds: z.array(z.string()).max(50).optional(), pendingOnly: z.boolean().optional(), limit: z.coerce.number().int().min(1).max(50).default(25) }).optional();
 export type ClassifyYtDto = z.infer<typeof classifyYtSchema>;
 export const updateYtCommentSchema = z.object({ draftReply: z.string().trim().max(5000).optional(), resolved: z.boolean().optional(), classification: z.enum(YT_COMMENT_CLASSES).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export type UpdateYtCommentDto = z.infer<typeof updateYtCommentSchema>;
 export const replyYtSchema = z.object({ message: z.string().trim().min(1).max(5000).optional() });
+export const replyBulkSchema = z.object({ ids: z.array(z.string().min(1)).min(1).max(30) });
 // ---- Content Lab ----
 export const ideasSchema = z.object({ count: z.coerce.number().int().min(1).max(10).default(5), objective: opt(300), notes: opt(1000) }).optional();
 export type IdeasDto = z.infer<typeof ideasSchema>;
@@ -36,6 +37,9 @@ export type UpdateYtContentDto = z.infer<typeof updateYtContentSchema>;
 export const titlesSchema = z.object({ count: z.coerce.number().int().min(2).max(8).default(5) }).optional();
 export const scriptSchema = z.object({ targetDurationSec: z.number().int().min(15).max(7200).optional(), notes: opt(1000), research: z.array(z.object({ claim: z.string().max(500), source: z.string().max(500) })).max(20).optional() }).optional();
 export type ScriptDto = z.infer<typeof scriptSchema>;
+/** อัปขึ้น YouTube ทันทีโดยเจ้าของกดเอง (การกด = อนุมัติ) — ค่าเริ่มต้น private ไปเปิดเองใน YouTube Studio · madeForKids ต้องให้คนเลือก (§62) */
+export const quickUploadSchema = z.object({ title: z.string().trim().min(1).max(100), description: z.string().trim().max(5000).optional(), tags: z.array(z.string().trim().min(1).max(60)).max(60).optional(), madeForKids: z.boolean(), privacyStatus: z.enum(['private', 'unlisted']).default('private'), inline: z.boolean().optional() });
+export type QuickUploadDto = z.infer<typeof quickUploadSchema>;
 export const attachAssetSchema = z.object({ assetId: z.string().min(1), kind: z.enum(['video', 'thumbnail']) });
 export const ytTransitionSchema = z.object({ to: z.string().min(1) });
 export const recStatusSchema = z.object({ status: z.enum(['OPEN', 'ACCEPTED', 'IGNORED', 'DONE']), outcome: z.record(z.string(), z.unknown()).optional() });

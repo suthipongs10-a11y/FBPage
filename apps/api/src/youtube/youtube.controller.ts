@@ -103,6 +103,10 @@ export class YoutubeController {
   listComments(@Tenant() t: TenantContext, @Query(new ZodPipe(d.listYtCommentsSchema)) q: d.ListYtCommentsDto) { return this.comments.list(t.workspaceId, q); }
   @Post('channels/:id/comments/sync') @HttpCode(200) @RequirePermission('youtube.comments.read')
   syncComments(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.comments.sync(t.workspaceId, u.id, id, rid); }
+  @Get('comments/threads') @RequirePermission('youtube.comments.read')
+  threads(@Tenant() t: TenantContext, @Query('channelId') channelId?: string) { return this.comments.threads(t.workspaceId, channelId || undefined); }
+  @Post('comments/reply-bulk') @HttpCode(200) @RequirePermission('youtube.comments.reply')
+  replyBulk(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(d.replyBulkSchema)) b: z.infer<typeof d.replyBulkSchema>, @RequestId() rid: string) { return this.comments.replyBulk(t.workspaceId, u.id, b.ids, rid); }
   @Post('comments/classify') @HttpCode(200) @RequirePermission('youtube.comments.read', 'ai.use')
   classify(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(d.classifyYtSchema)) dto: d.ClassifyYtDto, @RequestId() rid: string) { return this.comments.classify(t.workspaceId, u.id, dto, rid); }
   @Post('channels/:id/comments/cluster') @HttpCode(200) @RequirePermission('youtube.comments.read', 'ai.use')
@@ -144,8 +148,11 @@ export class YoutubeController {
   /** รับไฟล์เป็น raw stream: header x-file-name + content-type (video/* หรือ image/jpeg|png|webp) */
   @Post('content/:id/assets/:kind') @HttpCode(201) @RequirePermission('youtube.content.edit')
   uploadAsset(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Param('kind', new ZodPipe(assetKindSchema)) kind: 'video' | 'thumbnail', @Headers('x-file-name') fileName: string | undefined, @Headers('content-type') contentType: string | undefined, @Req() req: Request, @RequestId() rid: string) {
-    return this.lab.storeAsset(t.workspaceId, u.id, id, kind, decodeURIComponent(fileName || `${kind}.bin`), (contentType ?? 'application/octet-stream').split(';')[0]!.trim(), req, rid);
+    const len = Number(req.headers['content-length']);
+    return this.lab.storeAsset(t.workspaceId, u.id, id, kind, decodeURIComponent(fileName || `${kind}.bin`), (contentType ?? 'application/octet-stream').split(';')[0]!.trim(), req, rid, Number.isFinite(len) && len > 0 ? len : undefined);
   }
+  @Post('content/:id/quick-upload') @HttpCode(200) @RequirePermission('youtube.upload', 'youtube.content.approve')
+  quickUpload(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.quickUploadSchema)) b: d.QuickUploadDto, @RequestId() rid: string) { return this.lab.quickUpload(t.workspaceId, u.id, id, b, rid); }
   @Post('content/:id/submit') @HttpCode(200) @RequirePermission('youtube.content.edit')
   submit(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.lab.submit(t.workspaceId, u.id, id, rid); }
   @Post('content/:id/approve') @HttpCode(200) @RequirePermission('youtube.content.approve')

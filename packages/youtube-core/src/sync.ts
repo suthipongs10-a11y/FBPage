@@ -10,7 +10,7 @@ import { YouTubeService } from './youtube.service';
 import { VIDEO_CLASSIFIER_VERSION, YT_METRIC_SET_VERSION, ageWindow, classifyVideoType, fromDataApiStats, toYtSnapshot } from './metrics';
 import { YouTubeApiError, type YtAuth } from './types';
 
-export interface YtDeps { prisma: PrismaClient; yt: YouTubeService; analytics: YouTubeAnalyticsService; google: GoogleAuth | null; authSecret: string; apiKey?: string; uploadEnabled: boolean; mediaDir?: string }
+export interface YtDeps { prisma: PrismaClient; yt: YouTubeService; analytics: YouTubeAnalyticsService; google: GoogleAuth | null; authSecret: string; apiKey?: string; uploadEnabled: boolean; mediaDir?: string; /** ลบไฟล์วิดีโอในเครื่องเมื่อ YouTube รับไฟล์ครบแล้ว (ค่าเริ่มต้น true — ประหยัดดิสก์) */ keepVideoAfterUpload?: boolean }
 export class ChannelNotAccessible extends Error { constructor(msg: string, public readonly reason: 'NO_ACCESS' | 'DISCONNECTED' | 'RECONNECT') { super(msg); this.name = 'ChannelNotAccessible'; } }
 
 
@@ -164,7 +164,7 @@ export async function collectVideoMetrics(d: YtDeps, videoId: string, window?: s
 }
 
 /** ขั้น 5: คอมเมนต์ (§47–48) — comments disabled → ทำเครื่องหมายเฉพาะวิดีโอ ไม่ถือเป็น sync failure (§128) */
-export async function syncComments(d: YtDeps, channelId: string, opts: { videoIds?: string[]; maxVideos?: number } = {}): Promise<{ videos: number; imported: number; updated: number; disabled: number }> {
+export async function syncComments(d: YtDeps, channelId: string, opts: { videoIds?: string[]; maxVideos?: number } = {}): Promise<{ videos: number; imported: number; updated: number; disabled: number; needsReply: number }> {
   const { auth } = await channelAuth(d, channelId);
   const vids = await d.prisma.youTubeVideo.findMany({ where: { channelId, availability: 'AVAILABLE', ...(opts.videoIds && { id: { in: opts.videoIds } }) }, orderBy: { publishedAt: 'desc' }, take: opts.maxVideos ?? 20, select: { id: true, youtubeVideoId: true } });
   return run(d, channelId, 'COMMENTS', async update => {
@@ -193,8 +193,29 @@ export async function syncComments(d: YtDeps, channelId: string, opts: { videoId
       await update({ processed: i + 1 });
     }
     await d.prisma.youTubeChannel.update({ where: { id: channelId }, data: { commentsStatus: 'OK' } });
-    return { videos: vids.length, imported, updated, disabled };
+    const needsReply = await recomputeNeedsReply(d.prisma, channelId);
+    return { videos: vids.length, imported, updated, disabled, needsReply };
   }).catch(async e => { if (e instanceof YouTubeApiError && (e.code === 'insufficientPermissions' || e.code === 'forbidden')) await d.prisma.youTubeChannel.update({ where: { id: channelId }, data: { commentsStatus: 'NO_ACCESS' } }); throw e; });
+}
+
+/**
+ * เธรดคอมเมนต์ YouTube แบนหนึ่งชั้น (top + replies) → needsReply = ความเห็นของผู้ชมที่มาหลังการจัดการครั้งล่าสุดของช่องในเธรด
+ * "จัดการแล้ว" = ช่องตอบในเธรด (authorChannelId ตรงช่อง) หรือเราส่งคำตอบ/ข้าม/ปิดเรื่อง/สแปมที่ความเห็นนั้น
+ */
+export async function recomputeNeedsReply(prisma: PrismaClient, channelId: string, threadIds?: string[]): Promise<number> {
+  const ch = await prisma.youTubeChannel.findUnique({ where: { id: channelId }, select: { youtubeChannelId: true } }); if (!ch) return 0;
+  const rows = await prisma.youTubeComment.findMany({ where: { channelId, ...(threadIds && { OR: [{ youtubeCommentId: { in: threadIds } }, { parentCommentId: { in: threadIds } }] }) }, select: { id: true, youtubeCommentId: true, parentCommentId: true, authorChannelId: true, publishedAt: true, replyStatus: true, resolvedAt: true, classification: true, needsReply: true } });
+  const threads = new Map<string, typeof rows>();
+  for (const r of rows) { const k = r.parentCommentId ?? r.youtubeCommentId; threads.set(k, [...(threads.get(k) ?? []), r]); }
+  const on: string[] = []; const off: string[] = [];
+  for (const list of threads.values()) {
+    const handled = (r: (typeof rows)[number]) => r.authorChannelId === ch.youtubeChannelId || ['SENT', 'SKIPPED'].includes(r.replyStatus) || !!r.resolvedAt || r.classification === 'SPAM';
+    const handledAt = Math.max(-1, ...list.filter(handled).map(r => r.publishedAt.getTime()));
+    for (const r of list) { const want = !handled(r) && r.publishedAt.getTime() > handledAt; if (want !== r.needsReply) (want ? on : off).push(r.id); }
+  }
+  if (on.length) await prisma.youTubeComment.updateMany({ where: { id: { in: on } }, data: { needsReply: true } });
+  if (off.length) await prisma.youTubeComment.updateMany({ where: { id: { in: off } }, data: { needsReply: false } });
+  return prisma.youTubeComment.count({ where: { channelId, needsReply: true } });
 }
 
 export async function syncPlaylists(d: YtDeps, channelId: string): Promise<{ playlists: number }> {

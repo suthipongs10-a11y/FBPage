@@ -30,7 +30,7 @@ export function buildWorkerYtDeps(prisma: PrismaClient, authSecret: string, env:
   const client = new YouTubeClient({ ...(mock && { dataBaseUrl: `${mock}/youtube/v3`, analyticsBaseUrl: `${mock}/analytics`, uploadBaseUrl: `${mock}/upload` }), quota });
   const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_REDIRECT_URI
     ? new GoogleAuth({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI, ...(mock && { authBaseUrl: `${mock}/auth`, tokenUrl: `${mock}/token`, tokenInfoUrl: `${mock}/tokeninfo`, revokeUrl: `${mock}/revoke` }) }) : null;
-  const deps: YtDeps = { prisma, yt: new YouTubeService(client), analytics: new YouTubeAnalyticsService(client), google, authSecret, apiKey: env.YOUTUBE_API_KEY, uploadEnabled: (env.YOUTUBE_UPLOAD_ENABLED ?? 'false').toLowerCase() === 'true', mediaDir: env.MEDIA_DIR ?? './data/media' };
+  const deps: YtDeps = { prisma, yt: new YouTubeService(client), analytics: new YouTubeAnalyticsService(client), google, authSecret, apiKey: env.YOUTUBE_API_KEY, uploadEnabled: (env.YOUTUBE_UPLOAD_ENABLED ?? 'false').toLowerCase() === 'true', mediaDir: env.MEDIA_DIR ?? './data/media', keepVideoAfterUpload: ['true', '1'].includes((env.YOUTUBE_KEEP_VIDEO_AFTER_UPLOAD ?? '').toLowerCase()) };
   return { deps, quota };
 }
 
@@ -140,9 +140,11 @@ export function createYtHandlers(ctx: YtWorkerContext) {
   return { handleUpload, handleSync, handleAnalytics, handleComments };
 }
 
-/** งานรอบ: quick ทุก 6 ชม. (1 unit/ช่อง) + daily videos/analytics ตี 3 UTC (ประหยัด quota §21) */
+/** งานรอบ: quick ทุก 6 ชม. (1 unit/ช่อง) + คอมเมนต์ทุก 3 ชม. + daily videos/analytics ตี 3 UTC (ประหยัด quota §21) */
 export async function registerYtSchedulers(sync: Queue): Promise<void> {
   await sync.upsertJobScheduler('yt-sync-all-quick-6h', { every: 6 * 3_600_000 }, { name: JOBS.ytSyncAll, data: { stage: 'quick' } });
   await sync.upsertJobScheduler('yt-sync-all-daily', { pattern: '0 3 * * *' }, { name: JOBS.ytSyncAll, data: { stage: 'daily' } });
+  // คอมเมนต์ใหม่ทุก 3 ชม. (20 คลิปล่าสุด ≈ 20–40 units/ช่อง/รอบ) → คำนวณ "รอตอบ" ของเธรดใหม่
+  await sync.upsertJobScheduler('yt-sync-all-comments-3h', { every: 3 * 3_600_000 }, { name: JOBS.ytSyncAll, data: { stage: 'comments' } });
 }
 export { YT_QUEUES };
