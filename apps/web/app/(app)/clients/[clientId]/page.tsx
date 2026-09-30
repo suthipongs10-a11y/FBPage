@@ -6,6 +6,7 @@ import { api, type ClientDetail } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, Pill, Select } from '@/components/ui';
+import { ClientPortalCard } from '@/components/client-portal-card';
 
 const kbTone = (s: string): 'ok' | 'warn' | 'bad' => (s === 'READY' ? 'ok' : s === 'PARTIAL' ? 'warn' : 'bad');
 
@@ -69,6 +70,7 @@ export default function ClientDetailPage() {
           </ul>
         )}
       </Card>
+      <ClientPortalCard clientId={clientId} />
     </div>
   );
 }

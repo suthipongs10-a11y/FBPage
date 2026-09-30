@@ -74,7 +74,9 @@ export class AuthService {
       where: { userId }, orderBy: { createdAt: 'asc' },
       select: { role: true, workspace: { select: { id: true, name: true, slug: true, timezone: true, automationPaused: true } } },
     });
-    return { user, workspaces: memberships.map(m => ({ ...m.workspace, role: m.role })) };
+    // เจ้าของธุรกิจ (พอร์ทัลลูกค้า) — ไม่ใช่สมาชิก workspace เห็นเฉพาะลูกค้าที่ได้รับเชิญ
+    const portal = await this.prisma.clientPortalMember.findMany({ where: { userId, client: { status: { not: 'ARCHIVED' } } }, orderBy: { createdAt: 'asc' }, select: { canReply: true, canApprove: true, client: { select: { id: true, name: true } } } });
+    return { user, workspaces: memberships.map(m => ({ ...m.workspace, role: m.role })), portalClients: portal.map(p => ({ id: p.client.id, name: p.client.name, canReply: p.canReply, canApprove: p.canApprove })) };
   }
 
   async createSession(userId: string, meta: SessionMeta): Promise<string> {

@@ -33,6 +33,7 @@ model User {
   approvalsRequested ApprovalRequest[]    @relation("ApprovalRequestedBy")
   approvalsReviewed  ApprovalRequest[]    @relation("ApprovalReviewedBy")
   passwordResets     PasswordReset[]
+  portalMemberships  ClientPortalMember[]
 }
 
 /// ลิงก์เชิญเข้า workspace (ไม่ต้องมีอีเมล — owner คัดลอกลิงก์ส่งเอง) token เก็บเป็น sha256
@@ -77,6 +78,8 @@ model Notification {
   href         String?
   resourceType String?
   resourceId   String?
+  /// ลูกค้าที่เกี่ยวข้อง (หาจาก resource ตอนสร้าง) — ใช้ส่ง LINE ถึงเจ้าของธุรกิจ/แสดงในพอร์ทัล
+  clientId     String?
   dedupeKey    String?
   readAt       DateTime?
   createdAt    DateTime  @default(now())
@@ -235,6 +238,8 @@ model Workspace {
   researchBriefs     ResearchBrief[]
   pageScouts         PageScout[]
   commentAutomations CommentAutomation[]
+  lineChannel        LineChannel?
+  lineRecipients     LineRecipient[]
 }
 
 enum WorkspaceRole {
@@ -275,8 +280,13 @@ model Client {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  brands    Brand[]
+  /// สรุปคอมเมนต์/แชทใหม่ส่ง LINE ครั้งล่าสุด (worker inbox digest)
+  inboxDigestAt DateTime?
+
+  workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brands        Brand[]
+  portalMembers ClientPortalMember[]
+  portalInvites ClientPortalInvite[]
 
   @@index([workspaceId])
 }
@@ -929,20 +939,20 @@ model YouTubeChannel {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  brand           Brand                          @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  connection      GoogleConnection?              @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
-  videos          YouTubeVideo[]
-  snapshots       YouTubeChannelMetricSnapshot[]
-  comments        YouTubeComment[]
-  playlists       YouTubePlaylist[]
-  syncRuns        YouTubeSyncRun[]
-  content         ContentItem[]
-  recommendations YouTubeRecommendation[]
-  clusters        CommentCluster[]
-  analyses        YouTubeChannelAnalysis[]
+  brand             Brand                          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  connection        GoogleConnection?              @relation(fields: [googleConnectionId], references: [id], onDelete: SetNull)
+  videos            YouTubeVideo[]
+  snapshots         YouTubeChannelMetricSnapshot[]
+  comments          YouTubeComment[]
+  playlists         YouTubePlaylist[]
+  syncRuns          YouTubeSyncRun[]
+  content           ContentItem[]
+  recommendations   YouTubeRecommendation[]
+  clusters          CommentCluster[]
+  analyses          YouTubeChannelAnalysis[]
   commentHighlights YouTubeCommentHighlightRun[]
-  communityDrafts YouTubeCommunityDraft[]
-  reports         YouTubeReport[]
+  communityDrafts   YouTubeCommunityDraft[]
+  reports           YouTubeReport[]
 
   @@unique([brandId, youtubeChannelId])
   @@index([googleConnectionId])
@@ -2077,4 +2087,107 @@ model CommentAutomation {
   page      FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([enabled])
+}
+
+/// สมาชิกพอร์ทัลลูกค้า — เจ้าของธุรกิจล็อกอินเห็นเฉพาะเพจของลูกค้ารายนี้ (ไม่ใช่สมาชิก workspace จึงเรียก API ของทีมไม่ได้)
+model ClientPortalMember {
+  id          String   @id @default(cuid())
+  clientId    String
+  userId      String
+  /// ตอบคอมเมนต์/แชทจากพอร์ทัลได้
+  canReply    Boolean  @default(true)
+  /// อนุมัติ/ขอแก้โพสต์ที่ทีมเตรียมไว้ได้
+  canApprove  Boolean  @default(true)
+  invitedById String?
+  createdAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, userId])
+  @@index([userId])
+}
+
+/// ลิงก์เชิญเข้าพอร์ทัลลูกค้า — เก็บแค่ hash ของ token (ลิงก์แสดงครั้งเดียวตอนสร้าง)
+model ClientPortalInvite {
+  id           String    @id @default(cuid())
+  clientId     String
+  email        String?
+  tokenHash    String    @unique
+  canReply     Boolean   @default(true)
+  canApprove   Boolean   @default(true)
+  invitedById  String
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  createdAt    DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// LINE Official Account ของ workspace (Messaging API) — ใช้ส่งแจ้งเตือนถึงทีมและเจ้าของธุรกิจ · ความลับเข้ารหัสด้วย AUTH_SECRET
+model LineChannel {
+  id                     String   @id @default(cuid())
+  workspaceId            String   @unique
+  channelSecretEncrypted String
+  accessTokenEncrypted   String
+  botBasicId             String?
+  botName                String?
+  /// ส่วนท้าย URL webhook (สุ่ม) — https://<โดเมน>/api/line/webhook/<webhookKey>
+  webhookKey             String   @unique
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+/// ผู้รับแจ้งเตือนทาง LINE — clientId null = ทีมงาน (ได้ทุกลูกค้า) · มี clientId = เจ้าของธุรกิจ (เฉพาะลูกค้ารายนั้น)
+model LineRecipient {
+  id          String   @id @default(cuid())
+  workspaceId String
+  lineUserId  String
+  displayName String?
+  userId      String?
+  clientId    String?
+  /// ชนิดแจ้งเตือนที่รับ — ว่าง = ค่าเริ่มต้นตามบทบาท
+  types       String[] @default([])
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, lineUserId, clientId])
+  @@index([workspaceId, active])
+}
+
+/// รหัส 6 หลักสำหรับผูก LINE — ผู้ใช้ส่งรหัสนี้ในแชท OA ภายใน 30 นาที
+model LineLinkCode {
+  id          String    @id @default(cuid())
+  workspaceId String
+  code        String
+  userId      String
+  clientId    String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([workspaceId, code])
+}
+
+/// บันทึกการส่ง LINE — นับโควต้า/เพดานต่อวัน และดูย้อนหลังว่าส่งอะไรไป (ไม่เก็บ token)
+model LineDelivery {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  recipientId    String?
+  notificationId String?
+  kind           String
+  status         String
+  error          String?
+  createdAt      DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([recipientId, createdAt])
 }

@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState<unknown>(null); const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setError(null);
-    try { await api('/auth/login', { method: 'POST', body: { email, password } }); router.replace('/'); }
+    try { await api('/auth/login', { method: 'POST', body: { email, password } }); const next = new URLSearchParams(window.location.search).get('next'); router.replace(next && /^\/(?!\/)/.test(next) ? next : '/'); }
     catch (err) { setError(err); } finally { setBusy(false); }
   };
   return (

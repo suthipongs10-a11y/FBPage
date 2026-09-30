@@ -6,5 +6,5 @@ import { CommentsService } from './comments.service';
 import { CommentAutomationService } from './automation.service';
 
 /** Comment intelligence + leads (§23, §24, §33) */
-@Module({ imports: [FacebookModule, AiModule], controllers: [CommentsController], providers: [CommentsService, CommentAutomationService] })
+@Module({ imports: [FacebookModule, AiModule], controllers: [CommentsController], providers: [CommentsService, CommentAutomationService], exports: [CommentsService] })
 export class CommentsModule {}

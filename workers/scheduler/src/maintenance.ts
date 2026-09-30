@@ -5,13 +5,14 @@
  * - token check ทุก 12 ชม.: Facebook user token ใกล้หมดอายุ / เพจ token INVALID / Google connection ERROR → แจ้งเตือน (dedupe รายวัน)
  * - เตือนโพสต์ชุมชน YouTube ทุก 10 นาที: ร่างที่ถึงเวลาแล้ว → แจ้งเตือนครั้งเดียว (ระบบไม่โพสต์เอง — ไม่มี API)
  * - ตรวจโพสต์ตั้งเวลาทุก 15 นาที + ตอนเริ่ม worker: โพสต์ Facebook สถานะ SCHEDULED ที่ไม่มีงานในคิว (Redis หาย / ย้ายเครื่อง / กู้ backup) → ใส่คิวใหม่ด้วย jobId เดิม
+ * - สรุปคอมเมนต์/แชทใหม่ทาง LINE ทุก 30 นาที (เฉพาะ workspace ที่ตั้ง LINE OA และมีคนผูกไว้ · เงียบ 22:00–07:00)
  * - stale uploads รายชั่วโมง: upload ที่ค้าง UPLOADING/UPLOAD_PENDING นานเกิน → UPLOAD_FAILED (retry ได้จากหน้า Content Lab) · PROCESSING นานเกิน → ตรวจใหม่
  */
 import type { Queue, Job } from 'bullmq';
-import { PrismaClient, notify } from '@fbpm/database';
+import { PrismaClient, lineInboxDigest, notify } from '@fbpm/database';
 import { JOBS, publishJobId } from '@fbpm/shared';
 
-export const RETENTION = { aiTaskLogDays: 180, apiUsageDays: 90, syncRunDays: 90, readNotificationDays: 90, expiredLinkDays: 30, staleUploadHours: 6, staleProcessingHours: 24, tokenWarnDays: 7 } as const;
+export const RETENTION = { aiTaskLogDays: 180, apiUsageDays: 90, syncRunDays: 90, readNotificationDays: 90, expiredLinkDays: 30, lineDeliveryDays: 90, staleUploadHours: 6, staleProcessingHours: 24, tokenWarnDays: 7 } as const;
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
 
@@ -30,6 +31,9 @@ export function createMaintenanceHandlers(ctx: MaintenanceContext) {
       aiTaskLogs: (await prisma.aiTaskLog.deleteMany({ where: { createdAt: { lt: daysAgo(RETENTION.aiTaskLogDays) } } })).count,
       ytApiUsage: (await prisma.youTubeApiUsage.deleteMany({ where: { calledAt: { lt: daysAgo(RETENTION.apiUsageDays) } } })).count,
       ytSyncRuns: (await prisma.youTubeSyncRun.deleteMany({ where: { startedAt: { lt: daysAgo(RETENTION.syncRunDays) } } })).count,
+      portalInvites: (await prisma.clientPortalInvite.deleteMany({ where: { OR: [{ expiresAt: { lt: daysAgo(RETENTION.expiredLinkDays) } }, { acceptedAt: { lt: daysAgo(RETENTION.expiredLinkDays) } }] } })).count,
+      lineLinkCodes: (await prisma.lineLinkCode.deleteMany({ where: { expiresAt: { lt: daysAgo(1) } } })).count,
+      lineDeliveries: (await prisma.lineDelivery.deleteMany({ where: { createdAt: { lt: daysAgo(RETENTION.lineDeliveryDays) } } })).count,
     };
     log('maintenance cleanup', r); return r;
   }
@@ -84,20 +88,26 @@ export function createMaintenanceHandlers(ctx: MaintenanceContext) {
     const r = { checked: items.length, requeued, overdue }; if (requeued) log('schedule reconcile: re-queued missing publish jobs', r); return r;
   }
 
+  async function lineDigest() {
+    const r = await lineInboxDigest(prisma, authSecret); if (r.sent) log('line inbox digest', r); return r;
+  }
+
   async function handle(job: Job): Promise<unknown> {
     if (job.name === JOBS.maintenanceCleanup) return cleanup();
     if (job.name === JOBS.maintenanceTokenCheck) return tokenCheck();
     if (job.name === JOBS.ytStaleUploads) return staleUploads();
     if (job.name === JOBS.ytCommunityReminders) return communityReminders();
     if (job.name === JOBS.scheduleReconcile) return reconcileSchedules();
+    if (job.name === JOBS.lineInboxDigest) return lineDigest();
     return { skipped: job.name };
   }
-  return { cleanup, tokenCheck, staleUploads, communityReminders, reconcileSchedules, handle };
+  return { cleanup, tokenCheck, staleUploads, communityReminders, reconcileSchedules, lineDigest, handle };
 }
 
 export async function registerMaintenanceSchedulers(maintenance: Queue, ytMaintenance: Queue): Promise<void> {
   await maintenance.upsertJobScheduler('maintenance-cleanup-daily', { pattern: '0 4 * * *' }, { name: JOBS.maintenanceCleanup, data: {} });
   await maintenance.upsertJobScheduler('schedule-reconcile-15m', { every: 15 * 60_000 }, { name: JOBS.scheduleReconcile, data: {} });
+  await maintenance.upsertJobScheduler('line-inbox-digest-30m', { every: 30 * 60_000 }, { name: JOBS.lineInboxDigest, data: {} });
   await maintenance.upsertJobScheduler('maintenance-token-check-12h', { every: 12 * 3_600_000 }, { name: JOBS.maintenanceTokenCheck, data: {} });
   await ytMaintenance.upsertJobScheduler('yt-stale-uploads-1h', { every: 3_600_000 }, { name: JOBS.ytStaleUploads, data: {} });
   await ytMaintenance.upsertJobScheduler('yt-community-reminders-10m', { every: 10 * 60_000 }, { name: JOBS.ytCommunityReminders, data: {} });

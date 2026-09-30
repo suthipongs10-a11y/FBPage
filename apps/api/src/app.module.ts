@@ -21,8 +21,10 @@ import { YoutubeModule } from './youtube/youtube.module';
 import { WebModule } from './web/web.module';
 import { EmailModule } from './email/email.module';
 import { NewsModule } from './news/news.module';
+import { LineModule } from './line/line.module';
+import { PortalModule } from './portal/portal.module';
 
 @Module({
-  imports: [TikTokModule, ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, WebModule, EmailModule, NewsModule, HealthModule],
+  imports: [TikTokModule, ConfigModule, DatabaseModule, RedisModule, AuditModule, AuthModule, WorkspacesModule, ClientsModule, BrandsModule, JobsModule, NotificationsModule, FacebookModule, AiModule, ContentModule, ReportsModule, MediaModule, CommentsModule, YoutubeModule, WebModule, EmailModule, NewsModule, LineModule, PortalModule, HealthModule],
 })
 export class AppModule {}

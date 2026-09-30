@@ -33,7 +33,7 @@ export async function apiUpload<T>(path: string, file: Blob): Promise<T> {
 // ---------- types ที่หน้าเว็บใช้ (mirror ของ API response) ----------
 export interface User { id: string; email: string; name: string }
 export interface WorkspaceSummary { id: string; name: string; slug: string; timezone: string; automationPaused: boolean; role: string }
-export interface Me { user: User; workspaces: WorkspaceSummary[] }
+export interface Me { user: User; workspaces: WorkspaceSummary[]; portalClients?: { id: string; name: string; canReply: boolean; canApprove: boolean }[] }
 export interface Client { id: string; name: string; contactName: string | null; email: string | null; phone: string | null; notes: string | null; status: string; createdAt: string; _count: { brands: number } }
 export interface BrandLite { id: string; name: string; industry: string | null; knowledgeBaseStatus: string; _count: { knowledge: number; pages: number } }
 export interface ClientDetail extends Client { brands: BrandLite[] }

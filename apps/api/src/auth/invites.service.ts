@@ -51,24 +51,28 @@ export class InvitesService {
     return { valid: true as const, workspaceName: inv.workspace.name, role: inv.role, email: inv.email };
   }
 
+  /** ใช้ร่วมกับคำเชิญพอร์ทัลลูกค้า: ล็อกอินอยู่ → บัญชีนั้น · มีบัญชีแล้ว → ต้องรหัสผ่านถูก · ยังไม่มี → สร้างใหม่ (ต้องมีชื่อ) แล้วเปิด session */
+  async joinAs(currentUserId: string | null, dto: AcceptInviteDto, inviteEmail: string | null, meta: SessionMeta): Promise<{ userId: string; sessionToken: string | null }> {
+    if (currentUserId) return { userId: currentUserId, sessionToken: null };
+    if (!dto.email || !dto.password) throw new BadRequestException('ต้องระบุอีเมลและรหัสผ่าน');
+    if (inviteEmail && inviteEmail !== dto.email) throw new BadRequestException('คำเชิญนี้ออกให้อีเมลอื่น');
+    let userId: string;
+    const existing = await this.prisma.user.findUnique({ where: { email: dto.email }, select: { id: true, passwordHash: true, status: true } });
+    if (existing) {
+      if (existing.status !== 'ACTIVE' || !(await verifyPassword(dto.password, existing.passwordHash))) throw new UnauthorizedException('อีเมลนี้มีบัญชีอยู่แล้ว — รหัสผ่านไม่ถูกต้อง');
+      userId = existing.id;
+    } else {
+      if (!dto.name) throw new BadRequestException('ต้องระบุชื่อ');
+      userId = (await this.prisma.user.create({ data: { email: dto.email, name: dto.name, passwordHash: await hashPassword(dto.password) }, select: { id: true } })).id;
+    }
+    return { userId, sessionToken: await this.auth.createSession(userId, meta) };
+  }
+
   /** รับคำเชิญ — ถ้าล็อกอินอยู่ใช้บัญชีนั้น ไม่งั้นต้องส่ง name+email+password เพื่อสร้างบัญชี (หรือ email+password ของบัญชีเดิม) */
   async accept(token: string, currentUserId: string | null, dto: AcceptInviteDto, meta: SessionMeta) {
     const inv = await this.valid(token);
     if (!inv) throw new NotFoundException('คำเชิญไม่ถูกต้องหรือหมดอายุ');
-    let userId = currentUserId; let sessionToken: string | null = null;
-    if (!userId) {
-      if (!dto.email || !dto.password) throw new BadRequestException('ต้องระบุอีเมลและรหัสผ่าน');
-      if (inv.email && inv.email !== dto.email) throw new BadRequestException('คำเชิญนี้ออกให้อีเมลอื่น');
-      const existing = await this.prisma.user.findUnique({ where: { email: dto.email }, select: { id: true, passwordHash: true, status: true } });
-      if (existing) {
-        if (existing.status !== 'ACTIVE' || !(await verifyPassword(dto.password, existing.passwordHash))) throw new UnauthorizedException('อีเมลนี้มีบัญชีอยู่แล้ว — รหัสผ่านไม่ถูกต้อง');
-        userId = existing.id;
-      } else {
-        if (!dto.name) throw new BadRequestException('ต้องระบุชื่อ');
-        userId = (await this.prisma.user.create({ data: { email: dto.email, name: dto.name, passwordHash: await hashPassword(dto.password) }, select: { id: true } })).id;
-      }
-      sessionToken = await this.auth.createSession(userId, meta);
-    }
+    const { userId, sessionToken } = await this.joinAs(currentUserId, dto, inv.email, meta);
     const member = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: inv.workspaceId, userId } } }).catch(() => null);
     if (member) throw new ConflictException('คุณเป็นสมาชิก workspace นี้อยู่แล้ว');
     await this.prisma.$transaction([

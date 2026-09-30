@@ -17,6 +17,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const m = await api<Me>('/auth/me');
+      // เจ้าของธุรกิจ (ไม่มี workspace) → พอร์ทัลลูกค้า
+      if (!m.workspaces.length && m.portalClients?.length) { router.replace('/portal'); return; }
       setMe(m);
       const stored = typeof window !== 'undefined' ? window.localStorage.getItem(KEY) : null;
       const pick = m.workspaces.find(w => w.id === stored)?.id ?? m.workspaces[0]?.id ?? '';
