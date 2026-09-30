@@ -941,6 +941,7 @@ model YouTubeChannel {
   clusters        CommentCluster[]
   analyses        YouTubeChannelAnalysis[]
   commentHighlights YouTubeCommentHighlightRun[]
+  communityDrafts YouTubeCommunityDraft[]
   reports         YouTubeReport[]
 
   @@unique([brandId, youtubeChannelId])
@@ -1260,6 +1261,39 @@ model YouTubeChannelAnalysis {
   channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@index([channelId, createdAt])
+}
+
+/// ร่างโพสต์ชุมชน (แท็บ "โพสต์") ของช่อง — YouTube ไม่มี API ให้โพสต์ (activities.insert ปิดตั้งแต่ 2020) จึงเก็บเป็นร่างให้คนคัดลอกไปโพสต์เอง
+model YouTubeCommunityDraft {
+  id          String    @id @default(cuid())
+  channelId   String
+  /// TEXT | POLL | IMAGE
+  kind        String    @default("TEXT")
+  /// ข้อความโพสต์ (โพล = คำถาม)
+  text        String
+  /// ตัวเลือกโพล 2–5 ข้อ (เฉพาะ POLL)
+  pollOptions String[]
+  /// ไอเดีย/คำสั่งสร้างรูป (เฉพาะ IMAGE) — ระบบไม่สร้างรูปเอง
+  imageIdea   String?
+  /// VIDEO | HIGHLIGHTS | TEXT | MANUAL
+  source      String    @default("MANUAL")
+  /// เช่น id วิดีโอที่ใช้เป็นที่มา
+  sourceRef   String?
+  aiModel     String?
+  /// DRAFT | POSTED | ARCHIVED
+  status      String    @default("DRAFT")
+  /// เวลาที่อยากโพสต์ — ถึงเวลาแล้วระบบแจ้งเตือน (ไม่โพสต์เอง)
+  scheduledAt DateTime?
+  remindedAt  DateTime?
+  postedAt    DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  channel YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, status])
+  @@index([status, scheduledAt])
 }
 
 /// ผลวิเคราะห์ "คอมเมนต์ที่น่าสนใจ" ของช่อง (จัดอันดับ + ไอเดียหัวข้อ) — แยกจาก YouTubeChannelAnalysis เพื่อไม่ปนกับผลวิเคราะห์ช่อง

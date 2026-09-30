@@ -94,4 +94,16 @@ run('worker youtube + maintenance jobs', () => {
     const cl = await mod.maintenance.cleanup(); expect(cl.notifications).toBeGreaterThanOrEqual(1);
     expect(await prisma.auditLog.count({ where: { workspaceId: ws } })).toBe(auditBefore); expect(await prisma.youTubeVideoMetricSnapshot.count({ where: { video: { channelId } } })).toBe(snapsBefore);
   });
+
+  it('community post reminders: a due draft notifies once; future, posted and unscheduled drafts are left alone', async () => {
+    const mk = (data: { scheduledAt?: Date | null; status?: string }) => prisma.youTubeCommunityDraft.create({ data: { channelId, text: 'โพลวันนี้ เลือกแบบไหน?', kind: 'TEXT', pollOptions: [], ...data } });
+    const due = await mk({ scheduledAt: new Date(Date.now() - 60_000) });
+    const future = await mk({ scheduledAt: new Date(Date.now() + 3_600_000) });
+    await mk({ scheduledAt: new Date(Date.now() - 60_000), status: 'POSTED' }); await mk({ scheduledAt: null });
+    const r = await mod.maintenance.communityReminders(); expect(r.reminded).toBe(1);
+    expect(await prisma.notification.findFirst({ where: { workspaceId: ws, resourceId: due.id } })).not.toBeNull();
+    expect((await prisma.youTubeCommunityDraft.findUniqueOrThrow({ where: { id: due.id } })).remindedAt).not.toBeNull();
+    expect((await prisma.youTubeCommunityDraft.findUniqueOrThrow({ where: { id: future.id } })).remindedAt).toBeNull();
+    expect((await mod.maintenance.communityReminders()).reminded).toBe(0);   // ไม่เตือนซ้ำ
+  });
 });

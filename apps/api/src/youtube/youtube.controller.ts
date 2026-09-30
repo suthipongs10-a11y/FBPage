@@ -15,6 +15,7 @@ import { YtCommentsService } from './comments.service';
 import { YtContentLabService } from './content-lab.service';
 import { YtReportsService } from './reports.service';
 import { YtPlaylistsService } from './playlists.service';
+import { YtCommunityService } from './community.service';
 import { ShareService } from '../reports/share.service';
 import { shareSchema } from '../reports/reports.controller';
 import * as d from './dto';
@@ -32,7 +33,7 @@ const assetKindSchema = z.enum(['video', 'thumbnail']);
 @Controller('workspaces/:workspaceId/youtube')
 @UseGuards(AuthGuard, TenantGuard)
 export class YoutubeController {
-  constructor(@Inject(YtChannelsService) private readonly channels: YtChannelsService, @Inject(YtVideosService) private readonly videos: YtVideosService, @Inject(YtCommentsService) private readonly comments: YtCommentsService, @Inject(YtContentLabService) private readonly lab: YtContentLabService, @Inject(YtReportsService) private readonly reports: YtReportsService, @Inject(YtPlaylistsService) private readonly playlists: YtPlaylistsService, @Inject(ShareService) private readonly share: ShareService) {}
+  constructor(@Inject(YtChannelsService) private readonly channels: YtChannelsService, @Inject(YtVideosService) private readonly videos: YtVideosService, @Inject(YtCommentsService) private readonly comments: YtCommentsService, @Inject(YtContentLabService) private readonly lab: YtContentLabService, @Inject(YtReportsService) private readonly reports: YtReportsService, @Inject(YtPlaylistsService) private readonly playlists: YtPlaylistsService, @Inject(YtCommunityService) private readonly community: YtCommunityService, @Inject(ShareService) private readonly share: ShareService) {}
 
   // ---------- health / connections (YT-1) ----------
   @Get('health') @RequirePermission('youtube.read')
@@ -103,6 +104,15 @@ export class YoutubeController {
   listComments(@Tenant() t: TenantContext, @Query(new ZodPipe(d.listYtCommentsSchema)) q: d.ListYtCommentsDto) { return this.comments.list(t.workspaceId, q); }
   @Post('channels/:id/comments/sync') @HttpCode(200) @RequirePermission('youtube.comments.read')
   syncComments(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.comments.sync(t.workspaceId, u.id, id, rid); }
+  // ---------- community posts (ร่าง → คนคัดลอกไปโพสต์เอง) ----------
+  @Get('community') @RequirePermission('youtube.read')
+  listCommunity(@Tenant() t: TenantContext, @Query('channelId') channelId?: string, @Query('status') status?: string) { return this.community.list(t.workspaceId, channelId || undefined, ['DRAFT', 'POSTED', 'ARCHIVED', 'ALL'].includes(status ?? '') ? status : 'DRAFT'); }
+  @Post('channels/:id/community/draft') @HttpCode(200) @RequirePermission('youtube.content.create', 'ai.use')
+  draftCommunity(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.communityDraftSchema)) b: d.CommunityDraftDto, @RequestId() rid: string) { return this.community.draft(t.workspaceId, u.id, id, b, rid); }
+  @Post('community') @HttpCode(201) @RequirePermission('youtube.content.create')
+  createCommunity(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(d.communityManualSchema)) b: d.CommunityManualDto, @RequestId() rid: string) { return this.community.create(t.workspaceId, u.id, b, rid); }
+  @Patch('community/:id') @RequirePermission('youtube.content.edit')
+  updateCommunity(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.communityUpdateSchema)) b: d.CommunityUpdateDto, @RequestId() rid: string) { return this.community.update(t.workspaceId, u.id, id, b, rid); }
   @Post('channels/:id/comments/highlights') @HttpCode(200) @RequirePermission('youtube.comments.read', 'ai.use')
   highlights(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(d.highlightsSchema)) b: z.infer<typeof d.highlightsSchema>, @RequestId() rid: string) { return this.comments.highlights(t.workspaceId, u.id, id, b?.days ?? 180, rid); }
   @Get('channels/:id/comments/highlights') @RequirePermission('youtube.comments.read')

@@ -39,4 +39,14 @@ nginx: location อัปโหลดคลิปใน `deploy/nginx-fbpm.conf`
 - เก็บใน `YouTubeCommentHighlightRun` (แยกจาก `YouTubeChannelAnalysis`) · `GET .../comments/highlights` = ผลล่าสุด
 - "➕ ส่งไป Content Lab" = `POST youtube/content` (IDEA) พร้อม notes อ้างคอมเมนต์ต้นทาง → ทำสคริปต์/ชื่อ/SEO ต่อใน YT · Content Lab
 
+## ร่างโพสต์ชุมชน (แท็บ "โพสต์" ของช่อง)
+หน้า `/youtube/community` (เมนู YT · โพสต์ชุมชน)
+
+- **YouTube Data API ไม่มีคำสั่งโพสต์ชุมชน** — `activities.insert` / channel bulletin ถูกปิดตั้งแต่ 18 พ.ค. 2020 และไม่มีคำสั่งอ่านโพสต์ชุมชนด้วย → ระบบ**ไม่โพสต์เอง** และห้ามใช้บอทล็อกอินแทน (ผิดข้อกำหนด YouTube)
+- `POST youtube/channels/:id/community/draft { source: VIDEO|HIGHLIGHTS|TEXT, videoId?, text?, kind: AUTO|TEXT|POLL|IMAGE, count 1–5, note? }` — AI บทบาท `content` ร่างจากคลิป (ล่าสุดหรือที่เลือก + ลิงก์), ผลคอมเมนต์น่าสนใจล่าสุด, หรือข้อความที่วางมา (เช่น โพสต์ Facebook)
+- โพลถูกจัดให้ตรงข้อจำกัด YouTube: 2–5 ตัวเลือก, ตัวละ ≤ 65 ตัวอักษร, ตัดซ้ำ (`cleanPollOptions`) — โพลที่ตัวเลือกไม่พอกลายเป็นข้อความ · IMAGE มีแค่ `imageIdea` (คนทำรูปเอง)
+- เก็บใน `YouTubeCommunityDraft` (DRAFT → POSTED / ARCHIVED) · `POST youtube/community` เขียนเอง · `PATCH youtube/community/:id` แก้/ตั้งเวลา/ทำเครื่องหมายโพสต์แล้ว
+- ตั้ง `scheduledAt` → worker `yt-community-reminders-10m` แจ้งเตือนครั้งเดียวเมื่อถึงเวลา (`remindedAt`) · เปลี่ยนเวลาแล้วเตือนใหม่
+- หน้าเว็บ: คัดลอกข้อความ / คำถาม / ตัวเลือกโพลทีละข้อ / ไอเดียรูป + ลิงก์ `youtube.com/channel/<id>/posts`
+
 ทดสอบ: `apps/api/src/youtube/youtube.int.test.ts` (quick upload, threads) และ E2E `YouTube: quick upload …` ใน `test/e2e/smoke.spec.ts`

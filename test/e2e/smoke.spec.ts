@@ -272,6 +272,33 @@ test('YouTube: quick upload a clip as Private in one click, and answer a viewer 
   expect(lab.some((c: { title: string; ytStatus: string }) => c.title === 'ใส่ปุ๋ยหน้าฝนยังไงไม่ให้ละลายทิ้ง' && c.ytStatus === 'IDEA')).toBe(true);
 });
 
+test('YouTube community posts: AI drafts a poll from the latest video, copy options, set a reminder time, mark as posted', async ({ page }) => {
+  await login(page);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  ai.state.replies.push({ text: JSON.stringify({ posts: [{ kind: 'POLL', text: 'คลิปหน้าอยากดูเรื่องไหน? 👇', pollOptions: ['ปุ๋ยนาข้าว', 'ปรับดินเปรี้ยว', 'ลดต้นทุนปุ๋ย'] }] }) });
+  await page.goto('/youtube/community');
+  await expect(page.getByRole('heading', { name: 'โพสต์ชุมชน YouTube' })).toBeVisible();
+  await page.getByLabel('รูปแบบ').first().selectOption('POLL');
+  await page.getByLabel('จำนวนแบบ').selectOption('1');
+  await page.getByRole('button', { name: '✨ ให้ AI ร่าง' }).click();
+  await expect(page.getByText('ร่างแล้ว 1')).toBeVisible({ timeout: 20_000 });
+  const card = page.locator('div.rounded-xl').filter({ has: page.getByLabel('ข้อความโพสต์') }).first();
+  await expect(card.getByLabel('ข้อความโพสต์')).toHaveValue('คลิปหน้าอยากดูเรื่องไหน? 👇');
+  await card.getByRole('button', { name: /2\. ปรับดินเปรี้ยว/ }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('ปรับดินเปรี้ยว');
+  await expect(card.getByRole('link', { name: /เปิดแท็บโพสต์ของช่อง/ })).toHaveAttribute('href', 'https://www.youtube.com/channel/UC_TEST_CHANNEL/posts');
+  const when = new Date(Date.now() + 2 * 86_400_000); const local = new Date(when.getTime() - when.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  await card.getByLabel('เวลาที่จะโพสต์ (ระบบเตือน)').fill(local);
+  await card.getByRole('button', { name: /บันทึก/ }).click();
+  await expect(page.getByText('บันทึกแล้ว')).toBeVisible();
+  const saved = (await api(page.request, 'GET', `/workspaces/${ws}/youtube/community?channelId=${channelId}`)).find((x: { text: string }) => x.text === 'คลิปหน้าอยากดูเรื่องไหน? 👇');
+  expect(saved.kind).toBe('POLL'); expect(saved.scheduledAt).toBeTruthy(); expect(saved.pollOptions).toEqual(['ปุ๋ยนาข้าว', 'ปรับดินเปรี้ยว', 'ลดต้นทุนปุ๋ย']);
+  await page.locator('div.rounded-xl').filter({ has: page.getByLabel('ข้อความโพสต์') }).first().getByRole('button', { name: /โพสต์แล้ว/ }).click();
+  await expect(page.getByText('ย้ายไป "โพสต์แล้ว"')).toBeVisible();
+  await page.getByRole('button', { name: /✔ โพสต์แล้ว/ }).first().click();
+  await expect(page.getByLabel('ข้อความโพสต์').first()).toHaveValue('คลิปหน้าอยากดูเรื่องไหน? 👇');
+});
+
 test('Websites: add a site in the UI, see status/SEO issues, connect Search Console and see top queries', async ({ page }) => {
   await login(page);
   await page.goto('/web');

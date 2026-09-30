@@ -257,6 +257,41 @@ run('youtube module (integration)', () => {
     expect((await a.http('GET', `/workspaces/${ws}/youtube/channels/${channelId}/analyses`)).json.every((x: { promptVersion: string }) => x.promptVersion !== 'youtube-comment-highlights-v1')).toBe(true);
   });
 
+  it('community posts: AI drafts from the latest video / comment highlights / pasted text, polls are cleaned to YouTube limits, owner marks posted', async () => {
+    const latest = await prisma.youTubeVideo.findFirstOrThrow({ where: { channelId, publishedAt: { not: null } }, orderBy: { publishedAt: 'desc' } });
+    const long = 'ก'.repeat(80);
+    ai.state.replies.push({ text: JSON.stringify({ posts: [
+      { kind: 'POLL', text: 'ดินที่บ้านเป็นแบบไหน?', pollOptions: ['เปรี้ยว', 'เปรี้ยว', 'ด่าง', long, 'ไม่รู้', 'ปกติ', 'เค็ม'] },
+      { kind: 'POLL', text: 'โพลที่ตัวเลือกไม่พอ', pollOptions: ['ข้อเดียว'] },
+      { kind: 'IMAGE', text: 'คลิปใหม่มาแล้ว!', imageIdea: 'ภาพดินแตกระแหงคู่กับถุงปูนขาว' },
+    ] }) });
+    const r = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/community/draft`, { source: 'VIDEO', kind: 'AUTO', count: 3 });
+    expect(r.status, r.text).toBe(200); expect(r.json).toHaveLength(3);
+    const [poll, notPoll, img] = r.json as { kind: string; pollOptions: string[]; imageIdea: string | null; sourceRef: string; source: string; status: string }[];
+    expect(poll!.kind).toBe('POLL'); expect(poll!.pollOptions).toHaveLength(5); expect(poll!.pollOptions[0]).toBe('เปรี้ยว'); expect(poll!.pollOptions.every(o => o.length <= 65)).toBe(true);
+    expect(notPoll!.kind).toBe('TEXT'); expect(notPoll!.pollOptions).toEqual([]);   // ตัวเลือกไม่พอ → เป็นข้อความ ไม่ทิ้งงาน
+    expect(img!.kind).toBe('IMAGE'); expect(img!.imageIdea).toMatch(/ปูนขาว/); expect(img!.sourceRef).toBe(latest.id); expect(img!.status).toBe('DRAFT');
+    expect(JSON.stringify(ai.state.requests.at(-1)?.messages)).toContain(latest.youtubeVideoId);   // ลิงก์คลิปอยู่ในข้อมูลที่ส่งให้ AI
+    // บังคับเป็นโพลทั้งหมด + ที่มาจากคอมเมนต์น่าสนใจ
+    ai.state.replies.push({ text: JSON.stringify({ posts: [{ kind: 'TEXT', text: 'คลิปหน้าอยากดูเรื่องไหน?', pollOptions: ['ปุ๋ยนาข้าว', 'ปูนขาว'] }] }) });
+    const h = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/community/draft`, { source: 'HIGHLIGHTS', kind: 'POLL', count: 1 });
+    expect(h.status, h.text).toBe(200); expect(h.json[0].kind).toBe('POLL'); expect(h.json[0].source).toBe('HIGHLIGHTS');
+    const noText = await a.http('POST', `/workspaces/${ws}/youtube/channels/${channelId}/community/draft`, { source: 'TEXT', count: 1 }); expect(noText.status).toBe(422);
+    // เขียนเอง: โพลต้องมี 2–5 ตัวเลือก
+    const bad = await a.http('POST', `/workspaces/${ws}/youtube/community`, { channelId, kind: 'POLL', text: 'ถามอะไรดี', pollOptions: ['ข้อเดียว'] }); expect(bad.status).toBe(422);
+    const mine = await a.http('POST', `/workspaces/${ws}/youtube/community`, { channelId, kind: 'TEXT', text: 'ขอบคุณผู้ติดตามทุกคน 🙏' }); expect(mine.status, mine.text).toBe(201);
+    // ตั้งเวลา → โพสต์แล้ว → หายจากรายการร่าง
+    const when = new Date(Date.now() + 86_400_000).toISOString();
+    const sch = await a.http('PATCH', `/workspaces/${ws}/youtube/community/${mine.json.id}`, { scheduledAt: when }); expect(sch.status).toBe(200); expect(sch.json.scheduledAt).toBe(when);
+    const posted = await a.http('PATCH', `/workspaces/${ws}/youtube/community/${mine.json.id}`, { status: 'POSTED' }); expect(posted.json.postedAt).toBeTruthy();
+    const drafts = await a.http('GET', `/workspaces/${ws}/youtube/community?channelId=${channelId}`); expect(drafts.json.some((x: { id: string }) => x.id === mine.json.id)).toBe(false); expect(drafts.json.length).toBe(4);
+    const done = await a.http('GET', `/workspaces/${ws}/youtube/community?status=POSTED`); expect(done.json.map((x: { id: string }) => x.id)).toContain(mine.json.id);
+    // workspace อื่นมองไม่เห็น/แก้ไม่ได้
+    expect((await b.http('GET', `/workspaces/${wsB}/youtube/community?status=ALL`)).json).toEqual([]);
+    expect((await b.http('PATCH', `/workspaces/${wsB}/youtube/community/${mine.json.id}`, { status: 'ARCHIVED' })).status).toBe(404);
+    expect((await a.http('POST', `/workspaces/${ws}/youtube/community`, { channelId: 'nope', text: 'x' })).status).toBe(404);
+  });
+
   // ---------- YT-4/YT-5 content lab → approval → upload ----------
   it('topic ideas → script → titles → SEO metadata → policy fields → submit → approve', async () => {
     ai.state.replies.push({ text: JSON.stringify({ ideas: [{ topic: 'ยูเรียต่อไร่', title: 'ยูเรียใส่กี่กิโลต่อไร่ถึงพอดี', whyNow: 'คอมเมนต์ถามซ้ำ', evidence: ['c1', 'v1 views'], contentPillar: 'ปุ๋ย', format: 'LONG_FORM', objective: 'ตอบคำถามผู้ชม', hook: 'ใส่มากไปเสียเงินฟรี', priority: 90, confidence: 0.8, source: 'COMMENTS' }, { topic: 'ปุ๋ยอินทรีย์', title: 'ปุ๋ยอินทรีย์ทำเองใน 7 วัน', whyNow: 'ผู้ชมขอ', evidence: ['c2'], contentPillar: 'ปุ๋ย', format: 'SHORT', objective: 'ขยายฐาน', hook: '7 วันได้ปุ๋ยฟรี', priority: 70, confidence: 0.6, source: 'COMMENTS' }],

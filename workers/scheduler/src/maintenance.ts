@@ -3,6 +3,7 @@
  * - cleanup รายวัน: ลบข้อมูลชั่วคราวที่หมดอายุ (session, invite/reset ที่หมดอายุหรือใช้แล้ว, notification ที่อ่านแล้ว, AiTaskLog/ApiUsage/SyncRun เก่า)
  *   **ไม่ลบ** AuditLog, metric snapshot, report — เป็นประวัติที่รายงานอ้างอิง
  * - token check ทุก 12 ชม.: Facebook user token ใกล้หมดอายุ / เพจ token INVALID / Google connection ERROR → แจ้งเตือน (dedupe รายวัน)
+ * - เตือนโพสต์ชุมชน YouTube ทุก 10 นาที: ร่างที่ถึงเวลาแล้ว → แจ้งเตือนครั้งเดียว (ระบบไม่โพสต์เอง — ไม่มี API)
  * - stale uploads รายชั่วโมง: upload ที่ค้าง UPLOADING/UPLOAD_PENDING นานเกิน → UPLOAD_FAILED (retry ได้จากหน้า Content Lab) · PROCESSING นานเกิน → ตรวจใหม่
  */
 import type { Queue, Job } from 'bullmq';
@@ -56,17 +57,28 @@ export function createMaintenanceHandlers(ctx: MaintenanceContext) {
     const r = { failed: stale.length, recheck: processing.length }; log('maintenance stale uploads', r); return r;
   }
 
+  async function communityReminders(): Promise<{ reminded: number }> {
+    const due = await prisma.youTubeCommunityDraft.findMany({ where: { status: 'DRAFT', remindedAt: null, scheduledAt: { lte: new Date() } }, take: 200, select: { id: true, text: true, channel: { select: { title: true, brand: { select: { client: { select: { workspaceId: true } } } } } } } });
+    for (const d of due) {
+      await notify(prisma, authSecret, d.channel.brand.client.workspaceId, { type: 'info', severity: 'warn', title: `ถึงเวลาโพสต์ชุมชน YouTube: ${d.channel.title}`, body: d.text.slice(0, 140), href: '/youtube/community', resourceType: 'youTubeCommunityDraft', resourceId: d.id, dedupeKey: `yt-community:${d.id}` }).catch(() => undefined);
+      await prisma.youTubeCommunityDraft.update({ where: { id: d.id }, data: { remindedAt: new Date() } });
+    }
+    const r = { reminded: due.length }; if (due.length) log('youtube community reminders', r); return r;
+  }
+
   async function handle(job: Job): Promise<unknown> {
     if (job.name === JOBS.maintenanceCleanup) return cleanup();
     if (job.name === JOBS.maintenanceTokenCheck) return tokenCheck();
     if (job.name === JOBS.ytStaleUploads) return staleUploads();
+    if (job.name === JOBS.ytCommunityReminders) return communityReminders();
     return { skipped: job.name };
   }
-  return { cleanup, tokenCheck, staleUploads, handle };
+  return { cleanup, tokenCheck, staleUploads, communityReminders, handle };
 }
 
 export async function registerMaintenanceSchedulers(maintenance: Queue, ytMaintenance: Queue): Promise<void> {
   await maintenance.upsertJobScheduler('maintenance-cleanup-daily', { pattern: '0 4 * * *' }, { name: JOBS.maintenanceCleanup, data: {} });
   await maintenance.upsertJobScheduler('maintenance-token-check-12h', { every: 12 * 3_600_000 }, { name: JOBS.maintenanceTokenCheck, data: {} });
   await ytMaintenance.upsertJobScheduler('yt-stale-uploads-1h', { every: 3_600_000 }, { name: JOBS.ytStaleUploads, data: {} });
+  await ytMaintenance.upsertJobScheduler('yt-community-reminders-10m', { every: 10 * 60_000 }, { name: JOBS.ytCommunityReminders, data: {} });
 }

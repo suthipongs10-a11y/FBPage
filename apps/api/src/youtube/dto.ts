@@ -22,7 +22,15 @@ export type ClassifyYtDto = z.infer<typeof classifyYtSchema>;
 export const updateYtCommentSchema = z.object({ draftReply: z.string().trim().max(5000).optional(), resolved: z.boolean().optional(), classification: z.enum(YT_COMMENT_CLASSES).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
 export type UpdateYtCommentDto = z.infer<typeof updateYtCommentSchema>;
 export const replyYtSchema = z.object({ message: z.string().trim().min(1).max(5000).optional() });
-export const highlightsSchema = z.object({ days: z.coerce.number().int().min(7).max(730).default(180) }).optional();
+// ---- โพสต์ชุมชน (ร่างให้คนคัดลอกไปโพสต์ — ไม่มี API ให้โพสต์) ----
+const communityKind = z.enum(['TEXT', 'POLL', 'IMAGE']);
+export const communityDraftSchema = z.object({ source: z.enum(['VIDEO', 'HIGHLIGHTS', 'TEXT']).default('VIDEO'), videoId: z.string().optional(), text: z.string().max(5000).optional(), kind: z.enum(['AUTO', 'TEXT', 'POLL', 'IMAGE']).default('AUTO'), count: z.coerce.number().int().min(1).max(5).default(3), note: opt(500) });
+export type CommunityDraftDto = z.infer<typeof communityDraftSchema>;
+export const communityManualSchema = z.object({ channelId: z.string().min(1), kind: communityKind.default('TEXT'), text: z.string().trim().min(1).max(5000), pollOptions: z.array(z.string().max(200)).max(10).optional(), imageIdea: z.string().max(1000).nullable().optional(), scheduledAt: z.string().datetime().nullable().optional() });
+export type CommunityManualDto = z.infer<typeof communityManualSchema>;
+export const communityUpdateSchema = z.object({ kind: communityKind.optional(), text: z.string().trim().min(1).max(5000).optional(), pollOptions: z.array(z.string().max(200)).max(10).optional(), imageIdea: z.string().max(1000).nullable().optional(), scheduledAt: z.string().datetime().nullable().optional(), status: z.enum(['DRAFT', 'POSTED', 'ARCHIVED']).optional() }).refine(o => Object.keys(o).length > 0, 'ไม่มีฟิลด์ให้แก้');
+export type CommunityUpdateDto = z.infer<typeof communityUpdateSchema>;
+export const highlightsSchema =z.object({ days: z.coerce.number().int().min(7).max(730).default(180) }).optional();
 export const replyBulkSchema =z.object({ ids: z.array(z.string().min(1)).min(1).max(30) });
 // ---- Content Lab ----
 export const ideasSchema = z.object({ count: z.coerce.number().int().min(1).max(10).default(5), objective: opt(300), notes: opt(1000) }).optional();
