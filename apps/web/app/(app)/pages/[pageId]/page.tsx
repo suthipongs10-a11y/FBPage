@@ -6,6 +6,7 @@ import { AUTOMATION_LEVELS } from '@fbpm/shared';
 import { api, type Client, type ClientDetail, type MetricCell, type PageAnalysisRow, type PageDetail, type PagePost, type SyncResult } from '@/lib/api';
 import { t, type MessageKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace-context';
+import { PageQuotaCard } from '@/components/quota-bar';
 import { Button, Card, Empty, ErrorBox, Field, Input, Kpi, Loading, Pill, Select } from '@/components/ui';
 
 const fmt = (d: string | null | undefined) => (d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : t('pages.never'));
@@ -115,6 +116,7 @@ export default function PageDetailPage() {
         </Card>
       )}
 
+      <PageQuotaCard wsId={ws.id} pageId={pageId} />
       <Card title={t('pages.missing')}>
         {page.completeness.missing.length === 0 ? <p className="text-sm text-emerald-400">✔ {t('pages.complete')}</p> : (
           <ul className="grid gap-1 text-sm sm:grid-cols-2">{page.completeness.missing.map(m => <li key={m.key} className="text-slate-300">• {m.label}{m.hint && <span className="text-xs text-slate-500"> — {m.hint}</span>}</li>)}</ul>

@@ -2,7 +2,10 @@
 export interface PortalClient { id: string; name: string; canReply: boolean; canApprove: boolean }
 export interface PortalOverview {
   client: { id: string; name: string }; agencyName: string; canReply: boolean; canApprove: boolean; preview: boolean;
-  pages: { id: string; name: string; pictureUrl: string | null; fanCount: number | null; tokenStatus: string }[];
+  pages: { id: string; name: string; pictureUrl: string | null; fanCount: number | null; tokenStatus: string;
+    plan: { name: string; postsPerMonth: number | null; reelsPerMonth: number | null; features: string[] } | null;
+    cycle: { start: string; end: string; startDate: string; lastDate: string; daysLeft: number }; quota: { limit: number | null; used: number; planned: number; remaining: number | null };
+    reels: { limit: number | null; planned: number; remaining: number | null } }[];
   counts: { pendingComments: number; needsAttention: number; newLeads: number; approvals: number; commentsWeek: number; leadsWeek: number };
 }
 export interface PortalComment { id: string; pageId: string; fromName: string | null; message: string | null; createdTime: string; permalink: string | null; classification: string | null; riskFlag: boolean; draftReply: string | null; replyStatus: string; repliedAt: string | null; resolvedAt: string | null; parentCommentId: string | null; page: { name: string }; post: { message: string | null; permalink: string | null } | null; lead: { id: string; leadScore: number; status: string } | null }

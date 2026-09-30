@@ -7,6 +7,8 @@ import { t, type MessageKey } from '@/lib/i18n';
 import { fullDate, timeAgo } from '@/lib/yt-comment';
 import { inMessengerWindow, type LineLinkCode, type LineRecipientRow, type PortalApproval, type PortalComment, type PortalConversation, type PortalLead, type PortalOverview, type PortalReport, type PortalThread } from '@/lib/portal';
 import { Button, Card, Empty, ErrorBox, Input, Loading, Pill, Select, Textarea } from '@/components/ui';
+import { QuotaBar } from '@/components/quota-bar';
+import { cycleLabel } from '@/lib/plans';
 
 export type PortalTab = 'inbox' | 'leads' | 'approvals' | 'reports' | 'line';
 export const PORTAL_TABS: PortalTab[] = ['inbox', 'leads', 'approvals', 'reports', 'line'];
@@ -27,6 +29,17 @@ export function PortalView({ clientId, tab, onTab }: { clientId: string; tab: Po
         <h1 className="text-xl font-semibold sm:text-2xl">{ov.client.name}</h1>
         <p className="text-xs text-slate-500">{t('pt.managedBy')} {ov.agencyName} · {ov.pages.map(p => p.name).join(' · ') || t('pt.noPages')}</p>
       </div>
+      {ov.pages.some(p => p.plan) && (
+        <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900 p-3">
+          {ov.pages.filter(p => p.plan).map(p => (
+            <div key={p.id}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-slate-400"><span><b className="text-sm text-slate-200">{p.name}</b> · {t('pt.package')} {p.plan!.name}</span><span>{t('portfolio.cycle')} {cycleLabel(p.cycle)}</span></div>
+              <div className="mt-1"><QuotaBar q={{ ...p.quota, expectedByNow: null, pace: p.quota.limit === null ? 'UNLIMITED' : 'ON_TRACK' }} /></div>
+              {p.reels.limit !== null && <p className="mt-0.5 text-[11px] text-slate-500">Reels {p.reels.planned}/{p.reels.limit}</p>}
+            </div>
+          ))}
+        </div>
+      )}
       {ov.preview && <p className="rounded-lg border border-amber-800 bg-amber-950/50 p-3 text-sm text-amber-200">👀 {t('pt.previewNote')}</p>}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label={t('pt.kpi.pending')} value={ov.counts.pendingComments} tone={ov.counts.pendingComments ? 'warn' : undefined} />

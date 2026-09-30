@@ -222,6 +222,7 @@ model Workspace {
   youtubeApiUsage    YouTubeApiUsage[]
   members            WorkspaceMember[]
   clients            Client[]
+  servicePlans       ServicePlan[]
   connections        FacebookConnection[]
   approvals          ApprovalRequest[]
   auditLogs          AuditLog[]
@@ -422,6 +423,13 @@ model FacebookPage {
   leads             Lead[]
   scout             PageScout?
   commentAutomation CommentAutomation?
+
+  /// แพ็กเกจบริการที่ลูกค้าจ่ายต่อเพจ (docs/PLANS_QUOTA.md) — null = ยังไม่กำหนด
+  servicePlanId   String?
+  servicePlan     ServicePlan? @relation(fields: [servicePlanId], references: [id], onDelete: SetNull)
+  /// วันตัดรอบโควต้า/บิล (1–28) ตามเขตเวลาของเพจ/workspace — รอบ = วันนี้ของเดือน ถึงก่อนวันเดียวกันเดือนถัดไป
+  billingDay      Int          @default(1)
+  planStartedAt   DateTime?
 
   @@unique([brandId, facebookPageId])
   @@index([connectionId])
@@ -2190,4 +2198,28 @@ model LineDelivery {
 
   @@index([workspaceId, createdAt])
   @@index([recipientId, createdAt])
+}
+
+/// แพ็กเกจบริการของทีม (เช่น "เริ่มต้น 590 บาท/เพจ 12 โพสต์") — ราคาเป็นบาทต่อเพจต่อเดือน, โควต้า null = ไม่จำกัด
+model ServicePlan {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  name          String
+  description   String?
+  priceMonthly  Int?
+  postsPerMonth Int?
+  /// โควต้าย่อยของ Reels (นับรวมอยู่ใน postsPerMonth ด้วย)
+  reelsPerMonth Int?
+  /// บริการที่รวมในแพ็กเกจ เช่น comments, messenger, report, portal, line, ads, design
+  features      String[] @default([])
+  active        Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pages     FacebookPage[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, active])
 }

@@ -21,6 +21,7 @@ import { ContentService } from '../content/content.service';
 import { ShareService } from '../reports/share.service';
 import { LineService } from '../line/line.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PlansService } from '../plans/plans.service';
 
 const INVITE_TTL_MS = 7 * 86_400_000;
 export interface PortalAccess { clientId: string; clientName: string; workspaceId: string; workspaceName: string; canReply: boolean; canApprove: boolean; preview: boolean }
@@ -32,7 +33,7 @@ export class PortalService {
     @Inject(InvitesService) private readonly invites: InvitesService, @Inject(CommentsService) private readonly comments: CommentsService,
     @Inject(MessengerService) private readonly messenger: MessengerService, @Inject(ContentService) private readonly content: ContentService,
     @Inject(ShareService) private readonly share: ShareService, @Inject(LineService) private readonly line: LineService,
-    @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService, @Inject(PlansService) private readonly plans: PlansService,
   ) {}
 
   // ---------- ฝั่งทีม: เชิญ/จัดการสมาชิกพอร์ทัลของลูกค้า ----------
@@ -129,7 +130,7 @@ export class PortalService {
   async overview(a: PortalAccess) {
     const page = this.pages(a); const weekAgo = new Date(Date.now() - 7 * 86_400_000);
     const [pages, pendingComments, needsAttention, newLeads, approvals, commentsWeek, leadsWeek] = await Promise.all([
-      this.prisma.facebookPage.findMany({ where: { ...page, disconnectedAt: null }, orderBy: { name: 'asc' }, select: { id: true, name: true, pictureUrl: true, fanCount: true, tokenStatus: true } }),
+      this.prisma.facebookPage.findMany({ where: { ...page, disconnectedAt: null }, orderBy: { name: 'asc' }, select: { id: true, name: true, pictureUrl: true, fanCount: true, tokenStatus: true, timezone: true, billingDay: true, servicePlan: { select: { id: true, name: true, priceMonthly: true, postsPerMonth: true, reelsPerMonth: true, features: true } } } }),
       this.prisma.pageComment.count({ where: { page, resolvedAt: null, replyStatus: { not: 'SENT' }, isHidden: false } }),
       this.prisma.messengerConversation.count({ where: { page, needsAttention: true } }),
       this.prisma.lead.count({ where: { workspaceId: a.workspaceId, page, status: 'NEW' } }),
@@ -137,7 +138,11 @@ export class PortalService {
       this.prisma.pageComment.count({ where: { page, createdTime: { gte: weekAgo } } }),
       this.prisma.lead.count({ where: { workspaceId: a.workspaceId, page, createdAt: { gte: weekAgo } } }),
     ]);
-    return { client: { id: a.clientId, name: a.clientName }, agencyName: a.workspaceName, canReply: a.canReply, canApprove: a.canApprove, preview: a.preview, pages, counts: { pendingComments, needsAttention, newLeads, approvals, commentsWeek, leadsWeek } };
+    // โควต้าโพสต์ของแพ็กเกจ (ไม่แสดงราคาให้เจ้าของ)
+    const ws = await this.prisma.workspace.findUniqueOrThrow({ where: { id: a.workspaceId }, select: { timezone: true } });
+    const quotas = await this.plans.quotas(pages, ws.timezone);
+    const pageRows = pages.map(({ timezone: _tz, billingDay: _bd, servicePlan, ...p }) => { const q = quotas.get(p.id)!; return { ...p, plan: servicePlan && { name: servicePlan.name, postsPerMonth: servicePlan.postsPerMonth, reelsPerMonth: servicePlan.reelsPerMonth, features: servicePlan.features }, cycle: { start: q.cycle.start, end: q.cycle.end, startDate: q.cycle.startDate, lastDate: q.cycle.lastDate, daysLeft: q.cycle.daysLeft }, quota: { limit: q.quota.limit, used: q.quota.used, planned: q.quota.planned, remaining: q.quota.remaining }, reels: q.reels }; });
+    return { client: { id: a.clientId, name: a.clientName }, agencyName: a.workspaceName, canReply: a.canReply, canApprove: a.canApprove, preview: a.preview, pages: pageRows, counts: { pendingComments, needsAttention, newLeads, approvals, commentsWeek, leadsWeek } };
   }
 
   // ---------- คอมเมนต์ ----------

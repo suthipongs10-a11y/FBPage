@@ -10,7 +10,7 @@ import { NotificationBell } from '@/components/notification-bell';
 
 const NAV: { key: MessageKey; href?: string }[] = [
   { key: 'nav.messenger', href: '/messenger' },
-  { key: 'nav.overview', href: '/' }, { key: 'nav.clients', href: '/clients' }, { key: 'nav.pages', href: '/pages' }, { key: 'nav.ai', href: '/ai' }, { key: 'nav.aiModels', href: '/ai-models' },
+  { key: 'nav.overview', href: '/' }, { key: 'nav.portfolio', href: '/portfolio' }, { key: 'nav.clients', href: '/clients' }, { key: 'nav.pages', href: '/pages' }, { key: 'nav.ai', href: '/ai' }, { key: 'nav.aiModels', href: '/ai-models' },
   { key: 'nav.content', href: '/content' }, { key: 'nav.news', href: '/news' }, { key: 'nav.calendar', href: '/calendar' }, { key: 'nav.analytics', href: '/analytics' }, { key: 'nav.comments', href: '/comments' }, { key: 'nav.leads', href: '/leads' },
   { key: 'nav.reports', href: '/reports' },
   { key: 'nav.tiktok', href: '/tiktok' }, { key: 'nav.youtube', href: '/youtube' }, { key: 'nav.ytVideos', href: '/youtube/videos' }, { key: 'nav.ytContent', href: '/youtube/content' }, { key: 'nav.ytComments', href: '/youtube/comments' }, { key: 'nav.ytCommunity', href: '/youtube/community' }, { key: 'nav.ytReports', href: '/youtube/reports' }, { key: 'nav.web', href: '/web' }, { key: 'nav.webContent', href: '/web/content' }, { key: 'nav.email', href: '/email' },
