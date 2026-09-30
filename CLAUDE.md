@@ -40,6 +40,7 @@
 > node test/phase5-smoke.mjs                        # AI gateway ผ่าน proxy กับ mock AI (ไม่ใช้ key จริง)
 > META_GRAPH_BASE_URL=http://127.0.0.1:4998 pnpm dev:api  แล้ว  node test/phase6-smoke.mjs   # content loop กับ mock Graph (ไม่แตะเพจจริง)
 > worker ต้องมี AUTH_SECRET เดียวกับ API (ถอดรหัส page token) — `pnpm dev:worker` · worker มีงาน maintenance (cleanup รายวัน / ตรวจ token / upload ค้าง) ใน `workers/scheduler/src/maintenance.ts` — ห้ามเพิ่มการลบ AuditLog/metric snapshot/report
+> สำรอง/กู้/ย้าย VPS: `deploy/backup.sh` (db + media + .env → tar เข้ารหัส `/root/.fbpm-backup-pass`, `--install-cron`, `RCLONE_REMOTE`, `--status`) · `deploy/restore.sh` (`--check` ตรวจไม่แตะระบบ, สำรองของเดิมก่อน, ตรวจ AUTH_SECRET ตรงกัน, `--use-backup-env`) · ไม่สำรอง Redis — worker `schedule-reconcile` (ตอนเริ่ม + ทุก 15 นาที) ตั้งคิวโพสต์ SCHEDULED ใหม่จาก DB · ดู `docs/runbooks/backup-restore.md`
 > CI: `.github/workflows/ci.yml` รัน DoD ทั้งหมดกับ mock — ห้ามใส่ key จริงเป็น secret ของ CI · E2E: `pnpm test:e2e` (Playwright ใช้ Chromium ที่มีอยู่ `/opt/pw-browsers/chromium`)
 > ธีม UI สว่าง กำหนดที่ `apps/web/app/globals.css` (`@theme` กลับสเกล slate) — โค้ดหน้าใช้คลาส slate/sky เดิม ห้ามฮาร์ดโค้ดสี hex ในหน้า ยกเว้นกราฟ (`components/charts.tsx` สีตรวจผ่าน validator แล้ว) · เจ้าของระบบดู `docs/runbooks/go-live-checklist.md`
 > อีเมล: `SMTP_*` ใน env — โค้ดส่งเมลผ่าน `@fbpm/database/mail` เท่านั้น test ใช้ `startMockSmtp()` ห้ามส่งอีเมลจริง · ลิงก์แชร์รายงาน `/share/r/<token>` เป็นสาธารณะ ต้องไม่ใส่ข้อมูลภายใน/token ใน payload

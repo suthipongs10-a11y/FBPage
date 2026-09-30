@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Queue, type Job } from 'bullmq';
 import { PrismaClient, encryptSecret } from '@fbpm/database';
 import { startMockYouTube } from '@fbpm/youtube-core';
-import { JOBS, YT_QUEUES } from '@fbpm/shared';
+import { JOBS, QUEUES, YT_QUEUES, publishJobId } from '@fbpm/shared';
 import { redisConnectionFromUrl } from './queues';
 
 const HAS_DB = !!process.env.DATABASE_URL && !!process.env.REDIS_URL;
@@ -93,6 +93,19 @@ run('worker youtube + maintenance jobs', () => {
     await prisma.notification.create({ data: { workspaceId: ws, type: 'info', title: 'old', readAt: new Date(Date.now() - 200 * 86_400_000) } });
     const cl = await mod.maintenance.cleanup(); expect(cl.notifications).toBeGreaterThanOrEqual(1);
     expect(await prisma.auditLog.count({ where: { workspaceId: ws } })).toBe(auditBefore); expect(await prisma.youTubeVideoMetricSnapshot.count({ where: { video: { channelId } } })).toBe(snapsBefore);
+  });
+
+  it('schedule reconcile: a SCHEDULED Facebook post whose queue job vanished (Redis lost / restored backup) is re-queued once with the same job id', async () => {
+    const publishQ = new Queue(QUEUES.facebookPublish, { connection: redisConnectionFromUrl(process.env.REDIS_URL!) });
+    const future = await prisma.contentItem.create({ data: { platform: 'FACEBOOK', status: 'SCHEDULED', scheduledAt: new Date(Date.now() + 3 * 3_600_000), caption: 'โพสต์ตั้งเวลา', createdById: userId } });
+    const yt = await prisma.contentItem.create({ data: { platform: 'YOUTUBE', youtubeChannelId: channelId, status: 'SCHEDULED', ytStatus: 'SCHEDULED', scheduledAt: new Date(Date.now() + 3_600_000), title: 'ตั้งเวลาฝั่ง YouTube', createdById: userId } });
+    try {
+      const r = await mod.maintenance.reconcileSchedules(); expect(r.requeued).toBeGreaterThanOrEqual(1);
+      const job = await publishQ.getJob(publishJobId(future.id)); expect(job).toBeTruthy();
+      expect(job!.data).toMatchObject({ contentId: future.id, scheduled: true }); expect(job!.opts.delay).toBeGreaterThan(2 * 3_600_000);
+      expect(await publishQ.getJob(publishJobId(yt.id))).toBeUndefined();   // YouTube ตั้งเวลาที่ฝั่ง YouTube เอง ไม่ใช้คิวนี้
+      const again = await mod.maintenance.reconcileSchedules(); expect(again.requeued).toBe(0);   // มีงานอยู่แล้ว ไม่ซ้ำ
+    } finally { await (await publishQ.getJob(publishJobId(future.id)))?.remove(); await prisma.contentItem.deleteMany({ where: { id: { in: [future.id, yt.id] } } }); await publishQ.close(); }
   });
 
   it('community post reminders: a due draft notifies once; future, posted and unscheduled drafts are left alone', async () => {

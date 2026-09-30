@@ -4,20 +4,21 @@
  *   **ไม่ลบ** AuditLog, metric snapshot, report — เป็นประวัติที่รายงานอ้างอิง
  * - token check ทุก 12 ชม.: Facebook user token ใกล้หมดอายุ / เพจ token INVALID / Google connection ERROR → แจ้งเตือน (dedupe รายวัน)
  * - เตือนโพสต์ชุมชน YouTube ทุก 10 นาที: ร่างที่ถึงเวลาแล้ว → แจ้งเตือนครั้งเดียว (ระบบไม่โพสต์เอง — ไม่มี API)
+ * - ตรวจโพสต์ตั้งเวลาทุก 15 นาที + ตอนเริ่ม worker: โพสต์ Facebook สถานะ SCHEDULED ที่ไม่มีงานในคิว (Redis หาย / ย้ายเครื่อง / กู้ backup) → ใส่คิวใหม่ด้วย jobId เดิม
  * - stale uploads รายชั่วโมง: upload ที่ค้าง UPLOADING/UPLOAD_PENDING นานเกิน → UPLOAD_FAILED (retry ได้จากหน้า Content Lab) · PROCESSING นานเกิน → ตรวจใหม่
  */
 import type { Queue, Job } from 'bullmq';
 import { PrismaClient, notify } from '@fbpm/database';
-import { JOBS } from '@fbpm/shared';
+import { JOBS, publishJobId } from '@fbpm/shared';
 
 export const RETENTION = { aiTaskLogDays: 180, apiUsageDays: 90, syncRunDays: 90, readNotificationDays: 90, expiredLinkDays: 30, staleUploadHours: 6, staleProcessingHours: 24, tokenWarnDays: 7 } as const;
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
 
-export interface MaintenanceContext { prisma: PrismaClient; authSecret: string; ytUploadQueue: Queue; log: (msg: string, extra?: Record<string, unknown>) => void }
+export interface MaintenanceContext { prisma: PrismaClient; authSecret: string; ytUploadQueue: Queue; publishQueue?: Queue; log: (msg: string, extra?: Record<string, unknown>) => void }
 
 export function createMaintenanceHandlers(ctx: MaintenanceContext) {
-  const { prisma, authSecret, ytUploadQueue, log } = ctx;
+  const { prisma, authSecret, ytUploadQueue, publishQueue, log } = ctx;
 
   async function cleanup(): Promise<Record<string, number>> {
     const now = new Date();
@@ -66,18 +67,37 @@ export function createMaintenanceHandlers(ctx: MaintenanceContext) {
     const r = { reminded: due.length }; if (due.length) log('youtube community reminders', r); return r;
   }
 
+  /**
+   * งานตั้งเวลาอยู่ใน Redis (BullMQ delayed job) — ถ้า Redis หาย/ย้ายเครื่อง/กู้ backup ฐานข้อมูลยังบอก SCHEDULED แต่ไม่มีใครโพสต์
+   * → ใส่คิวใหม่ด้วย jobId เดิม (ไม่ซ้ำกับงานที่มีอยู่) · เลยเวลาแล้วก็รันทันที — publisher กันโพสต์ซ้ำเองด้วย ExternalOperation
+   */
+  async function reconcileSchedules(): Promise<{ checked: number; requeued: number; overdue: number }> {
+    if (!publishQueue) return { checked: 0, requeued: 0, overdue: 0 };
+    const items = await prisma.contentItem.findMany({ where: { platform: 'FACEBOOK', status: 'SCHEDULED', scheduledAt: { not: null } }, select: { id: true, scheduledAt: true }, take: 2000 });
+    let requeued = 0; let overdue = 0;
+    for (const c of items) {
+      if (await publishQueue.getJob(publishJobId(c.id))) continue;
+      const delay = Math.max(0, c.scheduledAt!.getTime() - Date.now()); if (!delay) overdue++;
+      await publishQueue.add(JOBS.publishContent, { contentId: c.id, requestId: `reconcile-${Date.now()}`, scheduled: true }, { jobId: publishJobId(c.id), delay, attempts: 3, backoff: { type: 'exponential', delay: 60_000 } });
+      requeued++;
+    }
+    const r = { checked: items.length, requeued, overdue }; if (requeued) log('schedule reconcile: re-queued missing publish jobs', r); return r;
+  }
+
   async function handle(job: Job): Promise<unknown> {
     if (job.name === JOBS.maintenanceCleanup) return cleanup();
     if (job.name === JOBS.maintenanceTokenCheck) return tokenCheck();
     if (job.name === JOBS.ytStaleUploads) return staleUploads();
     if (job.name === JOBS.ytCommunityReminders) return communityReminders();
+    if (job.name === JOBS.scheduleReconcile) return reconcileSchedules();
     return { skipped: job.name };
   }
-  return { cleanup, tokenCheck, staleUploads, communityReminders, handle };
+  return { cleanup, tokenCheck, staleUploads, communityReminders, reconcileSchedules, handle };
 }
 
 export async function registerMaintenanceSchedulers(maintenance: Queue, ytMaintenance: Queue): Promise<void> {
   await maintenance.upsertJobScheduler('maintenance-cleanup-daily', { pattern: '0 4 * * *' }, { name: JOBS.maintenanceCleanup, data: {} });
+  await maintenance.upsertJobScheduler('schedule-reconcile-15m', { every: 15 * 60_000 }, { name: JOBS.scheduleReconcile, data: {} });
   await maintenance.upsertJobScheduler('maintenance-token-check-12h', { every: 12 * 3_600_000 }, { name: JOBS.maintenanceTokenCheck, data: {} });
   await ytMaintenance.upsertJobScheduler('yt-stale-uploads-1h', { every: 3_600_000 }, { name: JOBS.ytStaleUploads, data: {} });
   await ytMaintenance.upsertJobScheduler('yt-community-reminders-10m', { every: 10 * 60_000 }, { name: JOBS.ytCommunityReminders, data: {} });

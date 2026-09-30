@@ -36,7 +36,8 @@ const ytQueues = { upload: new Queue(YT_QUEUES.upload, { connection }), sync: ne
 const ytBuilt = buildWorkerYtDeps(prisma, AUTH_SECRET);
 export const yt = createYtHandlers({ prisma, deps: ytBuilt.deps, quota: ytBuilt.quota, authSecret: AUTH_SECRET, queues: ytQueues, log });
 const maintenanceQueue = new Queue(QUEUES.maintenance, { connection }); const ytMaintenanceQueue = new Queue(YT_QUEUES.maintenance, { connection });
-export const maintenance = createMaintenanceHandlers({ prisma, authSecret: AUTH_SECRET, ytUploadQueue: ytQueues.upload, log });
+const publishQueue = new Queue(QUEUES.facebookPublish, { connection });
+export const maintenance = createMaintenanceHandlers({ prisma, authSecret: AUTH_SECRET, ytUploadQueue: ytQueues.upload, publishQueue, log });
 const webQueues = { monitor: new Queue(WEB_QUEUES.monitor, { connection }), daily: new Queue(WEB_QUEUES.daily, { connection }) };
 export const web = createWebHandlers({ prisma, deps: buildWorkerWebDeps(prisma, AUTH_SECRET), authSecret: AUTH_SECRET, queues: webQueues, log });
 export const email = createEmailHandlers({ prisma, deps: buildWorkerEmailDeps(prisma, AUTH_SECRET), authSecret: AUTH_SECRET, log });
@@ -139,6 +140,7 @@ async function main(): Promise<void> {
   await messengerQueue.upsertJobScheduler('messenger-recover', { every: 60_000 }, { name: 'recover', data: {} });
   await registerYtSchedulers(ytQueues.sync);
   await registerMaintenanceSchedulers(maintenanceQueue, ytMaintenanceQueue);
+  await maintenance.reconcileSchedules().catch(e => log('schedule reconcile failed', { error: (e as Error).message }));   // เริ่มเครื่องใหม่/กู้ backup → ตั้งคิวโพสต์ที่หายกลับทันที
   await registerWebSchedulers(webQueues.monitor, webQueues.daily);
   log('worker started', { queues: ALL_QUEUES, graph: process.env.META_GRAPH_BASE_URL ?? 'graph.facebook.com', youtube: process.env.YOUTUBE_MOCK_BASE_URL ?? 'googleapis.com', youtubeUpload: ytBuilt.deps.uploadEnabled });
   const shutdown = async (signal: string): Promise<void> => { log('shutting down', { signal }); await Promise.all(workers.map(w => w.close())); await prisma.$disconnect(); process.exit(0); };

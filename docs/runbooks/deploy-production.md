@@ -394,14 +394,12 @@ SMTP_FROM="AI Page Manager <you@gmail.com>"
 
 ## 10. สำรองข้อมูลและอัปเดต
 
-**สำรองทุกคืน ตี 3** (`crontab -e`)
-```
-0 3 * * * cd /opt/fbpm && docker compose exec -T postgres pg_dump -U postgres fbpm | gzip > /opt/fbpm/backup/fbpm-$(date +\%F).sql.gz && find /opt/fbpm/backup -name '*.sql.gz' -mtime +14 -delete
-```
+**สำรองทุกวัน** — ฐานข้อมูล + ไฟล์สื่อ + `.env` (AUTH_SECRET) เข้ารหัส เก็บย้อนหลัง และส่งออกนอกเครื่องด้วย rclone
 ```bash
-mkdir -p /opt/fbpm/backup
+openssl rand -base64 32 > /root/.fbpm-backup-pass && chmod 600 /root/.fbpm-backup-pass   # เก็บสำเนารหัสนี้นอกเครื่อง
+sudo deploy/backup.sh && sudo deploy/backup.sh --install-cron --at 03:15
 ```
-ควรคัดลอกไฟล์สำรองออกนอกเครื่องด้วย (rclone ไป Google Drive / S3) — เครื่องพังแล้วไฟล์ในเครื่องหายไปด้วย
+รายละเอียด การกู้คืน และการย้าย VPS: [`backup-restore.md`](backup-restore.md)
 
 **อัปเดตโค้ด**
 ```bash
