@@ -34,9 +34,10 @@ export default function YoutubePage() {
     } catch (e) { setError(e); }
   }, [ws.id]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (sp.get('gConnected')) setNotice(t('yt.connectedOk')); if (sp.get('gError')) setError(new Error(`${t('yt.connectError')}: ${sp.get('gError')}`)); }, [sp]);
+  useEffect(() => { if (sp.get('gConnected')) setNotice(t(sp.get('gChannel') ? 'yt.channelAddedOk' : 'yt.connectedOk')); if (sp.get('gError')) setError(new Error(`${t('yt.connectError')}: ${sp.get('gError')}`)); if (sp.get('gErrorMsg')) setError(new Error(sp.get('gErrorMsg')!)); }, [sp]);
   const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await load(); } catch (e) { setError(e); } finally { setBusy(''); } };
   const oauth = () => run('oauth', async () => { const r = await api<{ url: string }>(`/workspaces/${ws.id}/youtube/connections/oauth/start`, { method: 'POST', body: { features: 'read,analytics,manage,upload,search' } }); window.location.href = r.url; });
+  const addFromGoogle = () => run('oauthBrand', async () => { const r = await api<{ url: string }>(`/workspaces/${ws.id}/youtube/connections/oauth/start`, { method: 'POST', body: { features: 'read,analytics,manage,upload,search', brandId: form.brandId } }); window.location.href = r.url; });
   const paste = () => run('paste', async () => { await api(`/workspaces/${ws.id}/youtube/connections/token`, { method: 'POST', body: { refreshToken: token } }); setToken(''); setShowToken(false); setNotice(t('yt.connectedOk')); });
   const recheck = (id: string) => run(`recheck:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/connections/${id}/recheck`, { method: 'POST' }); setNotice(t('yt.recheckOk')); });
   const revoke = (id: string) => run(`revoke:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/connections/${id}`, { method: 'DELETE' }); });
@@ -75,10 +76,16 @@ export default function YoutubePage() {
           {!manage ? <Empty text={t('yt.needPermission')} /> : brands.length === 0 ? <Empty text={t('yt.needBrand')} /> : (
             <div className="grid gap-2 sm:grid-cols-2">
               <Field label={t('yt.brand')}><Select value={form.brandId} onChange={e => setForm(f => ({ ...f, brandId: e.target.value }))}>{brands.map(b => <option key={b.id} value={b.id}>{b.clientName} · {b.name}</option>)}</Select></Field>
-              <Field label={t('yt.mode')}><Select value={form.mode} onChange={e => setForm(f => ({ ...f, mode: e.target.value }))}><option value="OAUTH" disabled={!conns.length}>{t('yt.modeOauth')}</option><option value="PUBLIC_API_KEY" disabled={!health.apiKeyConfigured}>{t('yt.modeApiKey')}</option></Select></Field>
-              {form.mode === 'OAUTH' ? <Field label={t('yt.connections')}><Select value={form.connectionId} onChange={e => setForm(f => ({ ...f, connectionId: e.target.value }))}>{conns.filter(c => c.status === 'ACTIVE').map(c => <option key={c.id} value={c.id}>{c.email ?? c.providerUserId} — {c.channels?.length ? c.channels.map(x => x.title).join(', ') : t('yt.noChannelYet')}</option>)}</Select></Field>
+              <Field label={t('yt.mode')}><Select value={form.mode} onChange={e => setForm(f => ({ ...f, mode: e.target.value }))}><option value="OAUTH" disabled={!conns.length && !health.oauthConfigured}>{t('yt.modeOauth')}</option><option value="PUBLIC_API_KEY" disabled={!health.apiKeyConfigured}>{t('yt.modeApiKey')}</option></Select></Field>
+              {form.mode === 'OAUTH' ? <Field label={t('yt.connections')}><Select value={form.connectionId} onChange={e => setForm(f => ({ ...f, connectionId: e.target.value }))}>{conns.filter(c => c.status === 'ACTIVE').map(c => <option key={c.id} value={c.id}>{c.email ?? t('yt.brandAccount')} — {c.channels?.length ? c.channels.map(x => x.title).join(', ') : t('yt.noChannelYet')}</option>)}</Select></Field>
                 : <Field label={t('yt.handle')}><Input placeholder="@channel หรือ UC…" value={form.handle} onChange={e => setForm(f => ({ ...f, handle: e.target.value }))} /></Field>}
               <div className="flex items-end"><Button disabled={busy === 'connect' || !form.brandId || (form.mode === 'OAUTH' ? !form.connectionId : !form.handle)} onClick={connect}>{busy === 'connect' ? t('common.loading') : t('yt.connectChannel')}</Button></div>
+              {form.mode === 'OAUTH' && health.oauthConfigured && (
+                <div className="rounded-lg border border-sky-800 bg-sky-950/40 p-3 sm:col-span-2">
+                  <p className="text-xs text-slate-300">{t('yt.addFromGoogleHint')}</p>
+                  <Button className="mt-2" disabled={busy === 'oauthBrand' || !form.brandId} onClick={addFromGoogle}>＋ {t('yt.addFromGoogle')}</Button>
+                </div>
+              )}
             </div>)}
         </Card>
       </div>

@@ -20,7 +20,7 @@ import { ShareService } from '../reports/share.service';
 import { shareSchema } from '../reports/reports.controller';
 import * as d from './dto';
 
-const featuresSchema = z.object({ features: z.string().optional() });
+const featuresSchema = z.object({ features: z.string().optional(), brandId: z.string().min(1).max(40).optional() });
 const listContentSchema = z.object({ channelId: z.string().optional(), ytStatus: z.string().optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
 const calendarSchema = z.object({ from: z.string().datetime(), to: z.string().datetime(), platform: z.enum(['FACEBOOK', 'YOUTUBE', 'WEB']).optional() });
 const recsSchema = z.object({ channelId: z.string().optional(), status: z.enum(['OPEN', 'ACCEPTED', 'IGNORED', 'DONE']).optional() });
@@ -45,7 +45,7 @@ export class YoutubeController {
   @Get('connections') @RequirePermission('youtube.read')
   connections(@Tenant() t: TenantContext) { return this.channels.listConnections(t.workspaceId); }
   @Post('connections/oauth/start') @HttpCode(200) @RequirePermission('youtube.connect')
-  oauthStart(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(featuresSchema)) b: z.infer<typeof featuresSchema>) { return this.channels.oauthStart(t.workspaceId, u.id, (b.features?.split(',').map(s => s.trim()).filter(Boolean) ?? []) as ScopeFeature[]); }
+  oauthStart(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(featuresSchema)) b: z.infer<typeof featuresSchema>) { return this.channels.oauthStart(t.workspaceId, u.id, (b.features?.split(',').map(s => s.trim()).filter(Boolean) ?? []) as ScopeFeature[], b.brandId); }
   @Post('connections/token') @HttpCode(200) @RequirePermission('youtube.connect')
   paste(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(d.pasteTokenSchema)) b: z.infer<typeof d.pasteTokenSchema>, @RequestId() rid: string) { return this.channels.pasteRefreshToken(t.workspaceId, u.id, b.refreshToken, rid); }
   @Get('connections/:id/channel') @RequirePermission('youtube.connect')

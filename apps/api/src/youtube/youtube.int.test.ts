@@ -129,6 +129,29 @@ run('youtube module (integration)', () => {
     const again = await a.http('POST', `/workspaces/${ws}/youtube/connections/token`, { refreshToken: 'REFRESH_OK' });
     expect(again.json.id).toBe(connId); expect((await a.http('GET', `/workspaces/${ws}/youtube/connections`)).json).toHaveLength(1);
   });
+  it('"add channel from Google": one email, several channels — the channel picked on Google is linked to the chosen brand', async () => {
+    const original = yt.state.channel; yt.state.accessTokens.add('ACCESS_OK'); yt.state.validCodes.add('CODE_SECOND'); yt.state.validCodes.add('CODE_SAME');
+    expect((await a.http('POST', `/workspaces/${ws}/youtube/connections/oauth/start`, { brandId: 'nope' })).status).toBe(404);
+    const start = async () => { const s = await a.http('POST', `/workspaces/${ws}/youtube/connections/oauth/start`, { features: 'read,analytics,manage,upload', brandId: brand2 }); expect(s.status, s.text).toBe(200); return new URL(s.json.url); };
+    const u = await start(); expect(u.searchParams.get('prompt')).toBe('select_account consent');   // Google แสดงหน้าเลือกช่องทุกครั้ง
+    yt.state.channel = { ...original, id: 'UC_BRAND_TWO', title: 'ช่องที่สอง', uploads: original.uploads };
+    let secondConn = '';
+    try {
+      const cb = await fetch(`${base}/youtube/oauth/callback?code=CODE_SECOND&state=${encodeURIComponent(u.searchParams.get('state')!)}`, { redirect: 'manual' });
+      const loc = new URL(cb.headers.get('location')!); expect(loc.searchParams.get('gErrorMsg')).toBeNull(); expect(loc.searchParams.get('gChannel')).toBeTruthy();
+      secondConn = loc.searchParams.get('gConnected')!; expect(secondConn).not.toBe(connId);
+      const ch = await prisma.youTubeChannel.findUniqueOrThrow({ where: { id: loc.searchParams.get('gChannel')! } });
+      expect(ch).toMatchObject({ brandId: brand2, youtubeChannelId: 'UC_BRAND_TWO', title: 'ช่องที่สอง', googleConnectionId: secondConn, accessMode: 'OAUTH' });
+      expect((await prisma.youTubeChannel.findUniqueOrThrow({ where: { id: channelId } })).googleConnectionId).toBe(connId);   // ช่องแรกยังใช้ connection เดิม
+    } finally { yt.state.channel = original; }
+    // เลือกช่องเดิม (ผูกกับแบรนด์อื่นอยู่แล้ว) ในหน้าของ Google → กลับมาพร้อมข้อความบอกวิธีแก้ ไม่ย้ายช่อง
+    const u2 = await start();
+    const cb2 = await fetch(`${base}/youtube/oauth/callback?code=CODE_SAME&state=${encodeURIComponent(u2.searchParams.get('state')!)}`, { redirect: 'manual' });
+    const loc2 = new URL(cb2.headers.get('location')!);
+    expect(loc2.searchParams.get('gConnected')).toBe(connId); expect(loc2.searchParams.get('gErrorMsg')).toMatch(/เพิ่มช่องจาก Google/);
+    expect((await prisma.youTubeChannel.findUniqueOrThrow({ where: { id: channelId } })).brandId).toBe(brand);
+    await prisma.youTubeChannel.deleteMany({ where: { youtubeChannelId: 'UC_BRAND_TWO' } }); await prisma.googleConnection.delete({ where: { id: secondConn } });
+  });
   it('same channel cannot be attached to a second brand; public API-key mode by @handle works for another workspace-visible channel', async () => {
     const dup = await a.http('POST', `/workspaces/${ws}/youtube/channels`, { brandId: brand2, mode: 'PUBLIC_API_KEY', handle: '@kasetkaona' });
     expect(dup.status).toBe(409);

@@ -39,10 +39,11 @@ export class GoogleAuth {
   private get fetch() { return this.o.fetchImpl ?? fetch; }
   get configured(): boolean { return !!(this.o.clientId && this.o.clientSecret && this.o.redirectUri); }
 
+  /** prompt=select_account ให้ Google แสดงหน้าเลือกบัญชี/ช่อง (Brand Account) ทุกครั้ง — อีเมลเดียวมีหลายช่องได้ */
   authUrl(state: string, scopes: string[], loginHint?: string): string {
     const u = new URL(this.o.authBaseUrl ?? 'https://accounts.google.com/o/oauth2/v2/auth');
     u.searchParams.set('client_id', this.o.clientId); u.searchParams.set('redirect_uri', this.o.redirectUri); u.searchParams.set('response_type', 'code');
-    u.searchParams.set('scope', scopes.join(' ')); u.searchParams.set('access_type', 'offline'); u.searchParams.set('prompt', 'consent'); u.searchParams.set('include_granted_scopes', 'true'); u.searchParams.set('state', state);
+    u.searchParams.set('scope', scopes.join(' ')); u.searchParams.set('access_type', 'offline'); u.searchParams.set('prompt', 'select_account consent'); u.searchParams.set('include_granted_scopes', 'true'); u.searchParams.set('state', state);
     if (loginHint) u.searchParams.set('login_hint', loginHint);
     return u.toString();
   }

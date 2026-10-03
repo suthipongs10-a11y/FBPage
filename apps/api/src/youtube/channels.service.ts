@@ -18,7 +18,7 @@ export const CHANNEL_SELECT = {
   automationLevel: true, automationPaused: true, uploadsPaused: true, policy: true, connectedAt: true, lastSyncedAt: true, syncStatus: true, syncError: true, commentsStatus: true, analyticsStatus: true, status: true, disconnectedAt: true,
   brand: { select: { id: true, name: true, client: { select: { id: true, name: true } } } }, _count: { select: { videos: true, comments: true } },
 } as const;
-interface OAuthState { ws: string; uid: string; exp: number; n: string; f: ScopeFeature[] }
+interface OAuthState { ws: string; uid: string; exp: number; n: string; f: ScopeFeature[]; /** เพิ่มช่องให้แบรนด์นี้ทันทีหลังกลับจาก Google */ b?: string }
 const serialize = <T,>(v: T): T => JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? Number(x) : x))) as T;
 
 @Injectable()
@@ -38,10 +38,11 @@ export class YtChannelsService {
   // ---------- Google connections ----------
   listConnections(workspaceId: string) { return this.prisma.googleConnection.findMany({ where: { workspaceId }, orderBy: { createdAt: 'desc' }, select: CONN_SELECT }); }
 
-  oauthStart(workspaceId: string, userId: string, features: ScopeFeature[]) {
+  async oauthStart(workspaceId: string, userId: string, features: ScopeFeature[], brandId?: string) {
     if (!this.yt.google) throw new ConflictException('ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_OAUTH_REDIRECT_URI — เชื่อมแบบอ่านสาธารณะด้วย YOUTUBE_API_KEY ได้');
+    if (brandId && !(await this.prisma.brand.findFirst({ where: { id: brandId, ...brandInWorkspace(workspaceId) }, select: { id: true } }))) throw new NotFoundException('ไม่พบแบรนด์');
     const f = features.length ? features : ['read', 'analytics', 'manage', 'upload'] as ScopeFeature[];
-    const state = signState({ ws: workspaceId, uid: userId, exp: Date.now() + 10 * 60_000, n: randomBytes(8).toString('hex'), f } satisfies OAuthState, this.env.AUTH_SECRET);
+    const state = signState({ ws: workspaceId, uid: userId, exp: Date.now() + 10 * 60_000, n: randomBytes(8).toString('hex'), f, ...(brandId && { b: brandId }) } satisfies OAuthState, this.env.AUTH_SECRET);
     return { url: this.yt.google.authUrl(state, scopesForFeatures(f)), scopes: scopesForFeatures(f) };
   }
   async oauthCallback(code: string | undefined, state: string | undefined, error: string | undefined): Promise<{ redirectTo: string }> {
@@ -50,8 +51,14 @@ export class YtChannelsService {
     const st = verifyState<OAuthState>(state, this.env.AUTH_SECRET);
     if (!st || st.exp < Date.now() || !code || !this.yt.google) return back('gError=state');
     if (!(await this.prisma.workspaceMember.findFirst({ where: { workspaceId: st.ws, userId: st.uid }, select: { userId: true } }))) return back('gError=membership');
-    try { const t = await this.yt.google.exchangeCode(code); const r = await this.storeTokens(st.ws, st.uid, t.accessToken, t.refreshToken, t.expiresAt, t.scopes, `oauth-${randomUUID()}`); return back(`gConnected=${r.id}`); }
+    const requestId = `oauth-${randomUUID()}`;
+    let connId: string;
+    try { const t = await this.yt.google.exchangeCode(code); connId = (await this.storeTokens(st.ws, st.uid, t.accessToken, t.refreshToken, t.expiresAt, t.scopes, requestId)).id; }
     catch (e) { return back(`gError=${encodeURIComponent(e instanceof YouTubeApiError ? e.code : 'exchange')}`); }
+    if (!st.b) return back(`gConnected=${connId}`);
+    // "เพิ่มช่องจาก Google": ผูกช่องที่ผู้ใช้เลือกในหน้า Google เข้ากับแบรนด์ที่เลือกไว้ทันที
+    try { const ch = await this.connect(st.ws, st.uid, { brandId: st.b, mode: 'OAUTH', connectionId: connId } as ConnectChannelDto, requestId); return back(`gConnected=${connId}&gChannel=${ch.id}`); }
+    catch (e) { const msg = (e as { response?: { message?: string } }).response?.message ?? (e as Error).message; return back(`gConnected=${connId}&gErrorMsg=${encodeURIComponent(String(msg).slice(0, 300))}`); }
   }
   /** ทางลัดเหมือน Facebook: วาง refresh token จาก OAuth Playground (client id/secret เดียวกับ env) */
   async pasteRefreshToken(workspaceId: string, userId: string, refreshToken: string, requestId: string) {
@@ -143,7 +150,7 @@ export class YtChannelsService {
       ytId = c.id; title = c.title;
     }
     const dup = await this.prisma.youTubeChannel.findFirst({ where: { youtubeChannelId: ytId, disconnectedAt: null, brandId: { not: dto.brandId }, ...channelInWorkspace(workspaceId) }, select: { brand: { select: { name: true } } } });
-    if (dup) throw new ConflictException(`ช่องนี้เชื่อมกับแบรนด์ "${dup.brand.name}" อยู่แล้ว`);
+    if (dup) throw new ConflictException(`ช่อง "${title}" เชื่อมกับแบรนด์ "${dup.brand.name}" อยู่แล้ว${dto.mode === 'OAUTH' ? ' — ถ้าต้องการช่องอื่นในอีเมลเดียวกัน กด "เพิ่มช่องจาก Google" แล้วเลือกช่องนั้นในหน้าของ Google' : ''}`);
     const ch = await this.prisma.youTubeChannel.upsert({ where: { brandId_youtubeChannelId: { brandId: dto.brandId, youtubeChannelId: ytId } }, create: { brandId: dto.brandId, youtubeChannelId: ytId, title, accessMode: dto.mode, googleConnectionId: connectionId, policy: { defaultPrivacy: 'private', defaultMadeForKids: false, requireSyntheticMediaReview: true, requirePaidPlacementReview: true, allowAutoUpload: false, allowAutoMetadataUpdate: false, allowAutoReply: false } }, update: { title, accessMode: dto.mode, googleConnectionId: connectionId, status: 'ACTIVE', disconnectedAt: null, uploadsPaused: false }, select: { id: true } });
     await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_CHANNEL_CONNECTED', resourceType: 'youtubeChannel', resourceId: ch.id, after: { youtubeChannelId: ytId, title, mode: dto.mode, brandId: dto.brandId }, requestId });
     const initial = await this.runSync(workspaceId, userId, ch.id, { stage: 'quick' }, requestId).then(r => ({ ok: true as const, ...r })).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? ((e as Error & { response?: { message?: string } }).response?.message ?? e.message) : String(e) }));
