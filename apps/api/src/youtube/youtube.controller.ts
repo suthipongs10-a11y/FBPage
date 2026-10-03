@@ -50,6 +50,9 @@ export class YoutubeController {
   paste(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Body(new ZodPipe(d.pasteTokenSchema)) b: z.infer<typeof d.pasteTokenSchema>, @RequestId() rid: string) { return this.channels.pasteRefreshToken(t.workspaceId, u.id, b.refreshToken, rid); }
   @Get('connections/:id/channel') @RequirePermission('youtube.connect')
   discover(@Tenant() t: TenantContext, @Param('id') id: string, @RequestId() rid: string) { return this.channels.discoverChannel(t.workspaceId, id, rid); }
+  /** ตรวจการเชื่อมต่อที่ขึ้น ERROR อีกครั้งด้วย refresh token เดิม (ไม่ต้องล็อกอิน Google ใหม่ถ้าการอนุญาตยังดีอยู่) */
+  @Post('connections/:id/recheck') @HttpCode(200) @RequirePermission('youtube.connect')
+  recheck(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.channels.recheckConnection(t.workspaceId, u.id, id, rid); }
   @Delete('connections/:id') @RequirePermission('youtube.connect')
   revoke(@Tenant() t: TenantContext, @CurrentUser() u: AuthUser, @Param('id') id: string, @RequestId() rid: string) { return this.channels.revoke(t.workspaceId, u.id, id, rid); }
 

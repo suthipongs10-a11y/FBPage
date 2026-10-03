@@ -88,6 +88,29 @@ run('youtube module (integration)', () => {
     expect(r.text).not.toMatch(SECRETS);
     const calls = yt.state.requests.slice(before); expect(calls.some(c => c.includes('/search'))).toBe(false); expect(calls.some(c => c.includes('playlistItems'))).toBe(true);
   });
+  it('an expired/rotated access token never knocks the Google connection into ERROR; recheck recovers without signing in again', async () => {
+    // 1) access token ที่เก็บไว้ถูก Google เลิกใช้ (เกิน 1 ชม.) ทั้งที่ refresh token ยังดี — เดิมตรงนี้ได้ 401 แล้วถูกตั้ง ERROR
+    yt.state.accessTokens.clear();
+    const d = await a.http('GET', `/workspaces/${ws}/youtube/connections/${connId}/channel`);
+    expect(d.status, d.text).toBe(200); expect(d.json.title).toBe('เกษตรก้าวหน้า'); expect(d.text).not.toMatch(SECRETS);
+    expect((await prisma.googleConnection.findUniqueOrThrow({ where: { id: connId } })).status).toBe('ACTIVE');
+    // 2) หมดอายุตามเวลา → refresh ก่อนใช้
+    await prisma.googleConnection.update({ where: { id: connId }, data: { tokenExpiresAt: new Date(Date.now() - 60_000) } });
+    expect((await a.http('GET', `/workspaces/${ws}/youtube/connections/${connId}/channel`)).status).toBe(200);
+    // 3) ขึ้น ERROR ไปแล้ว (จากบั๊กเดิม) แต่ refresh token ยังใช้ได้ → "ตรวจอีกครั้ง" กลับเป็น ACTIVE
+    await prisma.googleConnection.update({ where: { id: connId }, data: { status: 'ERROR', lastError: 'การอนุญาต Google ใช้ไม่ได้แล้ว' } });
+    const ok = await a.http('POST', `/workspaces/${ws}/youtube/connections/${connId}/recheck`);
+    expect(ok.status, ok.text).toBe(200); expect(ok.json).toEqual({ ok: true, status: 'ACTIVE' });
+    expect(await prisma.googleConnection.findUniqueOrThrow({ where: { id: connId } })).toMatchObject({ status: 'ACTIVE', lastError: null });
+    // 4) Google ไม่รับ refresh token จริง (ถูกถอนสิทธิ์/แอปโหมดทดสอบหมด 7 วัน) → 422 บอกให้เชื่อมใหม่ และคงสถานะ ERROR
+    yt.state.invalidGrant = true;
+    const bad = await a.http('POST', `/workspaces/${ws}/youtube/connections/${connId}/recheck`);
+    expect(bad.status).toBe(422); expect(bad.json.message).toMatch(/เชื่อมบัญชี Google/);
+    expect((await prisma.googleConnection.findUniqueOrThrow({ where: { id: connId } })).status).toBe('ERROR');
+    yt.state.invalidGrant = false;
+    expect((await a.http('POST', `/workspaces/${ws}/youtube/connections/${connId}/recheck`)).status).toBe(200);
+    expect((await b.http('POST', `/workspaces/${wsB}/youtube/connections/${connId}/recheck`)).status).toBe(404);   // คนละ workspace
+  });
   it('same channel cannot be attached to a second brand; public API-key mode by @handle works for another workspace-visible channel', async () => {
     const dup = await a.http('POST', `/workspaces/${ws}/youtube/channels`, { brandId: brand2, mode: 'PUBLIC_API_KEY', handle: '@kasetkaona' });
     expect(dup.status).toBe(409);

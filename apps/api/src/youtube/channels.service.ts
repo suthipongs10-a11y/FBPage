@@ -3,7 +3,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@fbpm/database';
 import { brandInWorkspace, channelInWorkspace, decryptSecret, encryptSecret, signState, verifyState } from '@fbpm/database';
-import { ChannelNotAccessible, YouTubeApiError, featuresFromScopes, quotaDayStart, quotaState, scopesForFeatures, syncAnalytics, syncChannelSnapshot, syncComments, syncPlaylists, syncVideos, type ScopeFeature, type YtDeps } from '@fbpm/youtube-core';
+import { ChannelNotAccessible, YouTubeApiError, featuresFromScopes, googleConnectionAccessToken, withGoogleConnection, quotaDayStart, quotaState, scopesForFeatures, syncAnalytics, syncChannelSnapshot, syncComments, syncPlaylists, syncVideos, type ScopeFeature, type YtDeps } from '@fbpm/youtube-core';
 import { PRISMA } from '../database/prisma.service';
 import { ENV, type Env } from '../config/env';
 import { AuditService } from '../audit/audit.service';
@@ -66,14 +66,31 @@ export class YtChannelsService {
     await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_CONNECTED', resourceType: 'googleConnection', resourceId: conn.id, after: { email: info.email, features: featuresFromScopes(conn.scopes) }, requestId });
     return conn;
   }
-  /** ช่องที่ token นี้เป็นเจ้าของ (channels.list mine) */
+  /** ช่องที่ token นี้เป็นเจ้าของ (channels.list mine) — refresh token ก่อนใช้ และลองใหม่ด้วย token ใหม่ถ้าได้ 401 (เดิมใช้ token เก่าตรงๆ → เกิน 1 ชม. ได้ 401 แล้วถูกตั้ง ERROR ทั้งที่การอนุญาตยังดีอยู่) */
   async discoverChannel(workspaceId: string, connectionId: string, requestId: string) {
-    const conn = await this.prisma.googleConnection.findFirst({ where: { id: connectionId, workspaceId }, select: { id: true, accessTokenEncrypted: true, status: true } });
-    if (!conn || conn.status !== 'ACTIVE') throw new NotFoundException('ไม่พบการเชื่อมต่อ Google ที่ใช้งานได้');
-    // ใช้ channelAuth ผ่านช่องชั่วคราวไม่ได้ — ถอดรหัสตรง (refresh ทำใน connect เมื่อสร้างช่องแล้ว)
-    const token = decryptSecret(conn.accessTokenEncrypted, this.env.AUTH_SECRET);
-    try { const c = await this.quota.scope({ workspaceId, requestId }, () => this.yt.yt.getMyChannel({ kind: 'oauth', accessToken: token })); return c ? serialize({ id: c.id, title: c.title, customUrl: c.customUrl, thumbnailUrl: c.thumbnailUrl, subscriberCount: c.subscriberCount, videoCount: c.videoCount }) : null; }
-    catch (e) { if (e instanceof YouTubeApiError && e.needsReconnect) { await this.prisma.googleConnection.update({ where: { id: conn.id }, data: { status: 'ERROR', lastError: e.userMessage } }); } rethrowYt(e); }
+    const conn = await this.prisma.googleConnection.findFirst({ where: { id: connectionId, workspaceId }, select: { id: true, status: true } });
+    if (!conn || conn.status !== 'ACTIVE') throw new NotFoundException('ไม่พบการเชื่อมต่อ Google ที่ใช้งานได้ — กด "ตรวจอีกครั้ง" หรือเชื่อมบัญชี Google ใหม่');
+    try {
+      const c = await withGoogleConnection(this.prisma, this.yt.google, this.env.AUTH_SECRET, conn.id, token => this.quota.scope({ workspaceId, requestId }, () => this.yt.yt.getMyChannel({ kind: 'oauth', accessToken: token })));
+      return c ? serialize({ id: c.id, title: c.title, customUrl: c.customUrl, thumbnailUrl: c.thumbnailUrl, subscriberCount: c.subscriberCount, videoCount: c.videoCount }) : null;
+    } catch (e) {
+      if (e instanceof ChannelNotAccessible) throw new UnprocessableEntityException(e.message);
+      rethrowYt(e);
+    }
+  }
+  /** ตรวจการเชื่อมต่อที่ขึ้น ERROR อีกครั้ง — ขอ access token ใหม่ด้วย refresh token เดิม: สำเร็จ = กลับมาใช้ได้ทันทีไม่ต้องล็อกอิน Google ใหม่ */
+  async recheckConnection(workspaceId: string, userId: string, connectionId: string, requestId: string) {
+    const conn = await this.prisma.googleConnection.findFirst({ where: { id: connectionId, workspaceId }, select: { id: true, status: true, lastError: true } });
+    if (!conn) throw new NotFoundException('ไม่พบการเชื่อมต่อ');
+    try {
+      await googleConnectionAccessToken(this.prisma, this.yt.google, this.env.AUTH_SECRET, conn.id, { recheck: true });
+    } catch (e) {
+      await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_CONNECTION_RECHECK', resourceType: 'googleConnection', resourceId: conn.id, after: { ok: false }, requestId });
+      if (e instanceof ChannelNotAccessible) throw new UnprocessableEntityException(`${e.message} — Google ไม่รับการอนุญาตเดิมแล้ว ต้องกด "เชื่อมบัญชี Google" ใหม่`);
+      rethrowYt(e);
+    }
+    await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_CONNECTION_RECHECK', resourceType: 'googleConnection', resourceId: conn.id, before: { status: conn.status, lastError: conn.lastError }, after: { ok: true, status: 'ACTIVE' }, requestId });
+    return { ok: true, status: 'ACTIVE' };
   }
   async revoke(workspaceId: string, userId: string, connectionId: string, requestId: string) {
     const c = await this.prisma.googleConnection.findFirst({ where: { id: connectionId, workspaceId }, select: { id: true, accessTokenEncrypted: true, refreshTokenEncrypted: true } });

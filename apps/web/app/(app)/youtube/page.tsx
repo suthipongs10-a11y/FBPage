@@ -38,6 +38,7 @@ export default function YoutubePage() {
   const run = async (key: string, fn: () => Promise<void>) => { setBusy(key); setError(null); setNotice(''); try { await fn(); await load(); } catch (e) { setError(e); } finally { setBusy(''); } };
   const oauth = () => run('oauth', async () => { const r = await api<{ url: string }>(`/workspaces/${ws.id}/youtube/connections/oauth/start`, { method: 'POST', body: { features: 'read,analytics,manage,upload,search' } }); window.location.href = r.url; });
   const paste = () => run('paste', async () => { await api(`/workspaces/${ws.id}/youtube/connections/token`, { method: 'POST', body: { refreshToken: token } }); setToken(''); setShowToken(false); setNotice(t('yt.connectedOk')); });
+  const recheck = (id: string) => run(`recheck:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/connections/${id}/recheck`, { method: 'POST' }); setNotice(t('yt.recheckOk')); });
   const revoke = (id: string) => run(`revoke:${id}`, async () => { await api(`/workspaces/${ws.id}/youtube/connections/${id}`, { method: 'DELETE' }); });
   const connect = () => run('connect', async () => { const r = await api<YtChannel>(`/workspaces/${ws.id}/youtube/channels`, { method: 'POST', body: { brandId: form.brandId, mode: form.mode, ...(form.mode === 'OAUTH' ? { connectionId: form.connectionId } : form.handle.startsWith('UC') && form.handle.length > 20 ? { channelId: form.handle } : { handle: form.handle }) } }); setNotice(`✔ ${r.title}`); });
   const sync = (id: string, stage: string) => run(`sync:${id}:${stage}`, async () => { await api(`/workspaces/${ws.id}/youtube/channels/${id}/sync`, { method: 'POST', body: { stage } }); });
@@ -67,7 +68,7 @@ export default function YoutubePage() {
           {conns.length === 0 ? <Empty /> : <div className="space-y-2 text-sm">{conns.map(c => (
             <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 p-2">
               <div><div className="font-medium">{c.email ?? c.providerUserId}</div><div className="text-xs text-slate-500">{c.user?.name} · {c._count.channels} {t('yt.channels')} · {c.scopes.filter(s => s.includes('youtube') || s.includes('yt-')).map(s => s.split('/').pop()).join(', ')}</div>{c.lastError && <div className="text-xs text-rose-300">{c.lastError}</div>}</div>
-              <div className="flex items-center gap-2"><Pill tone={c.status === 'ACTIVE' ? 'ok' : 'bad'}>{c.status}</Pill>{manage && <Button variant="ghost" disabled={busy === `revoke:${c.id}`} onClick={() => revoke(c.id)}>{t('yt.revoke')}</Button>}</div>
+              <div className="flex items-center gap-2"><Pill tone={c.status === 'ACTIVE' ? 'ok' : 'bad'}>{c.status}</Pill>{manage && c.status !== 'ACTIVE' && <Button disabled={busy === `recheck:${c.id}`} onClick={() => recheck(c.id)}>{t('yt.recheck')}</Button>}{manage && <Button variant="ghost" disabled={busy === `revoke:${c.id}`} onClick={() => revoke(c.id)}>{t('yt.revoke')}</Button>}</div>
             </div>))}</div>}
         </Card>
         <Card title={t('yt.connectChannel')}>

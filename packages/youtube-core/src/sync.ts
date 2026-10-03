@@ -14,22 +14,36 @@ export interface YtDeps { prisma: PrismaClient; yt: YouTubeService; analytics: Y
 export class ChannelNotAccessible extends Error { constructor(msg: string, public readonly reason: 'NO_ACCESS' | 'DISCONNECTED' | 'RECONNECT') { super(msg); this.name = 'ChannelNotAccessible'; } }
 
 
-/** access token ที่ใช้ได้ของ GoogleConnection (refresh เมื่อใกล้หมดอายุ) — ใช้ร่วมกับโมดูลอื่นที่ใช้บัญชี Google เดิม (Search Console) */
-export async function googleConnectionAccessToken(prisma: PrismaClient, google: GoogleAuth | null, authSecret: string, connectionId: string): Promise<string> {
+/**
+ * access token ที่ใช้ได้ของ GoogleConnection (refresh เมื่อใกล้หมดอายุ) — ใช้ร่วมกับโมดูลอื่นที่ใช้บัญชี Google เดิม (Search Console)
+ * force = ขอ token ใหม่แม้ยังไม่หมดอายุ (หลัง API ตอบ 401) · recheck = ยอมรับ connection สถานะ ERROR แล้วลอง refresh — สำเร็จ = กลับเป็น ACTIVE
+ * ตั้ง ERROR เฉพาะเมื่อ Google ปฏิเสธ refresh token (invalid_grant) เท่านั้น — 401 จาก access token หมดอายุไม่ใช่เหตุให้ตัดการเชื่อมต่อ
+ */
+export async function googleConnectionAccessToken(prisma: PrismaClient, google: GoogleAuth | null, authSecret: string, connectionId: string, opts: { force?: boolean; recheck?: boolean } = {}): Promise<string> {
   const conn = await prisma.googleConnection.findUnique({ where: { id: connectionId }, select: { id: true, status: true, accessTokenEncrypted: true, refreshTokenEncrypted: true, tokenExpiresAt: true } });
-  if (!conn || conn.status !== 'ACTIVE' || !conn.accessTokenEncrypted) throw new ChannelNotAccessible('บัญชี Google ใช้งานไม่ได้ — เชื่อมต่อใหม่', 'RECONNECT');
+  if (!conn || (conn.status !== 'ACTIVE' && !(opts.recheck && conn.status === 'ERROR')) || !conn.accessTokenEncrypted) throw new ChannelNotAccessible('บัญชี Google ใช้งานไม่ได้ — เชื่อมต่อใหม่', 'RECONNECT');
   let access = decryptSecret(conn.accessTokenEncrypted, authSecret);
-  if (!conn.tokenExpiresAt || conn.tokenExpiresAt.getTime() < Date.now() + 120_000) {
+  if (opts.force || opts.recheck || conn.status !== 'ACTIVE' || !conn.tokenExpiresAt || conn.tokenExpiresAt.getTime() < Date.now() + 120_000) {
     if (!conn.refreshTokenEncrypted || !google) { await prisma.googleConnection.update({ where: { id: conn.id }, data: { status: 'ERROR', lastError: 'ไม่มี refresh token — เชื่อมต่อใหม่' } }); throw new ChannelNotAccessible('การอนุญาต Google หมดอายุ — เชื่อมต่อใหม่', 'RECONNECT'); }
     try {
       const t = await google.refresh(decryptSecret(conn.refreshTokenEncrypted, authSecret)); access = t.accessToken;
-      await prisma.googleConnection.update({ where: { id: conn.id }, data: { accessTokenEncrypted: encryptSecret(t.accessToken, authSecret), tokenExpiresAt: t.expiresAt, lastRefreshedAt: new Date(), lastError: null, ...(t.scopes.length && { scopes: t.scopes }) } });
+      await prisma.googleConnection.update({ where: { id: conn.id }, data: { accessTokenEncrypted: encryptSecret(t.accessToken, authSecret), tokenExpiresAt: t.expiresAt, lastRefreshedAt: new Date(), lastError: null, status: 'ACTIVE', ...(t.scopes.length && { scopes: t.scopes }) } });
     } catch (e) {
       if (e instanceof YouTubeApiError && e.needsReconnect) { await prisma.googleConnection.update({ where: { id: conn.id }, data: { status: 'ERROR', lastError: e.userMessage } }); throw new ChannelNotAccessible(e.userMessage, 'RECONNECT'); }
       throw e;
     }
   }
   return access;
+}
+
+/** เรียก Google ด้วย token ของ connection — ถ้าได้ 401 (access token หมดอายุ/ถูกหมุน) ขอ token ใหม่แล้วลองอีกครั้งเดียว ก่อนจะถือว่าต้องเชื่อมต่อใหม่ */
+export async function withGoogleConnection<T>(prisma: PrismaClient, google: GoogleAuth | null, authSecret: string, connectionId: string, fn: (accessToken: string) => Promise<T>): Promise<T> {
+  const token = await googleConnectionAccessToken(prisma, google, authSecret, connectionId);
+  try { return await fn(token); }
+  catch (e) {
+    if (!(e instanceof YouTubeApiError) || e.httpStatus !== 401) throw e;
+    return fn(await googleConnectionAccessToken(prisma, google, authSecret, connectionId, { force: true }));
+  }
 }
 
 /** คืน auth ที่ใช้ได้ของช่อง — OAuth refresh เมื่อใกล้หมดอายุ; invalid_grant → เปลี่ยนสถานะ connection แล้วโยน RECONNECT */
