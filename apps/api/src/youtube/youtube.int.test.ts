@@ -111,6 +111,24 @@ run('youtube module (integration)', () => {
     expect((await a.http('POST', `/workspaces/${ws}/youtube/connections/${connId}/recheck`)).status).toBe(200);
     expect((await b.http('POST', `/workspaces/${wsB}/youtube/connections/${connId}/recheck`)).status).toBe(404);   // คนละ workspace
   });
+  it('a second channel under the same Google login (Brand Account) gets its own connection and never overwrites the first channel token', async () => {
+    const original = yt.state.channel;
+    const firstToken = (await prisma.googleConnection.findUniqueOrThrow({ where: { id: connId } })).accessTokenEncrypted;
+    yt.state.channel = { ...original, id: 'UC_SECOND_CHANNEL', title: 'ช่องที่สอง' };
+    try {
+      const r = await a.http('POST', `/workspaces/${ws}/youtube/connections/token`, { refreshToken: 'REFRESH_OK' });
+      expect(r.status, r.text).toBe(200); expect(r.json.id).not.toBe(connId); expect(r.text).not.toMatch(SECRETS);
+      const conns = (await a.http('GET', `/workspaces/${ws}/youtube/connections`)).json as { id: string; channels: { title: string }[] }[];
+      expect(conns).toHaveLength(2);
+      expect(conns.find(c => c.id === connId)!.channels.map(c => c.title)).toEqual(['เกษตรก้าวหน้า']);
+      expect(conns.find(c => c.id === r.json.id)!.channels).toEqual([]);
+      expect((await prisma.googleConnection.findUniqueOrThrow({ where: { id: connId } })).accessTokenEncrypted).toBe(firstToken);   // ช่องเดิมไม่ถูกเขียนทับ
+      await prisma.googleConnection.delete({ where: { id: r.json.id } });
+    } finally { yt.state.channel = original; }
+    // ล็อกอินช่องเดิมซ้ำ → อัปเดต connection เดิม ไม่สร้างใหม่
+    const again = await a.http('POST', `/workspaces/${ws}/youtube/connections/token`, { refreshToken: 'REFRESH_OK' });
+    expect(again.json.id).toBe(connId); expect((await a.http('GET', `/workspaces/${ws}/youtube/connections`)).json).toHaveLength(1);
+  });
   it('same channel cannot be attached to a second brand; public API-key mode by @handle works for another workspace-visible channel', async () => {
     const dup = await a.http('POST', `/workspaces/${ws}/youtube/channels`, { brandId: brand2, mode: 'PUBLIC_API_KEY', handle: '@kasetkaona' });
     expect(dup.status).toBe(409);

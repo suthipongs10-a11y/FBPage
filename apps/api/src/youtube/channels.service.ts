@@ -12,7 +12,7 @@ import { QUOTA, QuotaLedger, YT } from './youtube.provider';
 import { rethrowYt } from './errors';
 import type { ConnectChannelDto, SyncDto, UpdateChannelDto } from './dto';
 
-const CONN_SELECT = { id: true, providerUserId: true, email: true, scopes: true, status: true, tokenExpiresAt: true, lastRefreshedAt: true, lastValidatedAt: true, lastError: true, createdAt: true, user: { select: { id: true, name: true } }, _count: { select: { channels: true } } } as const;
+const CONN_SELECT = { id: true, providerUserId: true, email: true, scopes: true, status: true, tokenExpiresAt: true, lastRefreshedAt: true, lastValidatedAt: true, lastError: true, createdAt: true, user: { select: { id: true, name: true } }, _count: { select: { channels: true } }, channels: { where: { disconnectedAt: null }, select: { id: true, title: true }, orderBy: { title: 'asc' as const } } } as const;
 export const CHANNEL_SELECT = {
   id: true, brandId: true, googleConnectionId: true, youtubeChannelId: true, accessMode: true, title: true, customUrl: true, description: true, country: true, defaultLanguage: true, thumbnailUrl: true, publishedAt: true, uploadsPlaylistId: true, subscriberCount: true, videoCount: true, viewCount: true, timezone: true,
   automationLevel: true, automationPaused: true, uploadsPaused: true, policy: true, connectedAt: true, lastSyncedAt: true, syncStatus: true, syncError: true, commentsStatus: true, analyticsStatus: true, status: true, disconnectedAt: true,
@@ -58,9 +58,21 @@ export class YtChannelsService {
     if (!this.yt.google) throw new ConflictException('ต้องตั้งค่า GOOGLE_CLIENT_ID/SECRET ก่อน เพราะ refresh token ผูกกับ client');
     try { const t = await this.yt.google.refresh(refreshToken); return this.storeTokens(workspaceId, userId, t.accessToken, refreshToken, t.expiresAt, t.scopes, requestId); } catch (e) { rethrowYt(e); }
   }
+  /**
+   * คีย์ของ GoogleConnection — ปกติ = Google user (sub) · แต่ล็อกอินเดียวมีหลายช่องได้ (Brand Account) และ analytics อ่านด้วย channel==MINE
+   * ถ้า token ใหม่เป็นของช่องอื่นที่ไม่ใช่ช่องที่ผูกกับ connection เดิม → แยกเป็น connection ใหม่ ไม่เขียนทับ token ของช่องเดิม (กันข้อมูลช่องสลับกัน)
+   */
+  private async connectionKey(workspaceId: string, sub: string | null, accessToken: string, requestId: string): Promise<string> {
+    if (!sub) return `google-${randomUUID()}`;
+    const existing = await this.prisma.googleConnection.findUnique({ where: { workspaceId_providerUserId: { workspaceId, providerUserId: sub } }, select: { channels: { where: { disconnectedAt: null }, select: { youtubeChannelId: true } } } });
+    if (!existing?.channels.length) return sub;
+    const mine = await this.quota.scope({ workspaceId, requestId }, () => this.yt.yt.getMyChannel({ kind: 'oauth', accessToken })).catch(() => null);
+    if (!mine || existing.channels.some(c => c.youtubeChannelId === mine.id)) return sub;
+    return `${sub}#${mine.id}`;
+  }
   private async storeTokens(workspaceId: string, userId: string, accessToken: string, refreshToken: string | null, expiresAt: Date, scopes: string[], requestId: string) {
     const info = await this.yt.google!.tokenInfo(accessToken).catch(() => ({ sub: null, email: null, scopes: [] as string[] }));
-    const providerUserId = info.sub ?? `google-${randomUUID()}`;
+    const providerUserId = await this.connectionKey(workspaceId, info.sub, accessToken, requestId);
     const data = { userId, email: info.email, accessTokenEncrypted: encryptSecret(accessToken, this.env.AUTH_SECRET), ...(refreshToken && { refreshTokenEncrypted: encryptSecret(refreshToken, this.env.AUTH_SECRET) }), tokenExpiresAt: expiresAt, scopes: scopes.length ? scopes : info.scopes, status: 'ACTIVE', lastValidatedAt: new Date(), lastRefreshedAt: new Date(), lastError: null };
     const conn = await this.prisma.googleConnection.upsert({ where: { workspaceId_providerUserId: { workspaceId, providerUserId } }, create: { workspaceId, providerUserId, ...data }, update: data, select: CONN_SELECT });
     await this.audit.log({ workspaceId, userId, action: 'YOUTUBE_CONNECTED', resourceType: 'googleConnection', resourceId: conn.id, after: { email: info.email, features: featuresFromScopes(conn.scopes) }, requestId });
