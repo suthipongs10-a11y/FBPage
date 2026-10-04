@@ -41,9 +41,12 @@ export class YtChannelsService {
   async oauthStart(workspaceId: string, userId: string, features: ScopeFeature[], brandId?: string) {
     if (!this.yt.google) throw new ConflictException('ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_OAUTH_REDIRECT_URI — เชื่อมแบบอ่านสาธารณะด้วย YOUTUBE_API_KEY ได้');
     if (brandId && !(await this.prisma.brand.findFirst({ where: { id: brandId, ...brandInWorkspace(workspaceId) }, select: { id: true } }))) throw new NotFoundException('ไม่พบแบรนด์');
-    const f = features.length ? features : ['read', 'analytics', 'manage', 'upload'] as ScopeFeature[];
+    let f = features.length ? features : ['read', 'analytics', 'manage', 'upload'] as ScopeFeature[];
+    // เพิ่มช่องให้แบรนด์ = อาจเป็น Brand Account → ขอเฉพาะสิทธิ์ YouTube (ไม่ขออีเมล/Search Console ที่ Brand Account ใช้ไม่ได้)
+    if (brandId) f = f.filter(x => x !== 'search');
+    const scopes = scopesForFeatures(f, { email: !brandId });
     const state = signState({ ws: workspaceId, uid: userId, exp: Date.now() + 10 * 60_000, n: randomBytes(8).toString('hex'), f, ...(brandId && { b: brandId }) } satisfies OAuthState, this.env.AUTH_SECRET);
-    return { url: this.yt.google.authUrl(state, scopesForFeatures(f)), scopes: scopesForFeatures(f) };
+    return { url: this.yt.google.authUrl(state, scopes), scopes };
   }
   async oauthCallback(code: string | undefined, state: string | undefined, error: string | undefined): Promise<{ redirectTo: string }> {
     const back = (q: string) => ({ redirectTo: `${this.env.APP_URL}/youtube?${q}` });
@@ -70,7 +73,10 @@ export class YtChannelsService {
    * ถ้า token ใหม่เป็นของช่องอื่นที่ไม่ใช่ช่องที่ผูกกับ connection เดิม → แยกเป็น connection ใหม่ ไม่เขียนทับ token ของช่องเดิม (กันข้อมูลช่องสลับกัน)
    */
   private async connectionKey(workspaceId: string, sub: string | null, accessToken: string, requestId: string): Promise<string> {
-    if (!sub) return `google-${randomUUID()}`;
+    if (!sub) {   // token ที่ไม่ได้ขออีเมลอาจไม่มี sub — ใช้ช่องเป็นตัวระบุ (ล็อกอินช่องเดิมซ้ำ = อัปเดต connection เดิม)
+      const ch = await this.quota.scope({ workspaceId, requestId }, () => this.yt.yt.getMyChannel({ kind: 'oauth', accessToken })).catch(() => null);
+      return ch ? `yt#${ch.id}` : `google-${randomUUID()}`;
+    }
     const existing = await this.prisma.googleConnection.findUnique({ where: { workspaceId_providerUserId: { workspaceId, providerUserId: sub } }, select: { channels: { where: { disconnectedAt: null }, select: { youtubeChannelId: true } } } });
     if (!existing?.channels.length) return sub;
     const mine = await this.quota.scope({ workspaceId, requestId }, () => this.yt.yt.getMyChannel({ kind: 'oauth', accessToken })).catch(() => null);

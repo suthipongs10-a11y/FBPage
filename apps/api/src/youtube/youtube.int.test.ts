@@ -133,7 +133,8 @@ run('youtube module (integration)', () => {
     const original = yt.state.channel; yt.state.accessTokens.add('ACCESS_OK'); yt.state.validCodes.add('CODE_SECOND'); yt.state.validCodes.add('CODE_SAME');
     expect((await a.http('POST', `/workspaces/${ws}/youtube/connections/oauth/start`, { brandId: 'nope' })).status).toBe(404);
     const start = async () => { const s = await a.http('POST', `/workspaces/${ws}/youtube/connections/oauth/start`, { features: 'read,analytics,manage,upload', brandId: brand2 }); expect(s.status, s.text).toBe(200); return new URL(s.json.url); };
-    const u = await start(); expect(u.searchParams.get('prompt')).toBe('select_account consent');   // Google แสดงหน้าเลือกช่องทุกครั้ง
+    const u = await start(); expect(u.searchParams.get('prompt')).toBe('select_account consent');
+    expect(u.searchParams.get('scope')).toMatch(/youtube\.readonly/); expect(u.searchParams.get('scope')).not.toMatch(/webmasters|userinfo\.email/);   // Brand Account ใช้ Search Console/อีเมลไม่ได้ → ห้ามขอ   // Google แสดงหน้าเลือกช่องทุกครั้ง
     yt.state.channel = { ...original, id: 'UC_BRAND_TWO', title: 'ช่องที่สอง', uploads: original.uploads };
     let secondConn = '';
     try {

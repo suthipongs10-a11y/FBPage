@@ -12,8 +12,9 @@ export const GOOGLE_SCOPES = {
 } as const;
 export type ScopeFeature = 'read' | 'analytics' | 'upload' | 'manage' | 'revenue' | 'search';
 /** feature → scope matrix (§8) */
-export function scopesForFeatures(features: ScopeFeature[]): string[] {
-  const s = new Set<string>([GOOGLE_SCOPES.email, GOOGLE_SCOPES.readonly]);
+/** opts.email=false: ไม่ขออีเมล — ช่องแบบ Brand Account ไม่มีอีเมล/ใช้ Search Console ไม่ได้ ขอเกินแล้ว Google ตอบ "ไม่สามารถใช้บริการได้" */
+export function scopesForFeatures(features: ScopeFeature[], opts: { email?: boolean } = {}): string[] {
+  const s = new Set<string>(opts.email === false ? [GOOGLE_SCOPES.readonly] : [GOOGLE_SCOPES.email, GOOGLE_SCOPES.readonly]);
   if (features.includes('analytics')) s.add(GOOGLE_SCOPES.analytics);
   if (features.includes('upload')) s.add(GOOGLE_SCOPES.upload);
   if (features.includes('manage')) s.add(GOOGLE_SCOPES.manage);
