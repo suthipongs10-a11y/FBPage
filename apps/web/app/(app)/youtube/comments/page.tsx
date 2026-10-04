@@ -16,13 +16,20 @@ export default function YtCommentsPage() {
   const { ws, can } = useWorkspace();
   const [channels, setChannels] = useState<YtChannel[] | null>(null); const [rows, setRows] = useState<YtComment[] | null>(null); const [clusters, setClusters] = useState<YtCluster[]>([]); const [ins, setIns] = useState<YtCommentInsights | null>(null);
   const [filter, setFilter] = useState({ channelId: '', classification: '', unresolved: '1' }); const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const CH_KEY = `fbpm.ytComments.channel.${ws.id}`;
+  useEffect(() => {
+    let v = ''; try { v = new URLSearchParams(window.location.search).get('channel') ?? window.localStorage.getItem(CH_KEY) ?? ''; } catch { /* private mode */ }
+    if (v) setFilter(f => ({ ...f, channelId: v }));
+  }, [CH_KEY]);
+  const pickChannel = (id: string) => { setFilter(f => ({ ...f, channelId: id })); try { window.localStorage.setItem(CH_KEY, id); } catch { /* private mode */ } };
   const [tab, setTab] = useState<'pending' | 'highlights' | 'all'>('pending'); const [ver, setVer] = useState(0); const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
   const load = useCallback(async () => {
     try {
       const q = new URLSearchParams(); Object.entries(filter).forEach(([k, v]) => { if (v) q.set(k, v); });
       const cq = new URLSearchParams(); if (filter.channelId) cq.set('channelId', filter.channelId); const iq = new URLSearchParams({ days: '30' }); if (filter.channelId) iq.set('channelId', filter.channelId);
       const [c, r, cl, i] = await Promise.all([api<YtChannel[]>(`/workspaces/${ws.id}/youtube/channels`), api<YtComment[]>(`/workspaces/${ws.id}/youtube/comments?${q}`), api<YtCluster[]>(`/workspaces/${ws.id}/youtube/comments/clusters?${cq}`), api<YtCommentInsights>(`/workspaces/${ws.id}/youtube/comments/insights?${iq}`)]);
-      setChannels(c.filter(x => !x.disconnectedAt)); setRows(r); setClusters(cl); setIns(i);
+      const live = c.filter(x => !x.disconnectedAt); setChannels(live); setRows(r); setClusters(cl); setIns(i);
+      if (filter.channelId && !live.some(x => x.id === filter.channelId)) setFilter(f => ({ ...f, channelId: '' }));
     } catch (e) { setError(e); }
   }, [ws.id, filter]);
   useEffect(() => { void load(); }, [load]);
@@ -43,6 +50,16 @@ export default function YtCommentsPage() {
         <div><h1 className="text-2xl font-semibold">{t('yt.commentsTitle')}</h1><p className="text-sm text-slate-400">{t('yt.commentsSubtitle')}</p></div>
         <div className="flex flex-wrap gap-2"><Button variant="ghost" disabled={busy === 'sync' || !channels.length} onClick={sync}>{t('comments.sync')}</Button>{can('ai.use') && <><Button disabled={busy === 'classify' || ins.unclassified === 0} onClick={classify}>{t('comments.classify')} ({ins.unclassified})</Button><Button variant="ghost" disabled={busy === 'cluster'} onClick={cluster}>{t('yt.cluster')}</Button></>}</div>
       </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 p-2" role="radiogroup" aria-label={t('yt.channel')}>
+        <span className="px-1 text-xs font-semibold text-slate-400">{t('yt.channel')}:</span>
+        {[{ id: '', title: t('ytc.allChannels'), thumbnailUrl: null as string | null }, ...channels].map(c => (
+          <button key={c.id || 'all'} role="radio" aria-checked={filter.channelId === c.id} onClick={() => pickChannel(c.id)} className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold ${filter.channelId === c.id ? 'bg-sky-500 text-white' : 'border border-slate-700 text-slate-300 hover:border-sky-500'}`}>
+            {c.thumbnailUrl ? <img src={c.thumbnailUrl} alt="" className="h-5 w-5 rounded-full object-cover" /> : c.id ? <span className="h-5 w-5 rounded-full bg-slate-700" /> : null}
+            <span className="max-w-[14rem] truncate">{c.title}</span>
+          </button>
+        ))}
+        {channels.length < 2 && <a href="/youtube" className="ml-auto px-1 text-xs text-sky-400 hover:underline">＋ {t('ytc.addChannel')}</a>}
+      </div>
       {notice && <p className="text-sm text-emerald-400">✔ {notice}</p>}
       {!oauth && channels.length > 0 && <p className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-2 text-xs text-amber-200">{t('yt.modeApiKey')} — อ่านคอมเมนต์สาธารณะได้ แต่ตอบไม่ได้ (ต้อง OAuth ของเจ้าของช่อง)</p>}
       <ErrorBox error={error} />
@@ -62,12 +79,10 @@ export default function YtCommentsPage() {
         <Button variant={tab === 'pending' ? 'primary' : 'ghost'} onClick={() => setTab('pending')}>💬 {t('ytr.tab')} ({ins.needsReply ?? 0})</Button>
         <Button variant={tab === 'highlights' ? 'primary' : 'ghost'} onClick={() => setTab('highlights')}>⭐ {t('ytk.tab')}</Button>
         <Button variant={tab === 'all' ? 'primary' : 'ghost'} onClick={() => setTab('all')}>{t('ytr.tabAll')}</Button>
-        {tab === 'pending' && <Select className="w-auto" value={filter.channelId} onChange={e => setFilter(v => ({ ...v, channelId: e.target.value }))}><option value="">{t('yt.channel')}: {t('content.all')}</option>{channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>}
       </div>
       {tab === 'pending' && <YtReplyQueue key={filter.channelId} wsId={ws.id} channelId={filter.channelId} canReply={reply && oauth} canAi={can('ai.use')} version={ver} onChanged={() => void load()} />}
-      {tab === 'highlights' && <YtCommentHighlights wsId={ws.id} channels={channels} canAi={can('ai.use')} canCreate={can('youtube.content.create')} />}
+      {tab === 'highlights' && <YtCommentHighlights key={filter.channelId || 'all'} wsId={ws.id} channels={channels} initialChannelId={filter.channelId || undefined} canAi={can('ai.use')} canCreate={can('youtube.content.create')} />}
       {tab === 'all' && <><div className="flex flex-wrap gap-2">
-        <Select className="w-auto" value={filter.channelId} onChange={e => setFilter(v => ({ ...v, channelId: e.target.value }))}><option value="">{t('yt.channel')}: {t('content.all')}</option>{channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</Select>
         <Select className="w-auto" value={filter.classification} onChange={e => setFilter(v => ({ ...v, classification: e.target.value }))}><option value="">{t('comments.filterClass')}: {t('content.all')}</option>{YT_COMMENT_CLASSES.map(c => <option key={c} value={c}>{t(`ycc.${c}` as MessageKey)}</option>)}</Select>
         <Select className="w-auto" value={filter.unresolved} onChange={e => setFilter(v => ({ ...v, unresolved: e.target.value }))}><option value="1">{t('comments.unresolved')}</option><option value="">{t('content.all')}</option></Select>
       </div>

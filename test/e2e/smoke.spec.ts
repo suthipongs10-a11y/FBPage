@@ -236,6 +236,12 @@ test('YouTube: quick upload a clip as Private in one click, and answer a viewer 
   const at = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
   yt.state.comments.v1!.push({ id: 'e2e-own', videoId: 'v1', parentId: 'c1', author: '@kasetkaona', authorId: 'UC_TEST_CHANNEL', text: 'ใส่ช่วงเย็นครับ', publishedAt: at(90), likeCount: 0 }, { id: 'e2e-x', videoId: 'v1', parentId: 'c1', author: 'สมศรี', text: 'แล้วหน้าฝนล่ะคะ', publishedAt: at(10), likeCount: 0 });
   await page.goto('/youtube/comments');
+  // เลือกช่องที่แถบด้านบน — คุมทุกปุ่ม/แท็บในหน้า และจำไว้เมื่อกลับมาหน้านี้อีก
+  const picker = page.getByRole('radiogroup', { name: 'ช่อง' });
+  await expect(picker.getByRole('radio', { name: 'ทุกช่อง' })).toHaveAttribute('aria-checked', 'true');
+  await picker.getByRole('radio', { name: 'เกษตรก้าวหน้า' }).click();
+  await expect(picker.getByRole('radio', { name: 'เกษตรก้าวหน้า' })).toHaveAttribute('aria-checked', 'true');
+  await page.reload(); await expect(page.getByRole('radiogroup', { name: 'ช่อง' }).getByRole('radio', { name: 'เกษตรก้าวหน้า' })).toHaveAttribute('aria-checked', 'true');
   await page.getByRole('button', { name: 'ซิงก์คอมเมนต์' }).click();
   await expect(page.getByText('แล้วหน้าฝนล่ะคะ')).toBeVisible({ timeout: 20_000 });
   const thread = page.locator('div.rounded-xl').filter({ hasText: 'แล้วหน้าฝนล่ะคะ' });

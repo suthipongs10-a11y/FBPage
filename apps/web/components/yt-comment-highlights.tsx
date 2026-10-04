@@ -9,8 +9,8 @@ import { copyText, fullDate, replyPrompt, timeAgo } from '@/lib/yt-comment';
 
 const kindTone = (k: string): 'ok' | 'warn' | 'bad' | 'muted' => (k === 'LEAD' || k === 'CONTENT_REQUEST' ? 'ok' : k === 'COMPLAINT' || k === 'MISINFO' ? 'bad' : k === 'PRAISE' ? 'muted' : 'warn');
 
-export function YtCommentHighlights({ wsId, channels, canAi, canCreate }: { wsId: string; channels: YtChannel[]; canAi: boolean; canCreate: boolean }) {
-  const [channelId, setChannelId] = useState(channels[0]?.id ?? ''); const [days, setDays] = useState(180);
+export function YtCommentHighlights({ wsId, channels, canAi, canCreate, initialChannelId }: { wsId: string; channels: YtChannel[]; canAi: boolean; canCreate: boolean; initialChannelId?: string }) {
+  const [channelId, setChannelId] = useState(initialChannelId ?? channels[0]?.id ?? ''); const [days, setDays] = useState(180);
   const [data, setData] = useState<YtHighlights | null | undefined>(undefined);
   const [sent, setSent] = useState<Record<string, string>>({});   // key → contentId ที่สร้างแล้ว
   const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [notice, setNotice] = useState('');
