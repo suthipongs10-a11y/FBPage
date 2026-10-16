@@ -4,6 +4,7 @@ import type Redis from 'ioredis';
 import type { PrismaClient } from '@fbpm/database';
 import { PRISMA } from '../database/prisma.service';
 import { REDIS } from '../redis/redis.module';
+import { pendingMigrations } from './migrations';
 
 export interface HealthCheck { name: string; status: 'up' | 'down'; latencyMs: number; error?: string }
 export interface HealthReport { status: 'ok' | 'degraded'; version: string; uptimeSec: number; checks: HealthCheck[] }
@@ -22,12 +23,20 @@ export class HealthController {
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
+  /** แยกเป็นเมธอดให้ test แทนที่ได้ */
+  pending(): Promise<string[] | null> { return pendingMigrations(this.prisma); }
+
   @Get()
-  @ApiOperation({ summary: 'Liveness + dependency checks (PostgreSQL, Redis)' })
+  @ApiOperation({ summary: 'Liveness + dependency checks (PostgreSQL, Redis, pending migrations)' })
   async get(): Promise<HealthReport> {
     const checks = await Promise.all([
       probe('postgres', () => this.prisma.$queryRaw`SELECT 1`),
       probe('redis', async () => { if (this.redis.status === 'wait') await this.redis.connect(); return this.redis.ping(); }),
+      // อัปเดตโค้ดแล้วลืม migrate → หน้าเว็บยังเปิดได้แต่ซิงก์/บันทึกพัง — ให้เห็นที่นี่ตรง ๆ
+      probe('migrations', async () => {
+        const pending = await this.pending();
+        if (pending?.length) throw new Error(`ยังไม่ได้ migrate ${pending.length} รายการ: ${pending.join(', ')}`);
+      }),
     ]);
     return {
       status: checks.every(c => c.status === 'up') ? 'ok' : 'degraded',

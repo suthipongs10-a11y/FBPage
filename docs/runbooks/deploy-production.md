@@ -401,12 +401,12 @@ sudo deploy/backup.sh && sudo deploy/backup.sh --install-cron --at 03:15
 ```
 รายละเอียด การกู้คืน และการย้าย VPS: [`backup-restore.md`](backup-restore.md)
 
-**อัปเดตโค้ด**
+**อัปเดตโค้ด** — ใช้คำสั่งเดียวนี้เสมอ (ดึงโค้ด → build → **migrate** → เปิดระบบ → ตรวจ `/health`)
 ```bash
-cd /opt/fbpm && git pull && docker compose build \
-  && docker compose --profile maintenance run --rm migrate \
-  && docker compose --profile automation up -d
+cd /opt/fbpm && sudo deploy/update.sh            # เพิ่ม --backup เพื่อสำรองฐานข้อมูลก่อน migrate
 ```
+ถ้า build อย่างเดียวแต่ลืม migrate: หน้าเว็บยังเปิดได้ แต่กดซิงก์/บันทึกบางอย่างจะ error และ worker ซิงก์ไม่ได้ (เพจค้าง "ซิงก์ล่าสุด" วันเดิม)
+ตั้งแต่เวอร์ชันนี้ API จะตอบข้อความ "ฐานข้อมูลยังไม่ได้อัปเดต…" แทน "Internal server error" · `/health` ขึ้น `migrations: down` พร้อมชื่อ migration ที่ค้าง · `docker compose logs api` มีคำเตือนตอนเริ่ม
 
 **สำรอง `.env`** เก็บไว้ที่ปลอดภัยนอกเครื่อง — ถ้าหาย `AUTH_SECRET` ไปด้วย จะถอดรหัส token ที่เก็บไว้ไม่ได้อีกเลย
 
@@ -436,5 +436,6 @@ df -h /                                             # พื้นที่ด�
 | webhook อีเมลไม่เข้า สถิติขึ้น "ไม่มีข้อมูล" | ยังไม่ได้ตั้ง Webhook secret ในระบบ หรือ Brevo ยังไม่ได้ต่อ `?token=` ท้าย URL |
 | API ขึ้น error ตอนเริ่ม | `docker compose logs api` — มักเป็น `.env` ผิดรูปแบบหรือ `AUTH_SECRET` สั้นกว่า 32 ตัว |
 | หน้าเว็บขึ้นแต่กดอะไรก็ error / log มีคำว่า `relation ... does not exist` | ยังไม่ได้รัน migration → `docker compose --profile maintenance run --rm migrate` |
+| แถบแดง "Internal server error" หรือ "ฐานข้อมูลยังไม่ได้อัปเดต" · เพจหยุดซิงก์หลังอัปเดต · log มี `P2022` / `column ... does not exist` | อัปเดตโค้ดแล้วยังไม่ migrate → `sudo deploy/update.sh --no-pull` (หรือ `docker compose --profile maintenance run --rm migrate && docker compose --profile automation up -d`) |
 | โพสต์ตามเวลาไม่ทำงาน · เว็บไม่ถูกตรวจ · แชทไม่ตอบ | worker ไม่ได้เปิด → `docker compose --profile automation up -d` แล้วดู `docker compose ps` ว่ามี worker |
 | log มี `Cannot find module '.prisma/client'` | image เก่าที่สร้างก่อนแก้ generator → `docker compose build --no-cache api worker` |

@@ -1,12 +1,15 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
-import { NestFactory } from '@nestjs/core';
-import { type INestApplication } from '@nestjs/common';
+import { HttpAdapterHost, NestFactory } from '@nestjs/core';
+import { Logger, type INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { loadEnv, type Env } from './config/env';
+import { SchemaMismatchFilter } from './common/schema-mismatch.filter';
+import { PRISMA } from './database/prisma.service';
+import { pendingMigrations } from './health/migrations';
 
 /** สร้าง Nest app พร้อม middleware มาตรฐาน — ใช้ทั้ง main.ts และ integration tests */
 export async function createApp(): Promise<{ app: INestApplication; env: Env }> {
@@ -28,6 +31,7 @@ export async function createApp(): Promise<{ app: INestApplication; env: Env }> 
     res.setHeader('x-frame-options', 'DENY');
     next();
   });
+  app.useGlobalFilters(new SchemaMismatchFilter(app.get(HttpAdapterHost).httpAdapter));
   app.enableCors({ origin: env.APP_URL, credentials: true });
   app.enableShutdownHooks();
 
@@ -37,5 +41,8 @@ export async function createApp(): Promise<{ app: INestApplication; env: Env }> 
     .setVersion('0.1.0')
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, doc));
+  // เตือนตั้งแต่เปิดระบบถ้าโค้ดใหม่กว่าฐานข้อมูล — ไม่ล้มระบบ เพราะหน้าที่ไม่แตะตารางใหม่ยังใช้ได้
+  const pending = await pendingMigrations(app.get(PRISMA)).catch(() => null);
+  if (pending?.length) new Logger('database').warn(`ยังไม่ได้ migrate ${pending.length} รายการ (${pending.join(', ')}) → deploy/update.sh หรือ docker compose --profile maintenance run --rm migrate`);
   return { app, env };
 }
